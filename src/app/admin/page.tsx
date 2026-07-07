@@ -12,13 +12,15 @@ const extractFilePath = (url: string | null) => {
 
 export default function AdminDashboard() {
   const supabase = createClient();
-  const [activeTab, setActiveTab] = useState<'pets' | 'landmarks' | 'items'>('pets');
+  const [activeTab, setActiveTab] = useState<'pets' | 'landmarks' | 'items' | 'news' | 'users'>('pets');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // --- 登録済みデータ一覧用のState ---
   const [petsList, setPetsList] = useState<any[]>([]);
   const [landmarksList, setLandmarksList] = useState<any[]>([]);
   const [itemsList, setItemsList] = useState<any[]>([]);
+  const [newsList, setNewsList] = useState<any[]>([]);
+  const [usersList, setUsersList] = useState<any[]>([]);
 
   // --- ペット用State ---
   const [petName, setPetName] = useState('');
@@ -46,16 +48,25 @@ export default function AdminDashboard() {
   const [itemEffect, setItemEffect] = useState('10');
   const [itemImageFile, setItemImageFile] = useState<File | null>(null); // 画像ファイル
 
+  // --- お知らせ用State ---
+  const [newsTitle, setNewsTitle] = useState('');
+  const [newsContent, setNewsContent] = useState('');
+
   // --- データの取得（一覧表示用） ---
   const fetchData = async () => {
-    const [petsRes, landmarksRes, itemsRes] = await Promise.all([
+    const [petsRes, landmarksRes, itemsRes, newsRes, usersRes] = await Promise.all([
       supabase.from('pet_masters').select('*').order('id', { ascending: false }),
       supabase.from('landmarks').select('*').order('id', { ascending: false }),
-      supabase.from('item_masters').select('*').order('id', { ascending: false })
+      supabase.from('item_masters').select('*').order('id', { ascending: false }),
+      supabase.from('announcements').select('*').order('published_at', { ascending: false }),
+      supabase.from('user_profiles').select('*').order('created_at', { ascending: false })
     ]);
+    
     if (petsRes.data) setPetsList(petsRes.data);
     if (landmarksRes.data) setLandmarksList(landmarksRes.data);
     if (itemsRes.data) setItemsList(itemsRes.data);
+    if (newsRes.data) setNewsList(newsRes.data);
+    if (usersRes.data) setUsersList(usersRes.data);
   };
 
   useEffect(() => {
@@ -173,8 +184,31 @@ export default function AdminDashboard() {
     }
   };
 
+  // --- 4. お知らせの配信 ---
+  const handleAddNews = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newsTitle || !newsContent) return alert('タイトルと本文が必要です');
+    setIsSubmitting(true);
+    try {
+      const { error } = await supabase.from('announcements').insert({
+        title: newsTitle,
+        content: newsContent
+      });
+      if (error) throw error;
+
+      alert('お知らせを配信しました！');
+      setNewsTitle(''); setNewsContent('');
+      fetchData();
+    } catch (e: any) {
+      alert(`エラー: ${e.message}`);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+
   // ==========================================
-  //  削除 (Delete) アクション
+  //  削除・更新 (Delete / Update) アクション
   // ==========================================
 
   // --- 進化モデルのURLも受け取って削除する ---
@@ -232,26 +266,42 @@ export default function AdminDashboard() {
     }
   };
 
+  // お知らせの公開・非公開トグル
+  const toggleNews = async (id: number, currentStatus: boolean) => {
+    try {
+      const { error } = await supabase.from('announcements').update({ is_active: !currentStatus }).eq('id', id);
+      if (error) throw error;
+      fetchData();
+    } catch (e: any) {
+      alert(`エラー: ${e.message}`);
+    }
+  };
+
+
   return (
     <div className="max-w-6xl mx-auto p-6 bg-white shadow-xl rounded-3xl mt-8 mb-20">
       <h1 className="text-2xl font-bold mb-6 text-gray-800">⚙️ Straid AR 全体管理ダッシュボード</h1>
       
       {/* タブ切り替え */}
       <div className="flex gap-2 mb-8 overflow-x-auto pb-2">
-        {(['pets', 'landmarks', 'items'] as const).map(tab => (
+        {(['pets', 'landmarks', 'items', 'news', 'users'] as const).map(tab => (
           <button 
             key={tab} 
             onClick={() => setActiveTab(tab)} 
             className={`px-8 py-3 rounded-full font-bold whitespace-nowrap transition-colors ${activeTab === tab ? 'bg-slate-900 text-white shadow-md' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}
           >
-            {tab === 'pets' ? '🐶 ペット管理' : tab === 'landmarks' ? '📍 スポット管理' : '🛒 アイテム管理'}
+            {tab === 'pets' && '🐶 ペット管理'}
+            {tab === 'landmarks' && '📍 スポット管理'}
+            {tab === 'items' && '🛒 アイテム管理'}
+            {tab === 'news' && '📢 お知らせ管理'}
+            {tab === 'users' && '👥 ユーザー属性'}
           </button>
         ))}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
         
-        {/* --- 左カラム: 登録フォーム --- */}
+        {/* --- 左カラム: 登録・サマリー --- */}
         <div>
           {/* 1. ペット追加フォーム */}
           {activeTab === 'pets' && (
@@ -388,14 +438,51 @@ export default function AdminDashboard() {
               </button>
             </form>
           )}
+
+          {/* 4. お知らせ追加フォーム */}
+          {activeTab === 'news' && (
+            <form onSubmit={handleAddNews} className="space-y-5 bg-blue-50 p-6 rounded-2xl border border-blue-100">
+              <h2 className="text-xl font-bold text-blue-900">新規お知らせ配信</h2>
+              <div>
+                <label className="block text-sm font-bold mb-1 text-blue-800">タイトル</label>
+                <input type="text" value={newsTitle} onChange={e => setNewsTitle(e.target.value)} placeholder="例: 夏のイベント開催！" className="w-full border p-3 rounded-lg focus:ring-2 focus:ring-blue-500" required />
+              </div>
+              <div>
+                <label className="block text-sm font-bold mb-1 text-blue-800">本文</label>
+                <textarea value={newsContent} onChange={e => setNewsContent(e.target.value)} placeholder="お知らせの内容を入力..." className="w-full border p-3 rounded-lg focus:ring-2 focus:ring-blue-500" rows={6} required />
+              </div>
+              <button disabled={isSubmitting} className="w-full bg-blue-600 text-white font-bold py-4 rounded-xl shadow-lg hover:bg-blue-700 disabled:bg-gray-400">
+                {isSubmitting ? '処理中...' : '配信する'}
+              </button>
+            </form>
+          )}
+
+          {/* 5. ユーザー属性サマリー */}
+          {activeTab === 'users' && (
+            <div className="bg-indigo-50 p-6 rounded-2xl border border-indigo-100 space-y-5">
+              <h2 className="text-xl font-bold text-indigo-900">ユーザー属性サマリー</h2>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="bg-white p-4 rounded-xl shadow-sm text-center">
+                  <div className="text-sm text-gray-500 mb-1">総登録ユーザー数</div>
+                  <div className="text-3xl font-bold text-indigo-600">{usersList.length}</div>
+                </div>
+                <div className="bg-white p-4 rounded-xl shadow-sm text-center">
+                  <div className="text-sm text-gray-500 mb-1">プロフィール設定済</div>
+                  <div className="text-3xl font-bold text-indigo-600">{usersList.filter(u => u.birth_year).length}</div>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
 
-        {/* --- 右カラム: 登録済みデータ一覧（削除機能つき） --- */}
+        {/* --- 右カラム: 登録済みデータ一覧 --- */}
         <div className="bg-white border rounded-2xl p-6 h-[800px] overflow-y-auto shadow-inner">
           <h2 className="text-xl font-bold mb-4 border-b pb-2">
             {activeTab === 'pets' && '🐶 登録済みペット一覧'}
             {activeTab === 'landmarks' && '📍 配置済みスポット一覧'}
             {activeTab === 'items' && '🛒 登録済みアイテム一覧'}
+            {activeTab === 'news' && '📢 配信済みお知らせ一覧'}
+            {activeTab === 'users' && '👥 登録ユーザー一覧'}
           </h2>
 
           <div className="space-y-3">
@@ -467,10 +554,48 @@ export default function AdminDashboard() {
               </div>
             ))}
 
+            {/* 4. お知らせ一覧 */}
+            {activeTab === 'news' && newsList.map(news => (
+              <div key={news.id} className={`p-4 border rounded-xl transition-colors ${news.is_active ? 'bg-white' : 'bg-gray-100 opacity-75'}`}>
+                <div className="flex justify-between items-start mb-2">
+                  <h3 className="font-bold text-lg">{news.title}</h3>
+                  <button 
+                    onClick={() => toggleNews(news.id, news.is_active)} 
+                    className={`text-xs font-bold px-3 py-1 rounded-full ${news.is_active ? 'bg-green-100 text-green-800' : 'bg-gray-300 text-gray-700'}`}
+                  >
+                    {news.is_active ? '配信中' : '非公開'}
+                  </button>
+                </div>
+                <p className="text-sm text-gray-600 whitespace-pre-wrap">{news.content}</p>
+                <div className="text-[10px] text-gray-400 mt-3 text-right">
+                  配信日時: {new Date(news.published_at).toLocaleString()}
+                </div>
+              </div>
+            ))}
+
+            {/* 5. ユーザー属性一覧 */}
+            {activeTab === 'users' && usersList.map(user => (
+              <div key={user.id} className="p-4 border rounded-xl flex justify-between items-center bg-gray-50">
+                <div>
+                  <div className="font-bold text-gray-800">
+                    ユーザーID: <span className="text-xs font-normal">{user.id.substring(0, 8)}...</span>
+                  </div>
+                  <div className="text-sm text-gray-600 mt-1">
+                    {user.birth_year ? `${user.birth_year}年生まれ` : '未設定'} / {user.gender === 'male' ? '男性' : user.gender === 'female' ? '女性' : user.gender === 'other' ? 'その他' : '未設定'}
+                  </div>
+                </div>
+                <div className="text-xs font-bold px-3 py-1 bg-white border rounded text-gray-600">
+                  通知: {user.email_notify_news ? 'ON' : 'OFF'}
+                </div>
+              </div>
+            ))}
+
             {/* 空の時の表示 */}
             {((activeTab === 'pets' && petsList.length === 0) || 
               (activeTab === 'landmarks' && landmarksList.length === 0) || 
-              (activeTab === 'items' && itemsList.length === 0)) && (
+              (activeTab === 'items' && itemsList.length === 0) ||
+              (activeTab === 'news' && newsList.length === 0) ||
+              (activeTab === 'users' && usersList.length === 0)) && (
               <p className="text-center text-gray-400 py-10">データがありません</p>
             )}
           </div>
