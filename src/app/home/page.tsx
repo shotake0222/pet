@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useRef } from 'react';
 import Script from 'next/script';
-import { useSearchParams } from 'next/navigation';
 import { createClient } from '@/utils/supabase/client';
 import { hatchPet } from '@/app/actions/gacha';
 
@@ -24,9 +23,12 @@ function getDistance(lat1: number, lon1: number, lat2: number, lon2: number) {
 }
 
 export default function HomeAR() {
-  const searchParams = useSearchParams();
-  const tagCode = searchParams.get('tag');
+  const [tagCode, setTagCode] = useState<string | null>(null);
   const supabase = createClient();
+
+  useEffect(() => {
+    setTagCode(new URLSearchParams(window.location.search).get('tag'));
+  }, []);
   
   const [viewMode, setViewMode] = useState<'mindar' | 'gps' | 'report'>('mindar');
   const [isClient, setIsClient] = useState(false);
@@ -76,8 +78,8 @@ export default function HomeAR() {
 
   useEffect(() => {
     setSceneKey(prev => prev + 1);
-    const streams = navigator.mediaDevices?.getUserMedia ? true : false;
-    if (streams) {
+    const hasGetUserMedia = typeof navigator !== 'undefined' && 'mediaDevices' in navigator && typeof navigator.mediaDevices.getUserMedia === 'function';
+    if (hasGetUserMedia) {
       navigator.mediaDevices.getUserMedia({ video: true }).then(stream => {
         stream.getTracks().forEach(track => track.stop());
       }).catch(() => {});

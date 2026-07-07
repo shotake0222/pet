@@ -3,7 +3,7 @@
 import { createClient } from '@/utils/supabase/server';
 
 export async function hatchPet(tagCode: string) {
-  const supabase = createClient();
+  const supabase = await createClient();
 
   // 1. NFCタグの存在確認と所有者チェック
   const { data: tag } = await supabase

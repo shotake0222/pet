@@ -1,11 +1,9 @@
 export default function Login() {
   return (
-    
-      ログインが必要です
+    <div>
+      <p>ログインが必要です</p>
       {/* 本番ではここにSupabase Auth UIやGoogleログインボタンを配置します */}
-      
-        ログインしてペットに会う
-      
-    
+      <button type="button">ログインしてペットに会う</button>
+    </div>
   );
 }

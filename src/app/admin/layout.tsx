@@ -2,7 +2,7 @@ import { createClient } from '@/utils/supabase/server';
 import { redirect } from 'next/navigation';
 
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
-  const supabase = createClient();
+  const supabase = await createClient();
   
   // 1. ログイン状態の確認
   const { data: { user } } = await supabase.auth.getUser();
@@ -22,14 +22,12 @@ export default async function AdminLayout({ children }: { children: React.ReactN
 
   // 管理者のみが以下のchildren（ダッシュボード画面）を描画できる
   return (
-    
-      
-        🔧 Straid AR 管理ダッシュボード
-        ログイン中: {user.email}
-      
-      
-        {children}
-      
-    
+    <div>
+      <header>
+        <h1>🔧 Straid AR 管理ダッシュボード</h1>
+        <p>ログイン中: {user.email}</p>
+      </header>
+      <main>{children}</main>
+    </div>
   );
 }

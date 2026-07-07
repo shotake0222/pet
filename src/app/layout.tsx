@@ -8,7 +8,7 @@ const inter = Inter({ subsets: ["latin"] });
 export const metadata: Metadata = {
   title: "Straid AR",
   description: "NFCとGPSで遊べるAR育成ゲーム",
-  manifest: "/manifest.json", // manifest.json へのパス
+  manifest: "/manifest.json",
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",
@@ -25,7 +25,7 @@ export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
   maximumScale: 1,
-  userScalable: false, // AR画面で意図せずズームされるのを防ぐ
+  userScalable: false,
 };
 
 export default function RootLayout({
@@ -34,8 +34,8 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    
-      {children}
-    
+    <html lang="ja">
+      <body className={inter.className}>{children}</body>
+    </html>
   );
 }
