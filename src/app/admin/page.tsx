@@ -442,7 +442,7 @@ export default function AdminDashboard() {
         <div>
           {/* 1. ペット追加フォーム */}
           {activeTab === 'pets' && (
-            <form onSubmit={handleAddPet} className="space-y-5 bg-gray-50 p-6 rounded-2xl border border-gray-100">
+            <form onSubmit={handleSavePet} className="space-y-5 bg-gray-50 p-6 rounded-2xl border border-gray-100">
               <h2 className="text-xl font-bold">新規ペット登録</h2>
               {editingPetId && <div className="text-sm text-yellow-700 mb-2">編集中: ID {editingPetId} — 変更が終わったら保存してください</div>}
               <div>

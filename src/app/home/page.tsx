@@ -238,9 +238,9 @@ export default function HomeAR() {
 
           // @ts-ignore
           if (pet.pet_masters) { 
-            // @ts-ignore
-            const pm = pet.pet_masters || {};
-            const rarityPm = pm.rarity || '?';
+            // `pet.pet_masters` may be an array; use first element when present
+            const pm = (pet.pet_masters && pet.pet_masters[0]) || {};
+            const rarityPm = (pm as any).rarity || '?';
             const fallbackBase = `/models/pet/${rarityPm}`;
             setPetModelUrlV1(pm.model_url || `${fallbackBase}/v1.glb`);
             setPetModelUrlV2(pm.model_url_v2 || `${fallbackBase}/v2.glb`);
