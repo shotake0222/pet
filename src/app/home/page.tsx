@@ -92,6 +92,8 @@ export default function HomeAR() {
   const [hungerPercent, setHungerPercent] = useState(100);
   const [motivationPercent, setMotivationPercent] = useState(100);
   const [actionAnim, setActionAnim] = useState<string | null>(null);
+  const [gameOverNotice, setGameOverNotice] = useState<string | null>(null);
+  const [gameOverHandled, setGameOverHandled] = useState(false);
 
   const [location, setLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [prevLocation, setPrevLocation] = useState<{ lat: number; lng: number } | null>(null);
@@ -217,6 +219,9 @@ export default function HomeAR() {
       const { data: news } = await supabase.from('announcements').select('*').eq('is_active', true).order('published_at', { ascending: false });
       if (news) setNewsList(news);
 
+      setGameOverNotice(null);
+      setGameOverHandled(false);
+
       // URLにタグ情報があればペット情報を取得
       if (tagCode) {
         const { data: pet } = await supabase
@@ -297,6 +302,53 @@ export default function HomeAR() {
   const isNextLevelReady = !isEgg && petId && walkDistance >= nextLevelRequirements.distance && feedCount >= nextLevelRequirements.feed && landmarkVisitCount >= nextLevelRequirements.landmark && eventCount >= nextLevelRequirements.event;
   const expNeededForNextLevel = level * 150;
 
+  const resetPetToEgg = async (reason: string) => {
+    if (!petId || isEgg || gameOverHandled) return;
+
+    try {
+      await supabase.from('pets').update({
+        is_egg: true,
+        walk_distance_m: 0,
+        level: 1,
+        exp: 0,
+        affection_level: 0,
+        sleeping_until: null,
+        last_fed_at: null,
+        custom_name: null,
+        birthday: null,
+      }).eq('id', petId);
+
+      await supabase.from('activity_logs').insert({
+        pet_id: petId,
+        action_type: 'game_over',
+        points_earned: 0,
+      });
+
+      setIsEgg(true);
+      setWalkDistance(0);
+      setFeedCount(0);
+      setLandmarkVisitCount(0);
+      setEventCount(0);
+      setLevel(1);
+      setExp(0);
+      setAffection(0);
+      setSleepingUntil(null);
+      setLastFedAt(null);
+      setHungerPercent(100);
+      setMotivationPercent(100);
+      setCustomName(null);
+      setBirthday(null);
+      setPetModelUrlV1('/models/eggs/default_egg.glb');
+      setPetModelUrlV2(null);
+      setPetModelUrlV3(null);
+      setGameOverHandled(true);
+      setGameOverNotice(`💀 ${reason}\n卵に戻ってしまった…もう一度育て直そう！`);
+      playSound('error');
+    } catch (error) {
+      console.error('ゲームオーバー処理に失敗しました', error);
+    }
+  };
+
   useEffect(() => {
     if (!lastFedAt || isEgg) return;
     const calculateStatus = () => {
@@ -316,6 +368,18 @@ export default function HomeAR() {
     const interval = setInterval(calculateStatus, 60000);
     return () => clearInterval(interval);
   }, [lastFedAt, affection, isEgg, isSleeping]);
+
+  useEffect(() => {
+    if (!petId || isEgg || !lastFedAt || gameOverHandled) return;
+
+    const now = Date.now();
+    const lastFedTime = new Date(lastFedAt).getTime();
+    const hoursPassed = (now - lastFedTime) / (1000 * 60 * 60);
+
+    if (hoursPassed >= 24) {
+      void resetPetToEgg('体力が尽きて24時間が経過したため');
+    }
+  }, [petId, lastFedAt, isEgg, gameOverHandled]);
 
   const getCurrentMood = () => {
     if (isEgg || isEggUnregistered) return { text: '🥚 卵', color: 'bg-gray-500', clip: 'Idle' };
@@ -443,6 +507,7 @@ export default function HomeAR() {
       if (result.success) {
         setPetId(result.pet.id); setOwnerId(result.pet.owner_id); 
         setIsEgg(true); setIsEggUnregistered(false); setWalkDistance(0); setFeedCount(0); setLandmarkVisitCount(0); setEventCount(0);
+        setGameOverNotice(null); setGameOverHandled(false); setLastFedAt(null); setSleepingUntil(null); setHungerPercent(100); setMotivationPercent(100); setLevel(1); setExp(0); setAffection(0);
         // @ts-ignore
         const pm = result.pet.pet_masters || {};
         const rarityRes = pm.rarity || '?';
@@ -776,7 +841,7 @@ export default function HomeAR() {
           {(!isEgg && !isEggUnregistered && petId) && (
             <>
               <div className="bg-black/60 p-2.5 rounded-xl backdrop-blur-sm shadow-lg pointer-events-auto border border-gray-700">
-                <div className="flex justify-between text-xs font-bold text-white mb-1.5"><span>🍖 たいりょく</span><span>{hungerPercent}%</span></div>
+                <div className="flex justify-between text-xs font-bold text-white mb-1.5"><span>🍖 体力</span><span>{hungerPercent}%</span></div>
                 <div className="w-full h-2.5 bg-gray-800 rounded-full overflow-hidden shadow-inner"><div className={`h-full transition-all duration-1000 ${hungerPercent < 30 ? 'bg-red-500' : 'bg-green-500'}`} style={{ width: `${hungerPercent}%` }}></div></div>
               </div>
               <div className="bg-black/60 p-2.5 rounded-xl backdrop-blur-sm shadow-lg pointer-events-auto border border-gray-700">
@@ -816,6 +881,17 @@ export default function HomeAR() {
         </button>
         <button onClick={takeSnapshot} className="bg-white/90 p-3 rounded-full shadow-2xl border border-gray-200 active:scale-90 transition-transform flex items-center justify-center w-14 h-14" aria-label="写真を撮る"><span className="text-2xl">📸</span></button>
       </div>
+
+      {gameOverNotice && (
+        <div className="absolute inset-0 z-[130] bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl p-6 w-full max-w-sm shadow-2xl text-center space-y-4">
+            <div className="text-4xl">💀</div>
+            <h2 className="text-xl font-bold text-red-600">ゲームオーバー</h2>
+            <p className="text-sm text-gray-700 whitespace-pre-wrap">{gameOverNotice}</p>
+            <button onClick={() => setGameOverNotice(null)} className="w-full bg-slate-900 text-white font-bold py-3 rounded-xl shadow-lg">卵を確認する</button>
+          </div>
+        </div>
+      )}
 
       {/* --- UIレイヤー (ボトム) --- */}
       <div className="absolute z-10 bottom-0 w-full p-4 flex flex-col gap-4 pointer-events-auto">
