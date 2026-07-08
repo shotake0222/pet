@@ -10,6 +10,7 @@ export default function Login() {
   const [mode, setMode] = useState<'login' | 'signup'>('login');
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
+  const isSignupMode = mode === 'signup';
   const router = useRouter();
   const supabase = createClient();
 
@@ -112,19 +113,33 @@ export default function Login() {
 
   const handleGoogleLogin = async () => {
     setLoading(true);
-    setMessage(null);
+    setMessage({ text: 'Googleアカウント選択画面へ移動します…', type: 'success' });
+
     try {
-      const { error } = await supabase.auth.signInWithOAuth({
+      const { data, error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
           redirectTo: `${window.location.origin}/home`,
+          skipBrowserRedirect: true,
+          queryParams: {
+            access_type: 'offline',
+            prompt: 'consent',
+          },
         },
       });
+
       if (error) throw error;
-      // OAuth will redirect the user; in some environments it may return here.
+      if (data?.url) {
+        window.location.assign(data.url);
+        return;
+      }
+
+      throw new Error('Google認証の開始URLが取得できませんでした');
     } catch (error: any) {
-      setMessage({ text: error.message || 'Googleログインに失敗しました', type: 'error' });
-    } finally {
+      setMessage({
+        text: error?.message || 'Googleログインに失敗しました。Supabase の OAuth 設定に localhost / 本番URL が登録されているか確認してください。',
+        type: 'error',
+      });
       setLoading(false);
     }
   };
@@ -152,8 +167,12 @@ export default function Login() {
 
         <div className="space-y-6">
           <div className="rounded-2xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-800">
-            <p className="font-bold mb-1">初回ログインの案内</p>
-            <p>Googleログインが最も確実です。パスワードログインは、すでに登録済みのメールアドレスでのみ利用できます。初めての方は「初回登録」を選んでください。</p>
+            <p className="font-bold mb-1">{isSignupMode ? '初回登録モード' : 'ログインモード'}</p>
+            <p>
+              {isSignupMode
+                ? '初回登録では、メールアドレスとパスワードを入力して登録します。登録後は確認メールのリンクを開いてから利用できます。'
+                : 'Googleログインが最も確実です。パスワードログインは、すでに登録済みのメールアドレスでのみ利用できます。'}
+            </p>
           </div>
 
           {/* Google ログインボタン */}
@@ -223,7 +242,9 @@ export default function Login() {
             <button
               type="button"
               onClick={() => {
-                setMode(mode === 'login' ? 'signup' : 'login');
+                const nextMode = isSignupMode ? 'login' : 'signup';
+                setMode(nextMode);
+                setPassword('');
                 setMessage(null);
               }}
               className="w-full text-sm font-semibold text-slate-600 hover:text-slate-900 transition-colors"
