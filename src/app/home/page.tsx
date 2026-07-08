@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import Script from 'next/script';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/utils/supabase/client';
@@ -26,7 +26,7 @@ function getDistance(lat1: number, lon1: number, lat2: number, lon2: number) {
 export default function HomeAR() {
   const [tagCode, setTagCode] = useState<string | null>(null);
   const router = useRouter();
-  const supabase = createClient();
+  const supabase = useMemo(() => createClient(), []);
 
   useEffect(() => {
     setTagCode(new URLSearchParams(window.location.search).get('tag'));
@@ -52,6 +52,9 @@ export default function HomeAR() {
   const [isEgg, setIsEgg] = useState(true);
   const [isEggUnregistered, setIsEggUnregistered] = useState(false);
   const [walkDistance, setWalkDistance] = useState(0);
+  const [feedCount, setFeedCount] = useState(0);
+  const [landmarkVisitCount, setLandmarkVisitCount] = useState(0);
+  const [eventCount, setEventCount] = useState(0);
   const [level, setLevel] = useState(1);
   const [exp, setExp] = useState(0);
   
@@ -93,7 +96,10 @@ export default function HomeAR() {
   const [activeLandmark, setActiveLandmark] = useState<any | null>(null);
 
   const [sceneKey, setSceneKey] = useState(0);
-  const targetDistanceToHatch = 500;
+  const targetDistanceToHatch = 1200;
+  const targetFeedCount = 3;
+  const targetLandmarkVisits = 2;
+  const targetEventCount = 1;
 
   useEffect(() => { setIsClient(true); }, []);
 
@@ -236,6 +242,13 @@ export default function HomeAR() {
           const { data: inv } = await supabase.from('user_inventory').select('id, quantity, item_masters(*)').eq('user_id', pet.owner_id).gt('quantity', 0);
           if (inv) setInventory(inv);
 
+          const { count: feedLogCount } = await supabase.from('activity_logs').select('id', { count: 'exact', head: true }).eq('pet_id', pet.id).eq('action_type', 'feed');
+          if (feedLogCount !== null) setFeedCount(feedLogCount);
+          const { count: eventLogCount } = await supabase.from('activity_logs').select('id', { count: 'exact', head: true }).eq('pet_id', pet.id).eq('action_type', 'event');
+          if (eventLogCount !== null) setEventCount(eventLogCount);
+          const { count: landmarkCount } = await supabase.from('landmark_visits').select('id', { count: 'exact', head: true }).eq('user_id', pet.owner_id);
+          if (landmarkCount !== null) setLandmarkVisitCount(landmarkCount);
+
         } else {
           setIsEggUnregistered(true); setIsEgg(true); 
           setPetModelUrlV1('/models/eggs/default_egg.glb'); setPetMarkerUrl('/targets.mind');
@@ -254,6 +267,24 @@ export default function HomeAR() {
   const activeModelUrl = getCurrentModelUrl();
   const isSleeping = sleepingUntil ? new Date(sleepingUntil) > new Date() : false;
   const displayName = customName || petMasterName || '名無し';
+
+  const getLevelRequirement = (levelNumber: number) => ({
+    distance: targetDistanceToHatch * levelNumber,
+    feed: targetFeedCount * levelNumber,
+    landmark: targetLandmarkVisits * levelNumber,
+    event: targetEventCount * levelNumber,
+  });
+
+  const hatchProgress = {
+    distance: Math.min(1, walkDistance / targetDistanceToHatch),
+    feed: Math.min(1, feedCount / targetFeedCount),
+    landmark: Math.min(1, landmarkVisitCount / targetLandmarkVisits),
+    event: Math.min(1, eventCount / targetEventCount),
+  };
+  const isHatchReady = !isEggUnregistered && isEgg && petId && hatchProgress.distance >= 1 && hatchProgress.feed >= 1 && hatchProgress.landmark >= 1 && hatchProgress.event >= 1;
+  const nextLevelRequirements = getLevelRequirement(level);
+  const isNextLevelReady = !isEgg && petId && walkDistance >= nextLevelRequirements.distance && feedCount >= nextLevelRequirements.feed && landmarkVisitCount >= nextLevelRequirements.landmark && eventCount >= nextLevelRequirements.event;
+  const expNeededForNextLevel = level * 150;
 
   useEffect(() => {
     if (!lastFedAt || isEgg) return;
@@ -286,10 +317,20 @@ export default function HomeAR() {
   const currentMood = getCurrentMood();
 
   const addExperience = async (amount: number) => {
-    if (!petId || isEgg) return;
+    if (!petId) return;
     let newExp = exp + amount; let newLevel = level; let leveledUp = false;
-    const expNeeded = newLevel * 100;
-    if (newExp >= expNeeded) { newExp -= expNeeded; newLevel += 1; leveledUp = true; }
+    const expNeeded = newLevel * 150;
+    const nextRequirements = getLevelRequirement(newLevel);
+    if (newExp >= expNeeded) {
+      if (walkDistance >= nextRequirements.distance && feedCount >= nextRequirements.feed && landmarkVisitCount >= nextRequirements.landmark && eventCount >= nextRequirements.event) {
+        newExp -= expNeeded; newLevel += 1; leveledUp = true;
+      } else {
+        setExp(newExp);
+        await supabase.from('pets').update({ exp: newExp }).eq('id', petId);
+        return alert(`🌱 もうすぐレベルアップ！ でもまだ条件が揃っていません。
+必要: 歩行 ${nextRequirements.distance}m / 給餌 ${nextRequirements.feed}回 / ランドマーク ${nextRequirements.landmark}回 / イベント ${nextRequirements.event}回`);
+      }
+    }
     setExp(newExp); setLevel(newLevel);
     await supabase.from('pets').update({ exp: newExp, level: newLevel }).eq('id', petId);
     if (leveledUp) {
@@ -308,8 +349,9 @@ export default function HomeAR() {
           if (prevLocation) {
             const dist = getDistance(prevLocation.lat, prevLocation.lng, newLoc.lat, newLoc.lng);
             if (dist > 2 && dist < 50) {
-              const newDistance = walkDistance + dist; setWalkDistance(newDistance);
-              if (isEgg && petId) await supabase.from('pets').update({ walk_distance_m: newDistance }).eq('id', petId);
+              const newDistance = walkDistance + dist;
+              setWalkDistance(newDistance);
+              if (petId) await supabase.from('pets').update({ walk_distance_m: newDistance }).eq('id', petId);
             }
           }
           setPrevLocation(newLoc);
@@ -333,6 +375,8 @@ export default function HomeAR() {
       const handlePetTap = () => {
         playSound('tap');
         setAffection(prev => { const val = prev + 1; supabase.from('pets').update({ affection_level: val }).eq('id', petId).then(); return val; });
+        setEventCount(prev => prev + 1);
+        supabase.from('activity_logs').insert({ pet_id: petId, action_type: 'event', points_earned: 5 }).then();
         setActionAnim('*'); addExperience(5); setTimeout(() => setActionAnim(null), 1500);
       };
       petModel?.addEventListener('click', handlePetTap);
@@ -346,17 +390,20 @@ export default function HomeAR() {
       const result = await hatchPet(tagCode);
       if (result.success) {
         setPetId(result.pet.id); setOwnerId(result.pet.owner_id); 
-        setIsEgg(true); setIsEggUnregistered(false); setWalkDistance(0);
+        setIsEgg(true); setIsEggUnregistered(false); setWalkDistance(0); setFeedCount(0); setLandmarkVisitCount(0); setEventCount(0);
         // @ts-ignore
         setPetModelUrlV1(result.pet.pet_masters.model_url); setPetMarkerUrl(result.pet.pet_masters.marker_url || '/targets.mind'); setPetMasterName(result.pet.pet_masters.name);
         playSound('item');
-        alert(`不思議な卵を拾った！\nさんぽ機能で ${targetDistanceToHatch}m 歩いて孵化させよう！`);
+        alert(`不思議な卵を拾った！\nさんぽ、給餌、ランドマーク、イベントの全てをこなして孵化させよう！`);
       }
     } catch (err) { alert('エラーが発生しました。'); }
   };
 
   const handleHatchEgg = async () => {
     if (!petId) return;
+    if (!isHatchReady) {
+      return alert('まだ孵化条件が揃っていません。歩数・給餌・ランドマーク・イベントを全て満たしてから試してください。');
+    }
     playSound('hatch'); setIsEgg(false);
     const today = new Date().toISOString().split('T')[0];
     setBirthday(today); setLastFedAt(new Date().toISOString());
@@ -365,11 +412,14 @@ export default function HomeAR() {
   };
 
   const handleFeed = async () => {
-    if (!petId || isEgg || isSleeping) return;
+    if (!petId || isSleeping) return;
     playSound('eat'); setActionAnim('Eat'); setTimeout(() => setActionAnim(null), 2000);
-    const now = new Date().toISOString(); setLastFedAt(now); setHungerPercent(100);
-    await supabase.from('pets').update({ last_fed_at: now }).eq('id', petId);
+    setFeedCount(prev => prev + 1);
     await supabase.from('activity_logs').insert({ pet_id: petId, action_type: 'feed', points_earned: 10 });
+    if (!isEgg) {
+      const now = new Date().toISOString(); setLastFedAt(now); setHungerPercent(100);
+      await supabase.from('pets').update({ last_fed_at: now }).eq('id', petId);
+    }
     addExperience(20);
   };
 
@@ -381,8 +431,9 @@ export default function HomeAR() {
 
     if (item.item_type === 'food') {
       const newAffection = affection + item.effect_value; const now = new Date().toISOString();
-      setAffection(newAffection); setLastFedAt(now); setHungerPercent(100);
+      setAffection(newAffection); setLastFedAt(now); setHungerPercent(100); setFeedCount(prev => prev + 1);
       await supabase.from('pets').update({ affection_level: newAffection, last_fed_at: now }).eq('id', petId);
+      await supabase.from('activity_logs').insert({ pet_id: petId, action_type: 'feed', points_earned: item.effect_value || 20 });
       setActionAnim('Eat'); setTimeout(() => setActionAnim(null), 2000); addExperience(50); alert(`✨ ${item.name} をあげました！`);
     } else if (item.item_type === 'sleep') {
       const sleepEnd = new Date(); sleepEnd.setHours(sleepEnd.getHours() + item.effect_value);
@@ -416,6 +467,7 @@ export default function HomeAR() {
     const { error: visitError } = await supabase.from('landmark_visits').insert({ user_id: sessionUserId, landmark_id: activeLandmark.id, visited_date: today });
     if (visitError) return alert('今日は既に訪問済みです！');
     
+    setLandmarkVisitCount(prev => prev + 1);
     playSound('levelup');
     await supabase.from('activity_logs').insert({ pet_id: petId, action_type: 'landmark_visit', points_earned: activeLandmark.bonus_points });
     addExperience(100); alert(`🎉 ${activeLandmark.name} で ${activeLandmark.bonus_points} ポイント獲得！\n経験値が大幅にアップ！`);
@@ -434,26 +486,44 @@ export default function HomeAR() {
   // --- プロフィール設定（初回ログイン時） ---
   const handleProfileSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!sessionUserId) return;
+    if (!sessionUserId) {
+      alert('セッションが見つかりません。再度ログインしてください。');
+      return;
+    }
+
+    const birthYear = parseInt(inputBirthYear, 10);
+    if (Number.isNaN(birthYear) || birthYear < 1900 || birthYear > new Date().getFullYear()) {
+      alert('正しい誕生年を入力してください。');
+      return;
+    }
+
+    if (!inputGender) {
+      alert('性別を選択してください。');
+      return;
+    }
+
     setIsSetupSubmitting(true);
     try {
       const today = new Date().toLocaleDateString('sv-SE');
-      
-      await supabase.from('user_profiles').upsert({
+      const { error } = await supabase.from('user_profiles').upsert({
         id: sessionUserId,
-        birth_year: parseInt(inputBirthYear, 10),
+        birth_year: birthYear,
         gender: inputGender,
         email_notify_feed: true,
         email_notify_news: true,
-        last_login_date: today, 
+        last_login_date: today,
         login_days: 1
-      });
+      }, { onConflict: 'id' });
+
+      if (error) {
+        throw error;
+      }
 
       if (petId && inputNickname) {
         await supabase.from('pets').update({ custom_name: inputNickname }).eq('id', petId);
         setCustomName(inputNickname);
       }
-      
+
       setShowProfileSetup(false);
       alert('プロフィールを設定しました！');
 
@@ -463,9 +533,11 @@ export default function HomeAR() {
         showModal: true
       });
       playSound('levelup');
+      router.refresh();
 
-    } catch (err) {
-      alert('エラーが発生しました');
+    } catch (err: any) {
+      console.error('プロフィール保存エラー', err);
+      alert(err?.message || 'エラーが発生しました。');
     } finally {
       setIsSetupSubmitting(false);
     }
@@ -579,13 +651,20 @@ export default function HomeAR() {
           </div>
 
           {(isEgg && !isEggUnregistered) && (
-            <div className="bg-black/80 p-3 rounded-xl backdrop-blur-sm shadow-lg pointer-events-auto border border-yellow-500">
-              <div className="flex justify-between text-xs font-bold text-yellow-400 mb-1.5">
-                <span>🥚 孵化まであと {Math.max(0, targetDistanceToHatch - Math.floor(walkDistance))} m</span>
-                <span>{Math.floor((walkDistance / targetDistanceToHatch) * 100)}%</span>
+            <div className="bg-black/80 p-4 rounded-xl backdrop-blur-sm shadow-lg pointer-events-auto border border-yellow-500 space-y-3">
+              <div className="flex justify-between text-xs font-bold text-yellow-400">
+                <span>🥚 孵化条件</span>
+                <span>{isHatchReady ? '準備完了！' : 'あと少し...'}</span>
               </div>
-              <div className="w-full h-4 bg-gray-800 rounded-full overflow-hidden shadow-inner border border-gray-600">
-                <div className="h-full bg-gradient-to-r from-yellow-400 to-orange-500 transition-all duration-1000" style={{ width: `${Math.min(100, (walkDistance / targetDistanceToHatch) * 100)}%` }}></div>
+              <div className="space-y-2 text-xs text-white">
+                <div className="flex justify-between"><span>🚶 歩行 {Math.floor(walkDistance)} / {targetDistanceToHatch}m</span><span>{Math.floor(hatchProgress.distance * 100)}%</span></div>
+                <div className="w-full h-3 bg-gray-800 rounded-full overflow-hidden"><div className="h-full bg-yellow-400 transition-all duration-500" style={{ width: `${Math.min(100, hatchProgress.distance * 100)}%` }}></div></div>
+                <div className="flex justify-between"><span>🍚 給餌 {feedCount} / {targetFeedCount}回</span><span>{Math.floor(hatchProgress.feed * 100)}%</span></div>
+                <div className="w-full h-3 bg-gray-800 rounded-full overflow-hidden"><div className="h-full bg-orange-400 transition-all duration-500" style={{ width: `${Math.min(100, hatchProgress.feed * 100)}%` }}></div></div>
+                <div className="flex justify-between"><span>📍 ランドマーク {landmarkVisitCount} / {targetLandmarkVisits}回</span><span>{Math.floor(hatchProgress.landmark * 100)}%</span></div>
+                <div className="w-full h-3 bg-gray-800 rounded-full overflow-hidden"><div className="h-full bg-cyan-400 transition-all duration-500" style={{ width: `${Math.min(100, hatchProgress.landmark * 100)}%` }}></div></div>
+                <div className="flex justify-between"><span>✨ イベント {eventCount} / {targetEventCount}回</span><span>{Math.floor(hatchProgress.event * 100)}%</span></div>
+                <div className="w-full h-3 bg-gray-800 rounded-full overflow-hidden"><div className="h-full bg-pink-400 transition-all duration-500" style={{ width: `${Math.min(100, hatchProgress.event * 100)}%` }}></div></div>
               </div>
             </div>
           )}
@@ -601,8 +680,18 @@ export default function HomeAR() {
                 <div className="w-full h-2.5 bg-gray-800 rounded-full overflow-hidden shadow-inner"><div className="h-full bg-gradient-to-r from-pink-400 to-pink-600 transition-all duration-1000" style={{ width: `${motivationPercent}%` }}></div></div>
               </div>
               <div className="bg-black/60 p-2.5 rounded-xl backdrop-blur-sm shadow-lg pointer-events-auto border border-blue-500">
-                <div className="flex justify-between text-xs font-bold text-blue-200 mb-1.5"><span>🌟 Lv.{level}</span><span>EXP: {exp} / {level * 100}</span></div>
-                <div className="w-full h-2 bg-gray-800 rounded-full overflow-hidden shadow-inner"><div className="h-full bg-blue-500 transition-all duration-500" style={{ width: `${(exp / (level * 100)) * 100}%` }}></div></div>
+                <div className="flex justify-between text-xs font-bold text-blue-200 mb-1.5"><span>🌟 Lv.{level}</span><span>EXP: {exp} / {expNeededForNextLevel}</span></div>
+                <div className="w-full h-2 bg-gray-800 rounded-full overflow-hidden shadow-inner"><div className="h-full bg-blue-500 transition-all duration-500" style={{ width: `${(exp / expNeededForNextLevel) * 100}%` }}></div></div>
+              </div>
+              <div className="bg-black/70 p-3 rounded-xl shadow-lg pointer-events-auto border border-indigo-500 space-y-3 text-xs text-white">
+                <div className="flex justify-between"><span>🚶 次の条件</span><span>{walkDistance} / {nextLevelRequirements.distance}m</span></div>
+                <div className="w-full h-3 bg-gray-800 rounded-full overflow-hidden"><div className="h-full bg-indigo-400 transition-all duration-500" style={{ width: `${Math.min(100, (walkDistance / nextLevelRequirements.distance) * 100)}%` }}></div></div>
+                <div className="flex justify-between"><span>🍚 給餌</span><span>{feedCount} / {nextLevelRequirements.feed}</span></div>
+                <div className="w-full h-3 bg-gray-800 rounded-full overflow-hidden"><div className="h-full bg-orange-400 transition-all duration-500" style={{ width: `${Math.min(100, (feedCount / nextLevelRequirements.feed) * 100)}%` }}></div></div>
+                <div className="flex justify-between"><span>📍 ランドマーク</span><span>{landmarkVisitCount} / {nextLevelRequirements.landmark}</span></div>
+                <div className="w-full h-3 bg-gray-800 rounded-full overflow-hidden"><div className="h-full bg-cyan-400 transition-all duration-500" style={{ width: `${Math.min(100, (landmarkVisitCount / nextLevelRequirements.landmark) * 100)}%` }}></div></div>
+                <div className="flex justify-between"><span>✨ イベント</span><span>{eventCount} / {nextLevelRequirements.event}</span></div>
+                <div className="w-full h-3 bg-gray-800 rounded-full overflow-hidden"><div className="h-full bg-pink-400 transition-all duration-500" style={{ width: `${Math.min(100, (eventCount / nextLevelRequirements.event) * 100)}%` }}></div></div>
               </div>
             </>
           )}
@@ -665,7 +754,7 @@ export default function HomeAR() {
           <button onClick={handleCreateEgg} className="bg-gradient-to-r from-yellow-400 to-orange-500 text-white p-4 rounded-2xl font-bold shadow-lg w-full animate-pulse text-lg border-4 border-yellow-200">🥚 不思議な卵を発見！<br/><span className="text-sm">タップして拾い上げる</span></button>
         )}
 
-        {viewMode === 'mindar' && isEgg && !isEggUnregistered && walkDistance >= targetDistanceToHatch && petId && (
+        {viewMode === 'mindar' && isEgg && !isEggUnregistered && isHatchReady && petId && (
           <button onClick={handleHatchEgg} className="bg-gradient-to-r from-pink-400 to-red-500 text-white p-4 rounded-2xl font-bold shadow-lg w-full animate-bounce text-lg border-4 border-pink-200">✨ 卵が割れそうだ！<br/><span className="text-sm">タップして孵化させる</span></button>
         )}
 

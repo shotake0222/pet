@@ -14,7 +14,33 @@ export default function Login() {
   const router = useRouter();
   const supabase = createClient();
 
+  const ensureUserProfile = async (userId: string) => {
+    const { data: existingProfile, error: queryError } = await supabase
+      .from('user_profiles')
+      .select('id')
+      .eq('id', userId)
+      .maybeSingle();
+
+    if (queryError) {
+      console.error('user_profiles query failed', queryError);
+      return;
+    }
+
+    if (!existingProfile) {
+      await supabase.from('user_profiles').insert({
+        id: userId,
+        email_notify_feed: true,
+        email_notify_news: true,
+        last_login_date: new Date().toLocaleDateString('sv-SE'),
+        login_days: 1,
+        is_admin: false
+      });
+    }
+  };
+
   const redirectToAppropriatePage = async (userId: string) => {
+    await ensureUserProfile(userId);
+
     const { data: profile, error } = await supabase
       .from('user_profiles')
       .select('is_admin')
@@ -79,6 +105,7 @@ export default function Login() {
         }
 
         if (data.session?.user) {
+          await ensureUserProfile(data.session.user.id);
           await redirectToAppropriatePage(data.session.user.id);
         } else {
           setMessage({ text: 'ログインに失敗しました', type: 'error' });
@@ -94,19 +121,17 @@ export default function Login() {
 
         if (error) throw error;
 
-        if (data.session?.user) {
-          await redirectToAppropriatePage(data.session.user.id);
-        } else if (data.user?.identities?.length === 0) {
-          setMessage({
-            text: 'そのメールアドレスはすでに登録済みです。ログインモードでお試しください。',
-            type: 'error',
-          });
-        } else {
-          setMessage({
-            text: '登録を受け付けました。ログインできるようになるまで少しお待ちください。',
-            type: 'success',
-          });
+        const userId = data.session?.user?.id || data.user?.id;
+        if (userId) {
+          await ensureUserProfile(userId);
+          await redirectToAppropriatePage(userId);
+          return;
         }
+
+        setMessage({
+          text: '登録を受け付けました。ログインできるようになるまで少しお待ちください。',
+          type: 'success',
+        });
       }
     } catch (error: any) {
       const messageText = error?.message || (mode === 'login' ? 'ログインに失敗しました' : '登録に失敗しました');
