@@ -68,6 +68,25 @@ export default function Login() {
     }
   };
 
+  const handleGoogleLogin = async () => {
+    setLoading(true);
+    setMessage(null);
+    try {
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: `${window.location.origin}/home`,
+        },
+      });
+      if (error) throw error;
+      // OAuth will redirect the user; in some environments it may return here.
+    } catch (error: any) {
+      setMessage({ text: error.message || 'Googleログインに失敗しました', type: 'error' });
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <div className="min-h-screen flex items-center justify-center bg-slate-100 p-4">
       {/* ログインカード */}
