@@ -12,7 +12,7 @@ const extractFilePath = (url: string | null) => {
 
 export default function AdminDashboard() {
   const supabase = createClient();
-  const [activeTab, setActiveTab] = useState<'pets' | 'landmarks' | 'items' | 'news' | 'users'>('pets');
+  const [activeTab, setActiveTab] = useState<'pets' | 'landmarks' | 'items' | 'news' | 'users' | 'settings'>('pets');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // --- 登録済みデータ一覧用のState ---
