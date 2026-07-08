@@ -96,9 +96,14 @@ export default function Login() {
 
         if (data.session?.user) {
           await redirectToAppropriatePage(data.session.user.id);
+        } else if (data.user?.identities?.length === 0) {
+          setMessage({
+            text: 'そのメールアドレスはすでに登録済みです。ログインモードでお試しください。',
+            type: 'error',
+          });
         } else {
           setMessage({
-            text: '登録用メールを送信しました。受信ボックスのリンクを開いてからログインしてください。',
+            text: '登録を受け付けました。ログインできるようになるまで少しお待ちください。',
             type: 'success',
           });
         }
@@ -170,8 +175,8 @@ export default function Login() {
             <p className="font-bold mb-1">{isSignupMode ? '初回登録モード' : 'ログインモード'}</p>
             <p>
               {isSignupMode
-                ? '初回登録では、メールアドレスとパスワードを入力して登録します。登録後は確認メールのリンクを開いてから利用できます。'
-                : 'Googleログインが最も確実です。パスワードログインは、すでに登録済みのメールアドレスでのみ利用できます。'}
+                ? '初回登録では、メールアドレスとパスワードを入力するだけでそのまま使い始められます。'
+                : 'Googleログインが最も確実です。メールアドレスとパスワードでもログインできます。'}
             </p>
           </div>
 
