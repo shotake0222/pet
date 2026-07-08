@@ -6,54 +6,63 @@ import { createClient } from '@/utils/supabase/client';
 
 export default function Login() {
   const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
   const router = useRouter();
   const supabase = createClient();
 
+  const redirectToAppropriatePage = async (userId: string) => {
+    const { data: profile, error } = await supabase
+      .from('user_profiles')
+      .select('is_admin')
+      .eq('id', userId)
+      .maybeSingle();
+
+    if (error) {
+      console.error('admin check failed', error);
+      router.push('/home');
+      return;
+    }
+
+    if (profile?.is_admin) {
+      router.push('/admin');
+    } else {
+      router.push('/home');
+    }
+  };
+
   useEffect(() => {
     const checkSession = async () => {
       const { data: { session } } = await supabase.auth.getSession();
-      if (session) {
-        router.push('/home');
+      if (session?.user) {
+        await redirectToAppropriatePage(session.user.id);
       }
     };
     checkSession();
   }, [router, supabase.auth]);
 
-  const handleGoogleLogin = async () => {
-    setLoading(true);
-    setMessage(null);
-    try {
-      const { error } = await supabase.auth.signInWithOAuth({
-        provider: 'google',
-        options: {
-          redirectTo: `${window.location.origin}/home`,
-        },
-      });
-      if (error) throw error;
-    } catch (error: any) {
-      setMessage({ text: error.message || 'Googleログインに失敗しました', type: 'error' });
-      setLoading(false);
-    }
-  };
-
-  const handleMagicLinkLogin = async (e: React.FormEvent) => {
+  const handleEmailLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!email) return;
+    if (!email || !password) {
+      setMessage({ text: 'メールアドレスとパスワードの両方を入力してください', type: 'error' });
+      return;
+    }
     setLoading(true);
     setMessage(null);
     try {
-      const { error } = await supabase.auth.signInWithOtp({
+      const { data, error } = await supabase.auth.signInWithPassword({
         email,
-        options: {
-          emailRedirectTo: `${window.location.origin}/home`,
-        },
+        password,
       });
       if (error) throw error;
-      setMessage({ text: 'ログイン用リンクをメールに送信しました。メールボックスをご確認ください。', type: 'success' });
+      if (data.session?.user) {
+        await redirectToAppropriatePage(data.session.user.id);
+      } else {
+        setMessage({ text: 'ログインに失敗しました', type: 'error' });
+      }
     } catch (error: any) {
-      setMessage({ text: error.message || 'メールの送信に失敗しました', type: 'error' });
+      setMessage({ text: error.message || 'ログインに失敗しました', type: 'error' });
     } finally {
       setLoading(false);
     }
@@ -104,8 +113,8 @@ export default function Login() {
             <div className="flex-grow border-t border-gray-200"></div>
           </div>
 
-          {/* マジックリンク ログインフォーム */}
-          <form onSubmit={handleMagicLinkLogin} className="space-y-4">
+          {/* メール／パスワードログインフォーム */}
+          <form onSubmit={handleEmailLogin} className="space-y-4">
             <div>
               <label htmlFor="email" className="block text-sm font-bold text-slate-700 mb-1.5 ml-1">メールアドレス</label>
               <input
@@ -114,6 +123,18 @@ export default function Login() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="you@example.com"
+                className="w-full border-2 border-gray-200 p-3.5 rounded-xl text-slate-900 bg-gray-50 focus:bg-white focus:ring-0 focus:border-blue-500 outline-none transition-all font-medium"
+                required
+              />
+            </div>
+            <div>
+              <label htmlFor="password" className="block text-sm font-bold text-slate-700 mb-1.5 ml-1">パスワード</label>
+              <input
+                id="password"
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="********"
                 className="w-full border-2 border-gray-200 p-3.5 rounded-xl text-slate-900 bg-gray-50 focus:bg-white focus:ring-0 focus:border-blue-500 outline-none transition-all font-medium"
                 required
               />
@@ -129,7 +150,7 @@ export default function Login() {
                   <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                 </svg>
               ) : (
-                'メールアドレスでログイン'
+                'ログイン'
               )}
             </button>
           </form>
