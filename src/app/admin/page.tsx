@@ -21,6 +21,8 @@ export default function AdminDashboard() {
   const [itemsList, setItemsList] = useState<any[]>([]);
   const [newsList, setNewsList] = useState<any[]>([]);
   const [usersList, setUsersList] = useState<any[]>([]);
+  const [raritiesList, setRaritiesList] = useState<any[]>([]);
+  const [attributesList, setAttributesList] = useState<any[]>([]);
 
   // --- ペット用State ---
   const [petName, setPetName] = useState('');
@@ -30,6 +32,14 @@ export default function AdminDashboard() {
   const [petModelV2File, setPetModelV2File] = useState<File | null>(null);     // 第2形態(Lv5)
   const [petModelV3File, setPetModelV3File] = useState<File | null>(null);     // 第3形態(Lv10)
   const [petMarkerFile, setPetMarkerFile] = useState<File | null>(null);
+  const [selectedAttributeIds, setSelectedAttributeIds] = useState<number[]>([]);
+  const [editingPetId, setEditingPetId] = useState<number | null>(null);
+  // --- 設定用State: レアリティ / 属性 ---
+  const [newRarityCode, setNewRarityCode] = useState('');
+  const [newRarityLabel, setNewRarityLabel] = useState('');
+  const [newRarityColor, setNewRarityColor] = useState('#ffffff');
+  const [newAttributeName, setNewAttributeName] = useState('');
+  const [newAttributeDesc, setNewAttributeDesc] = useState('');
 
   // --- ランドマーク用State ---
   const [landmarkName, setLandmarkName] = useState('');
@@ -54,24 +64,100 @@ export default function AdminDashboard() {
 
   // --- データの取得（一覧表示用） ---
   const fetchData = async () => {
-    const [petsRes, landmarksRes, itemsRes, newsRes, usersRes] = await Promise.all([
+    const [petsRes, landmarksRes, itemsRes, newsRes, usersRes, raritiesRes, attributesRes, petAttrsRes] = await Promise.all([
       supabase.from('pet_masters').select('*').order('id', { ascending: false }),
       supabase.from('landmarks').select('*').order('id', { ascending: false }),
       supabase.from('item_masters').select('*').order('id', { ascending: false }),
       supabase.from('announcements').select('*').order('published_at', { ascending: false }),
-      supabase.from('user_profiles').select('*').order('created_at', { ascending: false })
+      supabase.from('user_profiles').select('*').order('created_at', { ascending: false }),
+      supabase.from('rarities').select('*').order('id', { ascending: true }),
+      supabase.from('attributes').select('*').order('id', { ascending: true }),
+      supabase.from('pet_master_attributes').select('*')
     ]);
     
-    if (petsRes.data) setPetsList(petsRes.data);
+    if (petsRes.data) {
+      // pet_master_attributes を attributes と照合して各 pet に attributes 配列を付与
+      const petAttrs = (petAttrsRes && petAttrsRes.data) ? petAttrsRes.data : [];
+      const attributes = (attributesRes && attributesRes.data) ? attributesRes.data : [];
+      const attrById = new Map<number, any>(attributes.map((a: any) => [a.id, a]));
+      const petAttrMap: Record<number, any[]> = {};
+      petAttrs.forEach((r: any) => {
+        if (!petAttrMap[r.pet_master_id]) petAttrMap[r.pet_master_id] = [];
+        const a = attrById.get(r.attribute_id);
+        if (a) petAttrMap[r.pet_master_id].push(a);
+      });
+      setPetsList(petsRes.data.map((p: any) => ({ ...p, attributes: petAttrMap[p.id] || [] })));
+    }
     if (landmarksRes.data) setLandmarksList(landmarksRes.data);
     if (itemsRes.data) setItemsList(itemsRes.data);
     if (newsRes.data) setNewsList(newsRes.data);
     if (usersRes.data) setUsersList(usersRes.data);
+    if (raritiesRes && raritiesRes.data) setRaritiesList(raritiesRes.data);
+    if (attributesRes && attributesRes.data) setAttributesList(attributesRes.data);
   };
 
   useEffect(() => {
     fetchData();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // --- レアリティ / 属性: CRUD ハンドラ ---
+  const handleAddRarity = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newRarityCode || !newRarityLabel) return alert('コードとラベルを入力してください');
+    setIsSubmitting(true);
+    try {
+      const { error } = await supabase.from('rarities').insert({ code: newRarityCode, label: newRarityLabel, color: newRarityColor });
+      if (error) throw error;
+      setNewRarityCode(''); setNewRarityLabel(''); setNewRarityColor('#ffffff');
+      fetchData();
+      alert('レアリティを追加しました');
+    } catch (e: any) {
+      alert(`追加に失敗しました: ${e.message}`);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleDeleteRarity = async (id: number) => {
+    if (!window.confirm('このレアリティを削除しますか？既存のペットに影響が出る可能性があります')) return;
+    try {
+      const { error } = await supabase.from('rarities').delete().eq('id', id);
+      if (error) throw error;
+      fetchData();
+      alert('削除しました');
+    } catch (e: any) {
+      alert(`削除に失敗しました: ${e.message}`);
+    }
+  };
+
+  const handleAddAttribute = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newAttributeName) return alert('属性名を入力してください');
+    setIsSubmitting(true);
+    try {
+      const { error } = await supabase.from('attributes').insert({ name: newAttributeName, description: newAttributeDesc });
+      if (error) throw error;
+      setNewAttributeName(''); setNewAttributeDesc('');
+      fetchData();
+      alert('属性を追加しました');
+    } catch (e: any) {
+      alert(`追加に失敗しました: ${e.message}`);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleDeleteAttribute = async (id: number) => {
+    if (!window.confirm('この属性を削除しますか？')) return;
+    try {
+      const { error } = await supabase.from('attributes').delete().eq('id', id);
+      if (error) throw error;
+      fetchData();
+      alert('削除しました');
+    } catch (e: any) {
+      alert(`削除に失敗しました: ${e.message}`);
+    }
+  };
 
   // --- 共通: Storageアップロード関数 ---
   const uploadFile = async (file: File, folder: string) => {
@@ -88,34 +174,84 @@ export default function AdminDashboard() {
   // ==========================================
 
   // --- 1. ペットの総合登録（進化モデル対応） ---
-  const handleAddPet = async (e: React.FormEvent) => {
+  const handleSavePet = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!petModelFile || !petMarkerFile || !petName) return alert('必須項目が不足しています（名前、第1形態モデル、マーカー）');
     setIsSubmitting(true);
     try {
-      // 必須ファイルのアップロード
-      const modelUrl = await uploadFile(petModelFile, 'models');
-      const markerUrl = await uploadFile(petMarkerFile, 'markers');
-      
-      // 進化モデルが選択されていればアップロード
-      let modelV2Url = null;
-      let modelV3Url = null;
+      // ファイルアップロード/更新の扱い: 新しいファイルが選択されていればアップロードしてURLを更新
+      let modelUrl: string | null = null;
+      let modelV2Url: string | null = null;
+      let modelV3Url: string | null = null;
+      let markerUrl: string | null = null;
+
+      if (editingPetId) {
+        // 更新モード: 既存のレコードを取得して必要なフィールドだけ上書き
+        const { data: existing } = await supabase.from('pet_masters').select('*').eq('id', editingPetId).single();
+        modelUrl = existing?.model_url || null;
+        modelV2Url = existing?.model_url_v2 || null;
+        modelV3Url = existing?.model_url_v3 || null;
+        markerUrl = existing?.marker_url || null;
+      }
+
+      if (petModelFile) modelUrl = await uploadFile(petModelFile, 'models');
       if (petModelV2File) modelV2Url = await uploadFile(petModelV2File, 'models');
       if (petModelV3File) modelV3Url = await uploadFile(petModelV3File, 'models');
-      
-      const { error } = await supabase.from('pet_masters').insert({
-        name: petName,
-        model_url: modelUrl,
-        model_url_v2: modelV2Url,
-        model_url_v3: modelV3Url,
-        marker_url: markerUrl,
-        rarity: petRarity,
-        drop_weight: parseInt(petWeight, 10)
-      });
-      if (error) throw error;
+      if (petMarkerFile) markerUrl = await uploadFile(petMarkerFile, 'markers');
 
-      alert(`ペット「${petName}」をガチャのラインナップに登録しました！`);
+      if (editingPetId) {
+        // 更新
+        const updatePayload: any = {
+          name: petName,
+          rarity: petRarity,
+          drop_weight: parseInt(petWeight, 10)
+        };
+        if (modelUrl) updatePayload.model_url = modelUrl;
+        if (modelV2Url) updatePayload.model_url_v2 = modelV2Url;
+        if (modelV3Url) updatePayload.model_url_v3 = modelV3Url;
+        if (markerUrl) updatePayload.marker_url = markerUrl;
+
+        const { error: updateErr } = await supabase.from('pet_masters').update(updatePayload).eq('id', editingPetId);
+        if (updateErr) throw updateErr;
+
+        // 属性リレーションを置換: 既存削除して再挿入
+        const { error: delErr } = await supabase.from('pet_master_attributes').delete().eq('pet_master_id', editingPetId);
+        if (delErr) throw delErr;
+        if (selectedAttributeIds && selectedAttributeIds.length > 0) {
+          const rels = selectedAttributeIds.map(attrId => ({ pet_master_id: editingPetId, attribute_id: attrId }));
+          const { error: relErr } = await supabase.from('pet_master_attributes').insert(rels);
+          if (relErr) throw relErr;
+        }
+
+        alert(`ペット「${petName}」を更新しました`);
+      } else {
+        // 新規作成
+        if (!modelUrl || !markerUrl) throw new Error('モデルまたはマーカーのアップロードに失敗しました');
+        const { data: insertedPet, error: insertError } = await supabase.from('pet_masters').insert({
+          name: petName,
+          model_url: modelUrl,
+          model_url_v2: modelV2Url,
+          model_url_v3: modelV3Url,
+          marker_url: markerUrl,
+          rarity: petRarity,
+          drop_weight: parseInt(petWeight, 10)
+        }).select('id').single();
+        if (insertError) throw insertError;
+
+        const petMasterId = insertedPet?.id;
+        if (petMasterId && selectedAttributeIds && selectedAttributeIds.length > 0) {
+          const rels = selectedAttributeIds.map(attrId => ({ pet_master_id: petMasterId, attribute_id: attrId }));
+          const { error: relErr } = await supabase.from('pet_master_attributes').insert(rels);
+          if (relErr) throw relErr;
+        }
+
+        alert(`ペット「${petName}」をガチャのラインナップに登録しました！`);
+      }
+
+      // リセット
       setPetName(''); setPetModelFile(null); setPetModelV2File(null); setPetModelV3File(null); setPetMarkerFile(null);
+      setSelectedAttributeIds([]);
+      setEditingPetId(null);
       fetchData();
     } catch (e: any) {
       alert(`エラー: ${e.message}`);
@@ -284,7 +420,7 @@ export default function AdminDashboard() {
       
       {/* タブ切り替え */}
       <div className="flex gap-2 mb-8 overflow-x-auto pb-2">
-        {(['pets', 'landmarks', 'items', 'news', 'users'] as const).map(tab => (
+        {(['pets', 'landmarks', 'items', 'news', 'users', 'settings'] as const).map(tab => (
           <button 
             key={tab} 
             onClick={() => setActiveTab(tab)} 
@@ -295,6 +431,7 @@ export default function AdminDashboard() {
             {tab === 'items' && '🛒 アイテム管理'}
             {tab === 'news' && '📢 お知らせ管理'}
             {tab === 'users' && '👥 ユーザー属性'}
+            {tab === 'settings' && '⚙️ 設定 (レアリティ/属性)'}
           </button>
         ))}
       </div>
@@ -307,6 +444,7 @@ export default function AdminDashboard() {
           {activeTab === 'pets' && (
             <form onSubmit={handleAddPet} className="space-y-5 bg-gray-50 p-6 rounded-2xl border border-gray-100">
               <h2 className="text-xl font-bold">新規ペット登録</h2>
+              {editingPetId && <div className="text-sm text-yellow-700 mb-2">編集中: ID {editingPetId} — 変更が終わったら保存してください</div>}
               <div>
                 <label className="block text-sm font-bold mb-1">ペットの名前</label>
                 <input type="text" value={petName} onChange={e => setPetName(e.target.value)} className="w-full border p-3 rounded-lg focus:ring-2 focus:ring-blue-500" required />
@@ -315,11 +453,37 @@ export default function AdminDashboard() {
                 <div className="flex-1">
                   <label className="block text-sm font-bold mb-1">レアリティ</label>
                   <select value={petRarity} onChange={e => setPetRarity(e.target.value)} className="w-full border p-3 rounded-lg focus:ring-2 focus:ring-blue-500">
-                    <option value="N">N (ノーマル)</option>
-                    <option value="R">R (レア)</option>
-                    <option value="SR">SR (スーパーレア)</option>
-                    <option value="UR">UR (激レア)</option>
+                    {raritiesList && raritiesList.length > 0 ? (
+                      raritiesList.map(r => (
+                        <option key={r.id} value={r.code}>{r.code} {r.label ? `(${r.label})` : ''}</option>
+                      ))
+                    ) : (
+                      <>
+                        <option value="N">N (ノーマル)</option>
+                        <option value="R">R (レア)</option>
+                        <option value="SR">SR (スーパーレア)</option>
+                        <option value="UR">UR (激レア)</option>
+                      </>
+                    )}
                   </select>
+                </div>
+                <div className="flex-1">
+                  <label className="block text-sm font-bold mb-1">属性 (複数選択可)</label>
+                  <div className="w-full border p-3 rounded-lg bg-white max-h-40 overflow-y-auto">
+                    {attributesList && attributesList.length > 0 ? (
+                      attributesList.map(a => (
+                        <label key={a.id} className="flex items-center gap-2 text-sm mb-2">
+                          <input type="checkbox" checked={selectedAttributeIds.includes(a.id)} onChange={e => {
+                            if (e.target.checked) setSelectedAttributeIds(prev => [...prev, a.id]);
+                            else setSelectedAttributeIds(prev => prev.filter(id => id !== a.id));
+                          }} />
+                          <span>{a.name}{a.description ? ` — ${a.description}` : ''}</span>
+                        </label>
+                      ))
+                    ) : (
+                      <div className="text-xs text-gray-500">まだ属性が登録されていません</div>
+                    )}
+                  </div>
                 </div>
                 <div className="flex-1">
                   <label className="block text-sm font-bold mb-1">排出ウェイト</label>
@@ -347,9 +511,19 @@ export default function AdminDashboard() {
                 <input type="file" accept=".mind" onChange={e => setPetMarkerFile(e.target.files?.[0] || null)} className="w-full text-sm" required />
               </div>
 
-              <button disabled={isSubmitting} className="w-full bg-slate-900 text-white font-bold py-4 rounded-xl shadow-lg hover:bg-slate-800 disabled:bg-gray-400">
-                {isSubmitting ? '処理中...' : 'ペットを登録'}
-              </button>
+              <div className="flex gap-3">
+                <button disabled={isSubmitting} className="flex-1 bg-slate-900 text-white font-bold py-4 rounded-xl shadow-lg hover:bg-slate-800 disabled:bg-gray-400">
+                  {isSubmitting ? '処理中...' : (editingPetId ? '変更を保存' : 'ペットを登録')}
+                </button>
+                {editingPetId && (
+                  <button type="button" onClick={() => {
+                    // 編集キャンセル
+                    setEditingPetId(null);
+                    setPetName(''); setPetRarity('N'); setPetWeight('100'); setSelectedAttributeIds([]);
+                    setPetModelFile(null); setPetModelV2File(null); setPetModelV3File(null); setPetMarkerFile(null);
+                  }} className="bg-gray-200 text-gray-700 font-bold py-4 px-4 rounded-xl">キャンセル</button>
+                )}
+              </div>
             </form>
           )}
 
@@ -498,13 +672,34 @@ export default function AdminDashboard() {
                     {pet.model_url_v3 && <a href={pet.model_url_v3} target="_blank" rel="noreferrer" className="text-blue-500 hover:underline">V3モデル(Lv10)</a>}
                     <a href={pet.marker_url} target="_blank" rel="noreferrer" className="text-blue-500 hover:underline">マーカー</a>
                   </div>
+                  {/* 属性バッジ表示 */}
+                  {pet.attributes && pet.attributes.length > 0 && (
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {pet.attributes.map((a: any) => (
+                        <span key={a.id} className="text-xs px-2 py-1 rounded-full bg-gray-100 border text-gray-700" style={{ background: a.color || undefined }}>{a.name}</span>
+                      ))}
+                    </div>
+                  )}
                 </div>
-                <button 
-                  onClick={() => handleDeletePet(pet.id, pet.model_url, pet.marker_url, pet.model_url_v2, pet.model_url_v3)}
-                  className="bg-red-50 text-red-600 font-bold px-4 py-2 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-100"
-                >
-                  削除
-                </button>
+                <div className="flex gap-2">
+                  <button onClick={() => {
+                    // 編集を開始
+                    setActiveTab('pets');
+                    setEditingPetId(pet.id);
+                    setPetName(pet.name || '');
+                    setPetRarity(pet.rarity || 'N');
+                    setPetWeight(String(pet.drop_weight || 100));
+                    setSelectedAttributeIds((pet.attributes || []).map((a: any) => a.id));
+                    // ファイルは再選択が必要なのでクリア
+                    setPetModelFile(null); setPetModelV2File(null); setPetModelV3File(null); setPetMarkerFile(null);
+                  }} className="bg-blue-50 text-blue-600 font-bold px-4 py-2 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity hover:bg-blue-100">編集</button>
+                  <button 
+                    onClick={() => handleDeletePet(pet.id, pet.model_url, pet.marker_url, pet.model_url_v2, pet.model_url_v3)}
+                    className="bg-red-50 text-red-600 font-bold px-4 py-2 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-100"
+                  >
+                    削除
+                  </button>
+                </div>
               </div>
             ))}
 
@@ -600,6 +795,79 @@ export default function AdminDashboard() {
             )}
           </div>
         </div>
+        {/* --- 設定タブ: レアリティ / 属性 管理 --- */}
+        {activeTab === 'settings' && (
+          <div className="col-span-1 lg:col-span-2 bg-white p-6 rounded-2xl border border-gray-100">
+            <h2 className="text-xl font-bold mb-4">⚙️ レアリティ / 属性 管理</h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="bg-gray-50 p-4 rounded-xl border">
+                <h3 className="font-bold mb-3">レアリティを追加</h3>
+                <form onSubmit={handleAddRarity} className="space-y-3">
+                  <div>
+                    <label className="text-sm font-bold">コード (例: N,R,SR)</label>
+                    <input value={newRarityCode} onChange={e => setNewRarityCode(e.target.value)} className="w-full border p-2 rounded" />
+                  </div>
+                  <div>
+                    <label className="text-sm font-bold">ラベル</label>
+                    <input value={newRarityLabel} onChange={e => setNewRarityLabel(e.target.value)} className="w-full border p-2 rounded" />
+                  </div>
+                  <div>
+                    <label className="text-sm font-bold">カラー (任意)</label>
+                    <input type="color" value={newRarityColor} onChange={e => setNewRarityColor(e.target.value)} className="w-24 h-10 p-1" />
+                  </div>
+                  <button disabled={isSubmitting} className="bg-slate-900 text-white px-4 py-2 rounded mt-2">追加</button>
+                </form>
+
+                <div className="mt-6">
+                  <h4 className="font-bold mb-2">登録済みレアリティ</h4>
+                  <div className="space-y-2">
+                    {raritiesList.length === 0 && <div className="text-sm text-gray-500">まだ登録されていません</div>}
+                    {raritiesList.map(r => (
+                      <div key={r.id} className="flex items-center justify-between bg-white p-2 rounded border">
+                        <div className="flex items-center gap-3">
+                          <div style={{ width: 18, height: 18, background: r.color || '#ddd', borderRadius: 4 }} />
+                          <div className="text-sm">{r.code} {r.label ? `- ${r.label}` : ''}</div>
+                        </div>
+                        <button onClick={() => handleDeleteRarity(r.id)} className="text-red-600 text-sm">削除</button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-gray-50 p-4 rounded-xl border">
+                <h3 className="font-bold mb-3">属性を追加</h3>
+                <form onSubmit={handleAddAttribute} className="space-y-3">
+                  <div>
+                    <label className="text-sm font-bold">属性名</label>
+                    <input value={newAttributeName} onChange={e => setNewAttributeName(e.target.value)} className="w-full border p-2 rounded" />
+                  </div>
+                  <div>
+                    <label className="text-sm font-bold">説明 (任意)</label>
+                    <input value={newAttributeDesc} onChange={e => setNewAttributeDesc(e.target.value)} className="w-full border p-2 rounded" />
+                  </div>
+                  <button disabled={isSubmitting} className="bg-slate-900 text-white px-4 py-2 rounded mt-2">追加</button>
+                </form>
+
+                <div className="mt-6">
+                  <h4 className="font-bold mb-2">登録済み属性</h4>
+                  <div className="space-y-2">
+                    {attributesList.length === 0 && <div className="text-sm text-gray-500">まだ登録されていません</div>}
+                    {attributesList.map(a => (
+                      <div key={a.id} className="flex items-center justify-between bg-white p-2 rounded border">
+                        <div>
+                          <div className="text-sm font-bold">{a.name}</div>
+                          {a.description && <div className="text-xs text-gray-500">{a.description}</div>}
+                        </div>
+                        <button onClick={() => handleDeleteAttribute(a.id)} className="text-red-600 text-sm">削除</button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

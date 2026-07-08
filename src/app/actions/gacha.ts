@@ -45,7 +45,7 @@ export async function hatchPet(tagCode: string) {
       species_id: winner.id,
       status: 'active'
     })
-    .select('*, pet_masters(name, model_url)')
+    .select('*, pet_masters(name, model_url, rarity, model_url_v2, model_url_v3, marker_url)')
     .single();
 
   if (error) throw error;

@@ -1,31 +1,65 @@
-import { createClient } from '@/utils/supabase/server';
-import { redirect } from 'next/navigation';
+"use client";
 
-export default async function AdminLayout({ children }: { children: React.ReactNode }) {
-  const supabase = await createClient();
-  
-  // 1. ログイン状態の確認
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) redirect('/login');
+import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { createClient } from '@/utils/supabase/client';
 
-  // 2. 管理者権限の確認
-  const { data: profile } = await supabase
-    .from('user_profiles')
-    .select('is_admin')
-    .eq('id', user.id)
-    .single();
+export default function AdminLayout({ children }: { children: React.ReactNode }) {
+  const router = useRouter();
+  const supabase = createClient();
+  const [checking, setChecking] = useState(true);
 
-  if (!profile?.is_admin) {
-    // 管理者でなければホーム画面へ強制送還
-    redirect('/home');
+  useEffect(() => {
+    let mounted = true;
+    const ensureAdmin = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        const user = session?.user;
+        if (!user) {
+          router.replace('/login');
+          return;
+        }
+
+        const { data: profile, error } = await supabase
+          .from('user_profiles')
+          .select('is_admin')
+          .eq('id', user.id)
+          .maybeSingle();
+
+        if (error) {
+          console.error('admin check failed', error);
+          router.replace('/home');
+          return;
+        }
+
+        if (!profile?.is_admin) {
+          router.replace('/home');
+          return;
+        }
+      } catch (e) {
+        router.replace('/login');
+        return;
+      } finally {
+        if (mounted) setChecking(false);
+      }
+    };
+
+    ensureAdmin();
+    return () => { mounted = false };
+  }, [router, supabase]);
+
+  if (checking) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center text-gray-500">認証情報を確認しています…</div>
+      </div>
+    );
   }
 
-  // 管理者のみが以下のchildren（ダッシュボード画面）を描画できる
   return (
     <div>
       <header>
         <h1>🔧 Straid AR 管理ダッシュボード</h1>
-        <p>ログイン中: {user.email}</p>
       </header>
       <main>{children}</main>
     </div>

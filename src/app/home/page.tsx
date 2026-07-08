@@ -62,6 +62,9 @@ export default function HomeAR() {
   const [petModelUrlV2, setPetModelUrlV2] = useState<string | null>(null);
   const [petModelUrlV3, setPetModelUrlV3] = useState<string | null>(null);
   const [petMarkerUrl, setPetMarkerUrl] = useState<string>('/targets.mind'); 
+  const [petRarity, setPetRarity] = useState<'N'|'R'|'SR'|'UR'|'?'>('?');
+  const [hatchOverlay, setHatchOverlay] = useState<{ active: boolean; particles: any[]; rarity: string } | null>(null);
+  const [hatchAnimating, setHatchAnimating] = useState(false);
 
   // --- インベントリ ＆ ショップ ---
   const [inventory, setInventory] = useState<any[]>([]);
@@ -221,7 +224,7 @@ export default function HomeAR() {
           .select(`
             id, owner_id, affection_level, sleeping_until, last_fed_at, 
             is_egg, walk_distance_m, level, exp, custom_name, birthday,
-            pet_masters(name, model_url, model_url_v2, model_url_v3, marker_url), 
+            pet_masters(name, model_url, model_url_v2, model_url_v3, marker_url, rarity), 
             nfc_tags!inner(tag_code)
           `)
           .eq('nfc_tags.tag_code', tagCode)
@@ -236,7 +239,15 @@ export default function HomeAR() {
           // @ts-ignore
           if (pet.pet_masters) { 
             // @ts-ignore
-            setPetModelUrlV1(pet.pet_masters.model_url); setPetModelUrlV2(pet.pet_masters.model_url_v2); setPetModelUrlV3(pet.pet_masters.model_url_v3); setPetMarkerUrl(pet.pet_masters.marker_url || '/targets.mind'); setPetMasterName(pet.pet_masters.name); 
+            const pm = pet.pet_masters || {};
+            const rarityPm = pm.rarity || '?';
+            const fallbackBase = `/models/pet/${rarityPm}`;
+            setPetModelUrlV1(pm.model_url || `${fallbackBase}/v1.glb`);
+            setPetModelUrlV2(pm.model_url_v2 || `${fallbackBase}/v2.glb`);
+            setPetModelUrlV3(pm.model_url_v3 || `${fallbackBase}/v3.glb`);
+            setPetMarkerUrl(pm.marker_url || '/targets.mind');
+            setPetMasterName(pm.name || '不明');
+            setPetRarity(rarityPm);
           }
 
           const { data: inv } = await supabase.from('user_inventory').select('id, quantity, item_masters(*)').eq('user_id', pet.owner_id).gt('quantity', 0);
@@ -316,6 +327,47 @@ export default function HomeAR() {
   };
   const currentMood = getCurrentMood();
 
+  // --- 孵化エフェクト表示ロジック ---
+  const showHatchEffect = (rarity: string) => {
+    return new Promise<void>((resolve) => {
+      const multiplier = rarity === 'UR' ? 3 : rarity === 'SR' ? 2 : rarity === 'R' ? 1.5 : 1;
+      const base = 12;
+      const count = Math.min(120, Math.floor(base * multiplier * (rarity === 'UR' ? 2.5 : 1)));
+      const colors = {
+        N: ['#E5E7EB', '#F9FAFB'],
+        R: ['#FDE68A', '#FCA5A5', '#FBCFE8'],
+        SR: ['#C7A3FF', '#FDE68A', '#FECACA', '#A7F3D0'],
+        UR: ['#FFD700', '#FF73FA', '#7CF0FF', '#FF9F1C']
+      } as Record<string, string[]>;
+
+      const particles = Array.from({ length: count }).map((_, i) => {
+        const angle = (Math.random() - 0.5) * Math.PI * 2;
+        const distance = 80 + Math.random() * (rarity === 'UR' ? 360 : rarity === 'SR' ? 260 : rarity === 'R' ? 180 : 120);
+        return {
+          id: `${Date.now()}_${i}`,
+          dx: Math.cos(angle) * distance,
+          dy: Math.sin(angle) * distance - (Math.random() * 80),
+          color: (colors[rarity as keyof typeof colors] || colors.N)[Math.floor(Math.random() * ((colors[rarity as keyof typeof colors] || colors.N).length))],
+          size: 6 + Math.random() * (rarity === 'UR' ? 12 : rarity === 'SR' ? 10 : 6),
+          duration: 700 + Math.random() * (rarity === 'UR' ? 1200 : 800)
+        };
+      });
+
+      setHatchOverlay({ active: true, particles, rarity });
+      // launch animation on next tick
+      setTimeout(() => {
+        setHatchOverlay(prev => prev ? { ...prev, particles: prev.particles.map(p => ({ ...p, launched: true })) } : prev);
+      }, 40);
+
+      // cleanup after max duration
+      const maxDuration = Math.max(...particles.map(p => p.duration)) + 300;
+      setTimeout(() => {
+        setHatchOverlay(null);
+        resolve();
+      }, maxDuration);
+    });
+  };
+
   const addExperience = async (amount: number) => {
     if (!petId) return;
     let newExp = exp + amount; let newLevel = level; let leveledUp = false;
@@ -392,7 +444,15 @@ export default function HomeAR() {
         setPetId(result.pet.id); setOwnerId(result.pet.owner_id); 
         setIsEgg(true); setIsEggUnregistered(false); setWalkDistance(0); setFeedCount(0); setLandmarkVisitCount(0); setEventCount(0);
         // @ts-ignore
-        setPetModelUrlV1(result.pet.pet_masters.model_url); setPetMarkerUrl(result.pet.pet_masters.marker_url || '/targets.mind'); setPetMasterName(result.pet.pet_masters.name);
+        const pm = result.pet.pet_masters || {};
+        const rarityRes = pm.rarity || '?';
+        const fallbackBase = `/models/pet/${rarityRes}`;
+        setPetModelUrlV1(pm.model_url || `${fallbackBase}/v1.glb`);
+        setPetModelUrlV2(pm.model_url_v2 || `${fallbackBase}/v2.glb`);
+        setPetModelUrlV3(pm.model_url_v3 || `${fallbackBase}/v3.glb`);
+        setPetMarkerUrl(pm.marker_url || '/targets.mind');
+        setPetMasterName(pm.name || '不明');
+        setPetRarity(rarityRes);
         playSound('item');
         alert(`不思議な卵を拾った！\nさんぽ、給餌、ランドマーク、イベントの全てをこなして孵化させよう！`);
       }
@@ -404,11 +464,29 @@ export default function HomeAR() {
     if (!isHatchReady) {
       return alert('まだ孵化条件が揃っていません。歩数・給餌・ランドマーク・イベントを全て満たしてから試してください。');
     }
-    playSound('hatch'); setIsEgg(false);
-    const today = new Date().toISOString().split('T')[0];
-    setBirthday(today); setLastFedAt(new Date().toISOString());
-    await supabase.from('pets').update({ is_egg: false, last_fed_at: new Date().toISOString(), birthday: today }).eq('id', petId);
-    alert(`✨ おめでとう！\n卵から ${displayName} が生まれました！`);
+    playSound('hatch');
+    // 視覚エフェクトを表示してから孵化処理を続ける
+    try {
+      await showHatchEffect(petRarity);
+    } catch (e) {
+      // エフェクト失敗しても孵化は続行
+    }
+
+    // モデル切替のために一旦シーンキーを更新して a-scene を再レンダ
+    setIsEgg(false);
+    setSceneKey(prev => prev + 1);
+    // 孵化アニメーション（スケール）をトリガー
+    setHatchAnimating(true);
+    // レアリティ別の演出音
+    if (petRarity === 'SR' || petRarity === 'UR') playSound('levelup');
+    // アニメーション終了後にDB更新・通知
+    setTimeout(async () => {
+      const today = new Date().toISOString().split('T')[0];
+      setBirthday(today); setLastFedAt(new Date().toISOString());
+      await supabase.from('pets').update({ is_egg: false, last_fed_at: new Date().toISOString(), birthday: today }).eq('id', petId);
+      setHatchAnimating(false);
+      alert(`✨ おめでとう！\n卵から ${displayName} が生まれました！`);
+    }, 900);
   };
 
   const handleFeed = async () => {
@@ -551,6 +629,32 @@ export default function HomeAR() {
       <Script src="https://cdn.jsdelivr.net/gh/c-frame/aframe-extras@7.2.0/dist/aframe-extras.min.js" strategy="beforeInteractive" />
       <Script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-aframe.prod.js" strategy="beforeInteractive" />
       <Script src="https://raw.githack.com/AR-js-org/AR.js/master/aframe/build/aframe-ar-nft.js" strategy="beforeInteractive" />
+
+      {/* --- 孵化エフェクトオーバーレイ --- */}
+      {hatchOverlay?.active && (
+        <div className="pointer-events-none fixed inset-0 z-50 overflow-hidden">
+          {hatchOverlay.particles.map((p: any) => (
+            <div
+              key={p.id}
+              style={{
+                position: 'absolute',
+                left: '50%',
+                top: '50%',
+                width: p.size,
+                height: p.size,
+                background: p.color,
+                borderRadius: '50%',
+                transform: p.launched ? `translate(calc(-50% + ${p.dx}px), calc(-50% + ${p.dy}px)) scale(1)` : 'translate(-50%,-50%) scale(0.2)',
+                opacity: p.launched ? 0 : 1,
+                transition: `transform ${p.duration}ms cubic-bezier(.2,.8,.2,1), opacity ${p.duration}ms linear`
+              }}
+            />
+          ))}
+          <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-center text-white drop-shadow-2xl pointer-events-none">
+            <div className="text-3xl font-extrabold">{hatchOverlay.rarity === 'UR' ? '🌈 UR!' : hatchOverlay.rarity === 'SR' ? '✨ SR' : hatchOverlay.rarity === 'R' ? '⭐ R' : 'N'}</div>
+          </div>
+        </div>
+      )}
 
       {/* --- 初回プロフィール設定モーダル --- */}
       {showProfileSetup && (
@@ -800,7 +904,17 @@ export default function HomeAR() {
             {/* @ts-ignore */}
             <a-entity mindar-image-target="targetIndex: 0">
               {/* @ts-ignore */}
-              <a-gltf-model id="pet-model" class={(!isEgg && !isSleeping) ? "clickable" : ""} rotation="0 0 0" position="0 0 0" scale="0.5 0.5 0.5" src={activeModelUrl} shadow="cast: true; receive: true" animation-mixer={isEgg ? "" : `clip: ${actionAnim || currentMood.clip}; loop: ${actionAnim ? 'once' : 'repeat'}; timeScale: ${actionAnim === '*' ? 1.5 : 1.0}; crossFadeDuration: 0.3;`}></a-gltf-model>
+              <a-gltf-model
+                id="pet-model"
+                class={(!isEgg && !isSleeping) ? "clickable" : ""}
+                rotation="0 0 0"
+                position="0 0 0"
+                scale={hatchAnimating ? "0.1 0.1 0.1" : "0.5 0.5 0.5"}
+                src={activeModelUrl}
+                shadow="cast: true; receive: true"
+                animation-mixer={isEgg ? "" : `clip: ${actionAnim || currentMood.clip}; loop: ${actionAnim ? 'once' : 'repeat'}; timeScale: ${actionAnim === '*' ? 1.5 : 1.0}; crossFadeDuration: 0.3;`}
+                animation={hatchAnimating ? `property: scale; to: 0.5 0.5 0.5; dur: 800; easing: easeOutElastic;` : undefined}
+              ></a-gltf-model>
             </a-entity>
           </a-scene>
         )}
