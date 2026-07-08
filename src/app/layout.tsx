@@ -1,41 +1,19 @@
-import type { Metadata, Viewport } from "next";
-import { Inter } from "next/font/google";
-import "./globals.css";
+import './globals.css'; // ← ★これが一番重要です！Tailwindを読み込む記述
+import type { Metadata } from 'next';
 
-const inter = Inter({ subsets: ["latin"] });
-
-// --- 【追加】PWA用のメタデータ ---
 export const metadata: Metadata = {
-  title: "Straid AR",
-  description: "NFCとGPSで遊べるAR育成ゲーム",
-  manifest: "/manifest.json",
-  appleWebApp: {
-    capable: true,
-    statusBarStyle: "black-translucent",
-    title: "Straid AR",
-  },
-  formatDetection: {
-    telephone: false,
-  },
-};
-
-// --- 【追加】ビューポート（フルスクリーン＆ピンチズーム防止） ---
-export const viewport: Viewport = {
-  themeColor: "#0f172a",
-  width: "device-width",
-  initialScale: 1,
-  maximumScale: 1,
-  userScalable: false,
+  title: 'Straid AR',
+  description: 'AR Pet App',
 };
 
 export default function RootLayout({
   children,
-}: Readonly<{
+}: {
   children: React.ReactNode;
-}>) {
+}) {
   return (
     <html lang="ja">
-      <body className={inter.className}>{children}</body>
+      <body>{children}</body>
     </html>
   );
 }
