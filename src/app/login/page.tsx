@@ -7,6 +7,7 @@ import { createClient } from '@/utils/supabase/client';
 export default function Login() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [mode, setMode] = useState<'login' | 'signup'>('login');
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
   const router = useRouter();
@@ -42,27 +43,68 @@ export default function Login() {
     checkSession();
   }, [router, supabase.auth]);
 
-  const handleEmailLogin = async (e: React.FormEvent) => {
+  const handlePasswordAuth = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!email || !password) {
       setMessage({ text: 'メールアドレスとパスワードの両方を入力してください', type: 'error' });
       return;
     }
+
+    if (password.length < 6) {
+      setMessage({ text: 'パスワードは6文字以上で入力してください', type: 'error' });
+      return;
+    }
+
     setLoading(true);
     setMessage(null);
+
     try {
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      });
-      if (error) throw error;
-      if (data.session?.user) {
-        await redirectToAppropriatePage(data.session.user.id);
+      if (mode === 'login') {
+        const { data, error } = await supabase.auth.signInWithPassword({
+          email,
+          password,
+        });
+
+        if (error) {
+          if (error.message?.includes('Invalid login credentials')) {
+            setMessage({
+              text: 'ログインに失敗しました。初回利用の場合は「初回登録」を選んでください。既に登録済みの方はメールアドレスとパスワードを確認してください。',
+              type: 'error',
+            });
+          } else {
+            throw error;
+          }
+          return;
+        }
+
+        if (data.session?.user) {
+          await redirectToAppropriatePage(data.session.user.id);
+        } else {
+          setMessage({ text: 'ログインに失敗しました', type: 'error' });
+        }
       } else {
-        setMessage({ text: 'ログインに失敗しました', type: 'error' });
+        const { data, error } = await supabase.auth.signUp({
+          email,
+          password,
+          options: {
+            emailRedirectTo: `${window.location.origin}/home`,
+          },
+        });
+
+        if (error) throw error;
+
+        if (data.session?.user) {
+          await redirectToAppropriatePage(data.session.user.id);
+        } else {
+          setMessage({
+            text: '登録用メールを送信しました。受信ボックスのリンクを開いてからログインしてください。',
+            type: 'success',
+          });
+        }
       }
     } catch (error: any) {
-      setMessage({ text: error.message || 'ログインに失敗しました', type: 'error' });
+      const messageText = error?.message || (mode === 'login' ? 'ログインに失敗しました' : '登録に失敗しました');
+      setMessage({ text: messageText, type: 'error' });
     } finally {
       setLoading(false);
     }
@@ -109,6 +151,11 @@ export default function Login() {
         )}
 
         <div className="space-y-6">
+          <div className="rounded-2xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-800">
+            <p className="font-bold mb-1">初回ログインの案内</p>
+            <p>Googleログインが最も確実です。パスワードログインは、すでに登録済みのメールアドレスでのみ利用できます。初めての方は「初回登録」を選んでください。</p>
+          </div>
+
           {/* Google ログインボタン */}
           <button
             onClick={handleGoogleLogin}
@@ -133,7 +180,7 @@ export default function Login() {
           </div>
 
           {/* メール／パスワードログインフォーム */}
-          <form onSubmit={handleEmailLogin} className="space-y-4">
+          <form onSubmit={handlePasswordAuth} className="space-y-4">
             <div>
               <label htmlFor="email" className="block text-sm font-bold text-slate-700 mb-1.5 ml-1">メールアドレス</label>
               <input
@@ -169,8 +216,19 @@ export default function Login() {
                   <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                 </svg>
               ) : (
-                'ログイン'
+                mode === 'login' ? 'ログイン' : '初回登録'
               )}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setMode(mode === 'login' ? 'signup' : 'login');
+                setMessage(null);
+              }}
+              className="w-full text-sm font-semibold text-slate-600 hover:text-slate-900 transition-colors"
+            >
+              {mode === 'login' ? '初回登録はこちら' : 'ログインに戻る'}
             </button>
           </form>
         </div>
