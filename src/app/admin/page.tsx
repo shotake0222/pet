@@ -34,6 +34,7 @@ export default function AdminDashboard() {
   const [petMarkerFile, setPetMarkerFile] = useState<File | null>(null);
   const [selectedAttributeIds, setSelectedAttributeIds] = useState<number[]>([]);
   const [editingPetId, setEditingPetId] = useState<number | null>(null);
+  
   // --- 設定用State: レアリティ / 属性 ---
   const [newRarityCode, setNewRarityCode] = useState('');
   const [newRarityLabel, setNewRarityLabel] = useState('');
@@ -76,7 +77,6 @@ export default function AdminDashboard() {
     ]);
     
     if (petsRes.data) {
-      // pet_master_attributes を attributes と照合して各 pet に attributes 配列を付与
       const petAttrs = (petAttrsRes && petAttrsRes.data) ? petAttrsRes.data : [];
       const attributes = (attributesRes && attributesRes.data) ? attributesRes.data : [];
       const attrById = new Map<number, any>(attributes.map((a: any) => [a.id, a]));
@@ -173,20 +173,17 @@ export default function AdminDashboard() {
   //  追加 (Create) アクション
   // ==========================================
 
-  // --- 1. ペットの総合登録（進化モデル対応） ---
   const handleSavePet = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!petModelFile || !petMarkerFile || !petName) return alert('必須項目が不足しています（名前、第1形態モデル、マーカー）');
     setIsSubmitting(true);
     try {
-      // ファイルアップロード/更新の扱い: 新しいファイルが選択されていればアップロードしてURLを更新
       let modelUrl: string | null = null;
       let modelV2Url: string | null = null;
       let modelV3Url: string | null = null;
       let markerUrl: string | null = null;
 
       if (editingPetId) {
-        // 更新モード: 既存のレコードを取得して必要なフィールドだけ上書き
         const { data: existing } = await supabase.from('pet_masters').select('*').eq('id', editingPetId).single();
         modelUrl = existing?.model_url || null;
         modelV2Url = existing?.model_url_v2 || null;
@@ -200,7 +197,6 @@ export default function AdminDashboard() {
       if (petMarkerFile) markerUrl = await uploadFile(petMarkerFile, 'markers');
 
       if (editingPetId) {
-        // 更新
         const updatePayload: any = {
           name: petName,
           rarity: petRarity,
@@ -214,7 +210,6 @@ export default function AdminDashboard() {
         const { error: updateErr } = await supabase.from('pet_masters').update(updatePayload).eq('id', editingPetId);
         if (updateErr) throw updateErr;
 
-        // 属性リレーションを置換: 既存削除して再挿入
         const { error: delErr } = await supabase.from('pet_master_attributes').delete().eq('pet_master_id', editingPetId);
         if (delErr) throw delErr;
         if (selectedAttributeIds && selectedAttributeIds.length > 0) {
@@ -225,7 +220,6 @@ export default function AdminDashboard() {
 
         alert(`ペット「${petName}」を更新しました`);
       } else {
-        // 新規作成
         if (!modelUrl || !markerUrl) throw new Error('モデルまたはマーカーのアップロードに失敗しました');
         const { data: insertedPet, error: insertError } = await supabase.from('pet_masters').insert({
           name: petName,
@@ -248,7 +242,6 @@ export default function AdminDashboard() {
         alert(`ペット「${petName}」をガチャのラインナップに登録しました！`);
       }
 
-      // リセット
       setPetName(''); setPetModelFile(null); setPetModelV2File(null); setPetModelV3File(null); setPetMarkerFile(null);
       setSelectedAttributeIds([]);
       setEditingPetId(null);
@@ -260,7 +253,6 @@ export default function AdminDashboard() {
     }
   };
 
-  // --- 2. ランドマークの総合登録 ---
   const handleAddLandmark = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!landmarkModelFile || !landmarkName || !landmarkLat || !landmarkLng) return alert('必須項目が不足しています');
@@ -289,7 +281,6 @@ export default function AdminDashboard() {
     }
   };
 
-  // --- 3. アイテムの登録（画像アップロード対応） ---
   const handleAddItem = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!itemName) return alert('アイテム名が必要です');
@@ -320,7 +311,6 @@ export default function AdminDashboard() {
     }
   };
 
-  // --- 4. お知らせの配信 ---
   const handleAddNews = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newsTitle || !newsContent) return alert('タイトルと本文が必要です');
@@ -342,12 +332,10 @@ export default function AdminDashboard() {
     }
   };
 
-
   // ==========================================
   //  削除・更新 (Delete / Update) アクション
   // ==========================================
 
-  // --- 進化モデルのURLも受け取って削除する ---
   const handleDeletePet = async (id: number, modelUrl: string, markerUrl: string, modelV2Url?: string, modelV3Url?: string) => {
     if (!window.confirm('本当に削除しますか？')) return;
     try {
@@ -402,7 +390,6 @@ export default function AdminDashboard() {
     }
   };
 
-  // お知らせの公開・非公開トグル
   const toggleNews = async (id: number, currentStatus: boolean) => {
     try {
       const { error } = await supabase.from('announcements').update({ is_active: !currentStatus }).eq('id', id);
@@ -436,366 +423,369 @@ export default function AdminDashboard() {
         ))}
       </div>
 
+      {/* コンテンツエリア */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
         
-        {/* --- 左カラム: 登録・サマリー --- */}
-        <div>
-          {/* 1. ペット追加フォーム */}
-          {activeTab === 'pets' && (
-            <form onSubmit={handleSavePet} className="space-y-5 bg-gray-50 p-6 rounded-2xl border border-gray-100">
-              <h2 className="text-xl font-bold">新規ペット登録</h2>
-              {editingPetId && <div className="text-sm text-yellow-700 mb-2">編集中: ID {editingPetId} — 変更が終わったら保存してください</div>}
-              <div>
-                <label className="block text-sm font-bold mb-1">ペットの名前</label>
-                <input type="text" value={petName} onChange={e => setPetName(e.target.value)} className="w-full border p-3 rounded-lg focus:ring-2 focus:ring-blue-500" required />
-              </div>
-              <div className="flex gap-4">
-                <div className="flex-1">
-                  <label className="block text-sm font-bold mb-1">レアリティ</label>
-                  <select value={petRarity} onChange={e => setPetRarity(e.target.value)} className="w-full border p-3 rounded-lg focus:ring-2 focus:ring-blue-500">
-                    {raritiesList && raritiesList.length > 0 ? (
-                      raritiesList.map(r => (
-                        <option key={r.id} value={r.code}>{r.code} {r.label ? `(${r.label})` : ''}</option>
-                      ))
-                    ) : (
-                      <>
-                        <option value="N">N (ノーマル)</option>
-                        <option value="R">R (レア)</option>
-                        <option value="SR">SR (スーパーレア)</option>
-                        <option value="UR">UR (激レア)</option>
-                      </>
-                    )}
-                  </select>
-                </div>
-                <div className="flex-1">
-                  <label className="block text-sm font-bold mb-1">属性 (複数選択可)</label>
-                  <div className="w-full border p-3 rounded-lg bg-white max-h-40 overflow-y-auto">
-                    {attributesList && attributesList.length > 0 ? (
-                      attributesList.map(a => (
-                        <label key={a.id} className="flex items-center gap-2 text-sm mb-2">
-                          <input type="checkbox" checked={selectedAttributeIds.includes(a.id)} onChange={e => {
-                            if (e.target.checked) setSelectedAttributeIds(prev => [...prev, a.id]);
-                            else setSelectedAttributeIds(prev => prev.filter(id => id !== a.id));
-                          }} />
-                          <span>{a.name}{a.description ? ` — ${a.description}` : ''}</span>
-                        </label>
-                      ))
-                    ) : (
-                      <div className="text-xs text-gray-500">まだ属性が登録されていません</div>
+        {/* === 左・右カラムは「設定」タブ以外の時だけ描画する === */}
+        {activeTab !== 'settings' && (
+          <>
+            {/* --- 左カラム: 登録・サマリー --- */}
+            <div>
+              {/* 1. ペット追加フォーム */}
+              {activeTab === 'pets' && (
+                <form onSubmit={handleSavePet} className="space-y-5 bg-gray-50 p-6 rounded-2xl border border-gray-100">
+                  <h2 className="text-xl font-bold">新規ペット登録</h2>
+                  {editingPetId && <div className="text-sm text-yellow-700 mb-2">編集中: ID {editingPetId} — 変更が終わったら保存してください</div>}
+                  <div>
+                    <label className="block text-sm font-bold mb-1">ペットの名前</label>
+                    <input type="text" value={petName} onChange={e => setPetName(e.target.value)} className="w-full border p-3 rounded-lg focus:ring-2 focus:ring-blue-500" required />
+                  </div>
+                  <div className="flex gap-4">
+                    <div className="flex-1">
+                      <label className="block text-sm font-bold mb-1">レアリティ</label>
+                      <select value={petRarity} onChange={e => setPetRarity(e.target.value)} className="w-full border p-3 rounded-lg focus:ring-2 focus:ring-blue-500">
+                        {raritiesList && raritiesList.length > 0 ? (
+                          raritiesList.map(r => (
+                            <option key={r.id} value={r.code}>{r.code} {r.label ? `(${r.label})` : ''}</option>
+                          ))
+                        ) : (
+                          <>
+                            <option value="N">N (ノーマル)</option>
+                            <option value="R">R (レア)</option>
+                            <option value="SR">SR (スーパーレア)</option>
+                            <option value="UR">UR (激レア)</option>
+                          </>
+                        )}
+                      </select>
+                    </div>
+                    <div className="flex-1">
+                      <label className="block text-sm font-bold mb-1">属性 (複数選択可)</label>
+                      <div className="w-full border p-3 rounded-lg bg-white max-h-40 overflow-y-auto">
+                        {attributesList && attributesList.length > 0 ? (
+                          attributesList.map(a => (
+                            <label key={a.id} className="flex items-center gap-2 text-sm mb-2">
+                              <input type="checkbox" checked={selectedAttributeIds.includes(a.id)} onChange={e => {
+                                if (e.target.checked) setSelectedAttributeIds(prev => [...prev, a.id]);
+                                else setSelectedAttributeIds(prev => prev.filter(id => id !== a.id));
+                              }} />
+                              <span>{a.name}{a.description ? ` — ${a.description}` : ''}</span>
+                            </label>
+                          ))
+                        ) : (
+                          <div className="text-xs text-gray-500">まだ属性が登録されていません</div>
+                        )}
+                      </div>
+                    </div>
+                    <div className="flex-1">
+                      <label className="block text-sm font-bold mb-1">排出ウェイト</label>
+                      <input type="number" value={petWeight} onChange={e => setPetWeight(e.target.value)} className="w-full border p-3 rounded-lg focus:ring-2 focus:ring-blue-500" required />
+                    </div>
+                  </div>
+                  
+                  <div className="bg-blue-50 p-4 rounded-xl border border-blue-100 space-y-4">
+                    <div>
+                      <label className="block text-sm font-bold text-blue-900 mb-1">第1形態 3Dモデル (.glb) <span className="text-red-500">*</span></label>
+                      <input type="file" accept=".glb" onChange={e => setPetModelFile(e.target.files?.[0] || null)} className="w-full text-sm" required />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-bold text-blue-800 mb-1">第2形態 (Lv5進化用) <span className="text-xs font-normal">※任意</span></label>
+                      <input type="file" accept=".glb" onChange={e => setPetModelV2File(e.target.files?.[0] || null)} className="w-full text-sm" />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-bold text-blue-800 mb-1">第3形態 (Lv10進化用) <span className="text-xs font-normal">※任意</span></label>
+                      <input type="file" accept=".glb" onChange={e => setPetModelV3File(e.target.files?.[0] || null)} className="w-full text-sm" />
+                    </div>
+                  </div>
+
+                  <div className="bg-purple-50 p-4 rounded-xl border border-purple-100">
+                    <label className="block text-sm font-bold text-purple-900 mb-2">認識マーカー (.mind) <span className="text-red-500">*</span></label>
+                    <input type="file" accept=".mind" onChange={e => setPetMarkerFile(e.target.files?.[0] || null)} className="w-full text-sm" required />
+                  </div>
+
+                  <div className="flex gap-3">
+                    <button disabled={isSubmitting} className="flex-1 bg-slate-900 text-white font-bold py-4 rounded-xl shadow-lg hover:bg-slate-800 disabled:bg-gray-400">
+                      {isSubmitting ? '処理中...' : (editingPetId ? '変更を保存' : 'ペットを登録')}
+                    </button>
+                    {editingPetId && (
+                      <button type="button" onClick={() => {
+                        setEditingPetId(null);
+                        setPetName(''); setPetRarity('N'); setPetWeight('100'); setSelectedAttributeIds([]);
+                        setPetModelFile(null); setPetModelV2File(null); setPetModelV3File(null); setPetMarkerFile(null);
+                      }} className="bg-gray-200 text-gray-700 font-bold py-4 px-4 rounded-xl">キャンセル</button>
                     )}
                   </div>
-                </div>
-                <div className="flex-1">
-                  <label className="block text-sm font-bold mb-1">排出ウェイト</label>
-                  <input type="number" value={petWeight} onChange={e => setPetWeight(e.target.value)} className="w-full border p-3 rounded-lg focus:ring-2 focus:ring-blue-500" required />
-                </div>
-              </div>
-              
-              <div className="bg-blue-50 p-4 rounded-xl border border-blue-100 space-y-4">
-                <div>
-                  <label className="block text-sm font-bold text-blue-900 mb-1">第1形態 3Dモデル (.glb) <span className="text-red-500">*</span></label>
-                  <input type="file" accept=".glb" onChange={e => setPetModelFile(e.target.files?.[0] || null)} className="w-full text-sm" required />
-                </div>
-                <div>
-                  <label className="block text-sm font-bold text-blue-800 mb-1">第2形態 (Lv5進化用) <span className="text-xs font-normal">※任意</span></label>
-                  <input type="file" accept=".glb" onChange={e => setPetModelV2File(e.target.files?.[0] || null)} className="w-full text-sm" />
-                </div>
-                <div>
-                  <label className="block text-sm font-bold text-blue-800 mb-1">第3形態 (Lv10進化用) <span className="text-xs font-normal">※任意</span></label>
-                  <input type="file" accept=".glb" onChange={e => setPetModelV3File(e.target.files?.[0] || null)} className="w-full text-sm" />
-                </div>
-              </div>
+                </form>
+              )}
 
-              <div className="bg-purple-50 p-4 rounded-xl border border-purple-100">
-                <label className="block text-sm font-bold text-purple-900 mb-2">認識マーカー (.mind) <span className="text-red-500">*</span></label>
-                <input type="file" accept=".mind" onChange={e => setPetMarkerFile(e.target.files?.[0] || null)} className="w-full text-sm" required />
-              </div>
+              {/* 2. ランドマーク追加フォーム */}
+              {activeTab === 'landmarks' && (
+                <form onSubmit={handleAddLandmark} className="space-y-5 bg-gray-50 p-6 rounded-2xl border border-gray-100">
+                  <h2 className="text-xl font-bold">新規スポット配置</h2>
+                  <div className="flex gap-4">
+                    <div className="flex-1">
+                      <label className="block text-sm font-bold mb-1">スポット名</label>
+                      <input type="text" value={landmarkName} onChange={e => setLandmarkName(e.target.value)} className="w-full border p-3 rounded-lg focus:ring-2 focus:ring-green-500" required />
+                    </div>
+                    <div className="flex-1">
+                      <label className="block text-sm font-bold mb-1">説明</label>
+                      <input type="text" value={landmarkDesc} onChange={e => setLandmarkDesc(e.target.value)} className="w-full border p-3 rounded-lg focus:ring-2 focus:ring-green-500" />
+                    </div>
+                  </div>
+                  <div className="flex gap-4">
+                    <div className="flex-1">
+                      <label className="block text-sm font-bold mb-1">緯度 (Lat)</label>
+                      <input type="number" step="0.000001" value={landmarkLat} onChange={e => setLandmarkLat(e.target.value)} className="w-full border p-3 rounded-lg focus:ring-2 focus:ring-green-500" required />
+                    </div>
+                    <div className="flex-1">
+                      <label className="block text-sm font-bold mb-1">経度 (Lng)</label>
+                      <input type="number" step="0.000001" value={landmarkLng} onChange={e => setLandmarkLng(e.target.value)} className="w-full border p-3 rounded-lg focus:ring-2 focus:ring-green-500" required />
+                    </div>
+                  </div>
+                  <div className="flex gap-4">
+                    <div className="flex-1">
+                      <label className="block text-sm font-bold mb-1">判定半径(m)</label>
+                      <input type="number" value={landmarkRadius} onChange={e => setLandmarkRadius(e.target.value)} className="w-full border p-3 rounded-lg focus:ring-2 focus:ring-green-500" required />
+                    </div>
+                    <div className="flex-1">
+                      <label className="block text-sm font-bold mb-1">獲得pt</label>
+                      <input type="number" value={landmarkPoints} onChange={e => setLandmarkPoints(e.target.value)} className="w-full border p-3 rounded-lg focus:ring-2 focus:ring-green-500" required />
+                    </div>
+                  </div>
+                  <div className="bg-green-50 p-4 rounded-xl border border-green-100">
+                    <label className="block text-sm font-bold text-green-900 mb-2">出現3Dオブジェクト (.glb)</label>
+                    <input type="file" accept=".glb" onChange={e => setLandmarkModelFile(e.target.files?.[0] || null)} className="w-full text-sm" required />
+                  </div>
+                  <button disabled={isSubmitting} className="w-full bg-slate-900 text-white font-bold py-4 rounded-xl shadow-lg hover:bg-slate-800 disabled:bg-gray-400">
+                    {isSubmitting ? '処理中...' : 'スポットを配置'}
+                  </button>
+                </form>
+              )}
 
-              <div className="flex gap-3">
-                <button disabled={isSubmitting} className="flex-1 bg-slate-900 text-white font-bold py-4 rounded-xl shadow-lg hover:bg-slate-800 disabled:bg-gray-400">
-                  {isSubmitting ? '処理中...' : (editingPetId ? '変更を保存' : 'ペットを登録')}
-                </button>
-                {editingPetId && (
-                  <button type="button" onClick={() => {
-                    // 編集キャンセル
-                    setEditingPetId(null);
-                    setPetName(''); setPetRarity('N'); setPetWeight('100'); setSelectedAttributeIds([]);
-                    setPetModelFile(null); setPetModelV2File(null); setPetModelV3File(null); setPetMarkerFile(null);
-                  }} className="bg-gray-200 text-gray-700 font-bold py-4 px-4 rounded-xl">キャンセル</button>
+              {/* 3. アイテム追加フォーム */}
+              {activeTab === 'items' && (
+                <form onSubmit={handleAddItem} className="space-y-5 bg-gray-50 p-6 rounded-2xl border border-gray-100">
+                  <h2 className="text-xl font-bold">新規アイテム追加</h2>
+                  <div className="flex gap-4">
+                    <div className="flex-1">
+                      <label className="block text-sm font-bold mb-1">アイテム名</label>
+                      <input type="text" value={itemName} onChange={e => setItemName(e.target.value)} className="w-full border p-3 rounded-lg focus:ring-2 focus:ring-yellow-500" required />
+                    </div>
+                    <div className="flex-1">
+                      <label className="block text-sm font-bold mb-1">種類</label>
+                      <select value={itemType} onChange={e => setItemType(e.target.value)} className="w-full border p-3 rounded-lg focus:ring-2 focus:ring-yellow-500">
+                        <option value="food">食べ物 (親密度回復)</option>
+                        <option value="sleep">睡眠薬 (お世話停止)</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-bold mb-1">アイテムの説明</label>
+                    <textarea value={itemDesc} onChange={e => setItemDesc(e.target.value)} className="w-full border p-3 rounded-lg focus:ring-2 focus:ring-yellow-500" rows={2} required />
+                  </div>
+                  <div className="flex gap-4">
+                    <div className="flex-1">
+                      <label className="block text-sm font-bold mb-1">価格 (円)</label>
+                      <input type="number" value={itemPrice} onChange={e => setItemPrice(e.target.value)} className="w-full border p-3 rounded-lg focus:ring-2 focus:ring-yellow-500" required />
+                    </div>
+                    <div className="flex-1">
+                      <label className="block text-sm font-bold mb-1">効果値</label>
+                      <input type="number" value={itemEffect} onChange={e => setItemEffect(e.target.value)} className="w-full border p-3 rounded-lg focus:ring-2 focus:ring-yellow-500" required />
+                    </div>
+                  </div>
+                  <div className="bg-yellow-50 p-4 rounded-xl border border-yellow-100">
+                    <label className="block text-sm font-bold text-yellow-900 mb-2">アイテムのアイコン画像 (.png, .jpg)</label>
+                    <input type="file" accept="image/*" onChange={e => setItemImageFile(e.target.files?.[0] || null)} className="w-full text-sm" />
+                    <p className="text-xs text-yellow-700 mt-1">※画像がない場合はデフォルトのアイコンになります</p>
+                  </div>
+                  <button disabled={isSubmitting} className="w-full bg-slate-900 text-white font-bold py-4 rounded-xl shadow-lg hover:bg-slate-800 disabled:bg-gray-400">
+                    {isSubmitting ? '処理中...' : 'アイテムを登録'}
+                  </button>
+                </form>
+              )}
+
+              {/* 4. お知らせ追加フォーム */}
+              {activeTab === 'news' && (
+                <form onSubmit={handleAddNews} className="space-y-5 bg-blue-50 p-6 rounded-2xl border border-blue-100">
+                  <h2 className="text-xl font-bold text-blue-900">新規お知らせ配信</h2>
+                  <div>
+                    <label className="block text-sm font-bold mb-1 text-blue-800">タイトル</label>
+                    <input type="text" value={newsTitle} onChange={e => setNewsTitle(e.target.value)} placeholder="例: 夏のイベント開催！" className="w-full border p-3 rounded-lg focus:ring-2 focus:ring-blue-500" required />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-bold mb-1 text-blue-800">本文</label>
+                    <textarea value={newsContent} onChange={e => setNewsContent(e.target.value)} placeholder="お知らせの内容を入力..." className="w-full border p-3 rounded-lg focus:ring-2 focus:ring-blue-500" rows={6} required />
+                  </div>
+                  <button disabled={isSubmitting} className="w-full bg-blue-600 text-white font-bold py-4 rounded-xl shadow-lg hover:bg-blue-700 disabled:bg-gray-400">
+                    {isSubmitting ? '処理中...' : '配信する'}
+                  </button>
+                </form>
+              )}
+
+              {/* 5. ユーザー属性サマリー */}
+              {activeTab === 'users' && (
+                <div className="bg-indigo-50 p-6 rounded-2xl border border-indigo-100 space-y-5">
+                  <h2 className="text-xl font-bold text-indigo-900">ユーザー属性サマリー</h2>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="bg-white p-4 rounded-xl shadow-sm text-center">
+                      <div className="text-sm text-gray-500 mb-1">総登録ユーザー数</div>
+                      <div className="text-3xl font-bold text-indigo-600">{usersList.length}</div>
+                    </div>
+                    <div className="bg-white p-4 rounded-xl shadow-sm text-center">
+                      <div className="text-sm text-gray-500 mb-1">プロフィール設定済</div>
+                      <div className="text-3xl font-bold text-indigo-600">{usersList.filter(u => u.birth_year).length}</div>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* --- 右カラム: 登録済みデータ一覧 --- */}
+            <div className="bg-white border rounded-2xl p-6 h-[800px] overflow-y-auto shadow-inner">
+              <h2 className="text-xl font-bold mb-4 border-b pb-2">
+                {activeTab === 'pets' && '🐶 登録済みペット一覧'}
+                {activeTab === 'landmarks' && '📍 配置済みスポット一覧'}
+                {activeTab === 'items' && '🛒 登録済みアイテム一覧'}
+                {activeTab === 'news' && '📢 配信済みお知らせ一覧'}
+                {activeTab === 'users' && '👥 登録ユーザー一覧'}
+              </h2>
+
+              <div className="space-y-3">
+                {/* 1. ペット一覧 */}
+                {activeTab === 'pets' && petsList.map(pet => (
+                  <div key={pet.id} className="p-4 border rounded-xl hover:bg-gray-50 flex items-center justify-between transition-colors group">
+                    <div>
+                      <div className="font-bold text-lg">{pet.name} <span className="text-sm font-normal bg-gray-200 px-2 py-1 rounded ml-2">ランク: {pet.rarity}</span></div>
+                      <div className="text-sm text-gray-500 mt-1 flex flex-wrap gap-x-3 gap-y-1">
+                        <span>ウェイト: {pet.drop_weight}</span>
+                        <a href={pet.model_url} target="_blank" rel="noreferrer" className="text-blue-500 hover:underline">V1モデル</a>
+                        {pet.model_url_v2 && <a href={pet.model_url_v2} target="_blank" rel="noreferrer" className="text-blue-500 hover:underline">V2モデル(Lv5)</a>}
+                        {pet.model_url_v3 && <a href={pet.model_url_v3} target="_blank" rel="noreferrer" className="text-blue-500 hover:underline">V3モデル(Lv10)</a>}
+                        <a href={pet.marker_url} target="_blank" rel="noreferrer" className="text-blue-500 hover:underline">マーカー</a>
+                      </div>
+                      {pet.attributes && pet.attributes.length > 0 && (
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          {pet.attributes.map((a: any) => (
+                            <span key={a.id} className="text-xs px-2 py-1 rounded-full bg-gray-100 border text-gray-700" style={{ background: a.color || undefined }}>{a.name}</span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                    <div className="flex gap-2">
+                      <button onClick={() => {
+                        setActiveTab('pets');
+                        setEditingPetId(pet.id);
+                        setPetName(pet.name || '');
+                        setPetRarity(pet.rarity || 'N');
+                        setPetWeight(String(pet.drop_weight || 100));
+                        setSelectedAttributeIds((pet.attributes || []).map((a: any) => a.id));
+                        setPetModelFile(null); setPetModelV2File(null); setPetModelV3File(null); setPetMarkerFile(null);
+                      }} className="bg-blue-50 text-blue-600 font-bold px-4 py-2 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity hover:bg-blue-100">編集</button>
+                      <button 
+                        onClick={() => handleDeletePet(pet.id, pet.model_url, pet.marker_url, pet.model_url_v2, pet.model_url_v3)}
+                        className="bg-red-50 text-red-600 font-bold px-4 py-2 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-100"
+                      >
+                        削除
+                      </button>
+                    </div>
+                  </div>
+                ))}
+
+                {/* 2. ランドマーク一覧 */}
+                {activeTab === 'landmarks' && landmarksList.map(spot => (
+                  <div key={spot.id} className="p-4 border rounded-xl hover:bg-gray-50 flex justify-between items-center transition-colors group">
+                    <div>
+                      <div className="font-bold text-lg">{spot.name}</div>
+                      <div className="text-sm text-gray-600 my-1">{spot.description}</div>
+                      <div className="text-xs text-gray-500 mt-2">
+                        Lat: {spot.latitude.toFixed(4)} / Lng: {spot.longitude.toFixed(4)} <span className="font-bold text-green-600 ml-2">{spot.bonus_points} pt</span>
+                      </div>
+                    </div>
+                    <button 
+                      onClick={() => handleDeleteLandmark(spot.id, spot.model_url)}
+                      className="bg-red-50 text-red-600 font-bold px-4 py-2 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-100"
+                    >
+                      削除
+                    </button>
+                  </div>
+                ))}
+
+                {/* 3. アイテム一覧 */}
+                {activeTab === 'items' && itemsList.map(item => (
+                  <div key={item.id} className="p-4 border rounded-xl hover:bg-gray-50 flex items-center gap-4 transition-colors group">
+                    {item.image_url ? (
+                      <img src={item.image_url} alt={item.name} className="w-16 h-16 object-cover rounded-lg shadow-sm border" />
+                    ) : (
+                      <div className="w-16 h-16 bg-gray-200 rounded-lg flex items-center justify-center text-2xl">📦</div>
+                    )}
+                    
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2">
+                        <span className="font-bold text-lg">{item.name}</span>
+                        <span className="text-xs font-bold bg-yellow-100 text-yellow-800 px-2 py-1 rounded">{item.item_type}</span>
+                        <span className="font-bold text-blue-600 ml-auto">{item.price_jpy > 0 ? `¥${item.price_jpy}` : '無料'}</span>
+                      </div>
+                      <div className="text-sm text-gray-600 mt-1">{item.description}</div>
+                      <div className="text-xs text-gray-400 mt-1">効果値: {item.effect_value}</div>
+                    </div>
+                    <button 
+                      onClick={() => handleDeleteItem(item.id, item.image_url)}
+                      className="bg-red-50 text-red-600 font-bold px-4 py-2 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-100"
+                    >
+                      削除
+                    </button>
+                  </div>
+                ))}
+
+                {/* 4. お知らせ一覧 */}
+                {activeTab === 'news' && newsList.map(news => (
+                  <div key={news.id} className={`p-4 border rounded-xl transition-colors ${news.is_active ? 'bg-white' : 'bg-gray-100 opacity-75'}`}>
+                    <div className="flex justify-between items-start mb-2">
+                      <h3 className="font-bold text-lg">{news.title}</h3>
+                      <button 
+                        onClick={() => toggleNews(news.id, news.is_active)} 
+                        className={`text-xs font-bold px-3 py-1 rounded-full ${news.is_active ? 'bg-green-100 text-green-800' : 'bg-gray-300 text-gray-700'}`}
+                      >
+                        {news.is_active ? '配信中' : '非公開'}
+                      </button>
+                    </div>
+                    <p className="text-sm text-gray-600 whitespace-pre-wrap">{news.content}</p>
+                    <div className="text-[10px] text-gray-400 mt-3 text-right">
+                      配信日時: {new Date(news.published_at).toLocaleString()}
+                    </div>
+                  </div>
+                ))}
+
+                {/* 5. ユーザー属性一覧 */}
+                {activeTab === 'users' && usersList.map(user => (
+                  <div key={user.id} className="p-4 border rounded-xl flex justify-between items-center bg-gray-50">
+                    <div>
+                      <div className="font-bold text-gray-800">
+                        ユーザーID: <span className="text-xs font-normal">{user.id.substring(0, 8)}...</span>
+                      </div>
+                      <div className="text-sm text-gray-600 mt-1">
+                        {user.birth_year ? `${user.birth_year}年生まれ` : '未設定'} / {user.gender === 'male' ? '男性' : user.gender === 'female' ? '女性' : user.gender === 'other' ? 'その他' : '未設定'}
+                      </div>
+                    </div>
+                    <div className="text-xs font-bold px-3 py-1 bg-white border rounded text-gray-600">
+                      通知: {user.email_notify_news ? 'ON' : 'OFF'}
+                    </div>
+                  </div>
+                ))}
+
+                {/* 空の時の表示 */}
+                {((activeTab === 'pets' && petsList.length === 0) || 
+                  (activeTab === 'landmarks' && landmarksList.length === 0) || 
+                  (activeTab === 'items' && itemsList.length === 0) ||
+                  (activeTab === 'news' && newsList.length === 0) ||
+                  (activeTab === 'users' && usersList.length === 0)) && (
+                  <p className="text-center text-gray-400 py-10">データがありません</p>
                 )}
-              </div>
-            </form>
-          )}
-
-          {/* 2. ランドマーク追加フォーム */}
-          {activeTab === 'landmarks' && (
-            <form onSubmit={handleAddLandmark} className="space-y-5 bg-gray-50 p-6 rounded-2xl border border-gray-100">
-              <h2 className="text-xl font-bold">新規スポット配置</h2>
-              <div className="flex gap-4">
-                <div className="flex-1">
-                  <label className="block text-sm font-bold mb-1">スポット名</label>
-                  <input type="text" value={landmarkName} onChange={e => setLandmarkName(e.target.value)} className="w-full border p-3 rounded-lg focus:ring-2 focus:ring-green-500" required />
-                </div>
-                <div className="flex-1">
-                  <label className="block text-sm font-bold mb-1">説明</label>
-                  <input type="text" value={landmarkDesc} onChange={e => setLandmarkDesc(e.target.value)} className="w-full border p-3 rounded-lg focus:ring-2 focus:ring-green-500" />
-                </div>
-              </div>
-              <div className="flex gap-4">
-                <div className="flex-1">
-                  <label className="block text-sm font-bold mb-1">緯度 (Lat)</label>
-                  <input type="number" step="0.000001" value={landmarkLat} onChange={e => setLandmarkLat(e.target.value)} className="w-full border p-3 rounded-lg focus:ring-2 focus:ring-green-500" required />
-                </div>
-                <div className="flex-1">
-                  <label className="block text-sm font-bold mb-1">経度 (Lng)</label>
-                  <input type="number" step="0.000001" value={landmarkLng} onChange={e => setLandmarkLng(e.target.value)} className="w-full border p-3 rounded-lg focus:ring-2 focus:ring-green-500" required />
-                </div>
-              </div>
-              <div className="flex gap-4">
-                <div className="flex-1">
-                  <label className="block text-sm font-bold mb-1">判定半径(m)</label>
-                  <input type="number" value={landmarkRadius} onChange={e => setLandmarkRadius(e.target.value)} className="w-full border p-3 rounded-lg focus:ring-2 focus:ring-green-500" required />
-                </div>
-                <div className="flex-1">
-                  <label className="block text-sm font-bold mb-1">獲得pt</label>
-                  <input type="number" value={landmarkPoints} onChange={e => setLandmarkPoints(e.target.value)} className="w-full border p-3 rounded-lg focus:ring-2 focus:ring-green-500" required />
-                </div>
-              </div>
-              <div className="bg-green-50 p-4 rounded-xl border border-green-100">
-                <label className="block text-sm font-bold text-green-900 mb-2">出現3Dオブジェクト (.glb)</label>
-                <input type="file" accept=".glb" onChange={e => setLandmarkModelFile(e.target.files?.[0] || null)} className="w-full text-sm" required />
-              </div>
-              <button disabled={isSubmitting} className="w-full bg-slate-900 text-white font-bold py-4 rounded-xl shadow-lg hover:bg-slate-800 disabled:bg-gray-400">
-                {isSubmitting ? '処理中...' : 'スポットを配置'}
-              </button>
-            </form>
-          )}
-
-          {/* 3. アイテム追加フォーム */}
-          {activeTab === 'items' && (
-            <form onSubmit={handleAddItem} className="space-y-5 bg-gray-50 p-6 rounded-2xl border border-gray-100">
-              <h2 className="text-xl font-bold">新規アイテム追加</h2>
-              <div className="flex gap-4">
-                <div className="flex-1">
-                  <label className="block text-sm font-bold mb-1">アイテム名</label>
-                  <input type="text" value={itemName} onChange={e => setItemName(e.target.value)} className="w-full border p-3 rounded-lg focus:ring-2 focus:ring-yellow-500" required />
-                </div>
-                <div className="flex-1">
-                  <label className="block text-sm font-bold mb-1">種類</label>
-                  <select value={itemType} onChange={e => setItemType(e.target.value)} className="w-full border p-3 rounded-lg focus:ring-2 focus:ring-yellow-500">
-                    <option value="food">食べ物 (親密度回復)</option>
-                    <option value="sleep">睡眠薬 (お世話停止)</option>
-                  </select>
-                </div>
-              </div>
-              <div>
-                <label className="block text-sm font-bold mb-1">アイテムの説明</label>
-                <textarea value={itemDesc} onChange={e => setItemDesc(e.target.value)} className="w-full border p-3 rounded-lg focus:ring-2 focus:ring-yellow-500" rows={2} required />
-              </div>
-              <div className="flex gap-4">
-                <div className="flex-1">
-                  <label className="block text-sm font-bold mb-1">価格 (円)</label>
-                  <input type="number" value={itemPrice} onChange={e => setItemPrice(e.target.value)} className="w-full border p-3 rounded-lg focus:ring-2 focus:ring-yellow-500" required />
-                </div>
-                <div className="flex-1">
-                  <label className="block text-sm font-bold mb-1">効果値</label>
-                  <input type="number" value={itemEffect} onChange={e => setItemEffect(e.target.value)} className="w-full border p-3 rounded-lg focus:ring-2 focus:ring-yellow-500" required />
-                </div>
-              </div>
-              <div className="bg-yellow-50 p-4 rounded-xl border border-yellow-100">
-                <label className="block text-sm font-bold text-yellow-900 mb-2">アイテムのアイコン画像 (.png, .jpg)</label>
-                <input type="file" accept="image/*" onChange={e => setItemImageFile(e.target.files?.[0] || null)} className="w-full text-sm" />
-                <p className="text-xs text-yellow-700 mt-1">※画像がない場合はデフォルトのアイコンになります</p>
-              </div>
-              <button disabled={isSubmitting} className="w-full bg-slate-900 text-white font-bold py-4 rounded-xl shadow-lg hover:bg-slate-800 disabled:bg-gray-400">
-                {isSubmitting ? '処理中...' : 'アイテムを登録'}
-              </button>
-            </form>
-          )}
-
-          {/* 4. お知らせ追加フォーム */}
-          {activeTab === 'news' && (
-            <form onSubmit={handleAddNews} className="space-y-5 bg-blue-50 p-6 rounded-2xl border border-blue-100">
-              <h2 className="text-xl font-bold text-blue-900">新規お知らせ配信</h2>
-              <div>
-                <label className="block text-sm font-bold mb-1 text-blue-800">タイトル</label>
-                <input type="text" value={newsTitle} onChange={e => setNewsTitle(e.target.value)} placeholder="例: 夏のイベント開催！" className="w-full border p-3 rounded-lg focus:ring-2 focus:ring-blue-500" required />
-              </div>
-              <div>
-                <label className="block text-sm font-bold mb-1 text-blue-800">本文</label>
-                <textarea value={newsContent} onChange={e => setNewsContent(e.target.value)} placeholder="お知らせの内容を入力..." className="w-full border p-3 rounded-lg focus:ring-2 focus:ring-blue-500" rows={6} required />
-              </div>
-              <button disabled={isSubmitting} className="w-full bg-blue-600 text-white font-bold py-4 rounded-xl shadow-lg hover:bg-blue-700 disabled:bg-gray-400">
-                {isSubmitting ? '処理中...' : '配信する'}
-              </button>
-            </form>
-          )}
-
-          {/* 5. ユーザー属性サマリー */}
-          {activeTab === 'users' && (
-            <div className="bg-indigo-50 p-6 rounded-2xl border border-indigo-100 space-y-5">
-              <h2 className="text-xl font-bold text-indigo-900">ユーザー属性サマリー</h2>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="bg-white p-4 rounded-xl shadow-sm text-center">
-                  <div className="text-sm text-gray-500 mb-1">総登録ユーザー数</div>
-                  <div className="text-3xl font-bold text-indigo-600">{usersList.length}</div>
-                </div>
-                <div className="bg-white p-4 rounded-xl shadow-sm text-center">
-                  <div className="text-sm text-gray-500 mb-1">プロフィール設定済</div>
-                  <div className="text-3xl font-bold text-indigo-600">{usersList.filter(u => u.birth_year).length}</div>
-                </div>
               </div>
             </div>
-          )}
-        </div>
+          </>
+        )}
 
-        {/* --- 右カラム: 登録済みデータ一覧 --- */}
-        <div className="bg-white border rounded-2xl p-6 h-[800px] overflow-y-auto shadow-inner">
-          <h2 className="text-xl font-bold mb-4 border-b pb-2">
-            {activeTab === 'pets' && '🐶 登録済みペット一覧'}
-            {activeTab === 'landmarks' && '📍 配置済みスポット一覧'}
-            {activeTab === 'items' && '🛒 登録済みアイテム一覧'}
-            {activeTab === 'news' && '📢 配信済みお知らせ一覧'}
-            {activeTab === 'users' && '👥 登録ユーザー一覧'}
-          </h2>
-
-          <div className="space-y-3">
-            {/* 1. ペット一覧 */}
-            {activeTab === 'pets' && petsList.map(pet => (
-              <div key={pet.id} className="p-4 border rounded-xl hover:bg-gray-50 flex items-center justify-between transition-colors group">
-                <div>
-                  <div className="font-bold text-lg">{pet.name} <span className="text-sm font-normal bg-gray-200 px-2 py-1 rounded ml-2">ランク: {pet.rarity}</span></div>
-                  <div className="text-sm text-gray-500 mt-1 flex flex-wrap gap-x-3 gap-y-1">
-                    <span>ウェイト: {pet.drop_weight}</span>
-                    <a href={pet.model_url} target="_blank" rel="noreferrer" className="text-blue-500 hover:underline">V1モデル</a>
-                    {pet.model_url_v2 && <a href={pet.model_url_v2} target="_blank" rel="noreferrer" className="text-blue-500 hover:underline">V2モデル(Lv5)</a>}
-                    {pet.model_url_v3 && <a href={pet.model_url_v3} target="_blank" rel="noreferrer" className="text-blue-500 hover:underline">V3モデル(Lv10)</a>}
-                    <a href={pet.marker_url} target="_blank" rel="noreferrer" className="text-blue-500 hover:underline">マーカー</a>
-                  </div>
-                  {/* 属性バッジ表示 */}
-                  {pet.attributes && pet.attributes.length > 0 && (
-                    <div className="mt-2 flex flex-wrap gap-2">
-                      {pet.attributes.map((a: any) => (
-                        <span key={a.id} className="text-xs px-2 py-1 rounded-full bg-gray-100 border text-gray-700" style={{ background: a.color || undefined }}>{a.name}</span>
-                      ))}
-                    </div>
-                  )}
-                </div>
-                <div className="flex gap-2">
-                  <button onClick={() => {
-                    // 編集を開始
-                    setActiveTab('pets');
-                    setEditingPetId(pet.id);
-                    setPetName(pet.name || '');
-                    setPetRarity(pet.rarity || 'N');
-                    setPetWeight(String(pet.drop_weight || 100));
-                    setSelectedAttributeIds((pet.attributes || []).map((a: any) => a.id));
-                    // ファイルは再選択が必要なのでクリア
-                    setPetModelFile(null); setPetModelV2File(null); setPetModelV3File(null); setPetMarkerFile(null);
-                  }} className="bg-blue-50 text-blue-600 font-bold px-4 py-2 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity hover:bg-blue-100">編集</button>
-                  <button 
-                    onClick={() => handleDeletePet(pet.id, pet.model_url, pet.marker_url, pet.model_url_v2, pet.model_url_v3)}
-                    className="bg-red-50 text-red-600 font-bold px-4 py-2 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-100"
-                  >
-                    削除
-                  </button>
-                </div>
-              </div>
-            ))}
-
-            {/* 2. ランドマーク一覧 */}
-            {activeTab === 'landmarks' && landmarksList.map(spot => (
-              <div key={spot.id} className="p-4 border rounded-xl hover:bg-gray-50 flex justify-between items-center transition-colors group">
-                <div>
-                  <div className="font-bold text-lg">{spot.name}</div>
-                  <div className="text-sm text-gray-600 my-1">{spot.description}</div>
-                  <div className="text-xs text-gray-500 mt-2">
-                    Lat: {spot.latitude.toFixed(4)} / Lng: {spot.longitude.toFixed(4)} <span className="font-bold text-green-600 ml-2">{spot.bonus_points} pt</span>
-                  </div>
-                </div>
-                <button 
-                  onClick={() => handleDeleteLandmark(spot.id, spot.model_url)}
-                  className="bg-red-50 text-red-600 font-bold px-4 py-2 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-100"
-                >
-                  削除
-                </button>
-              </div>
-            ))}
-
-            {/* 3. アイテム一覧 */}
-            {activeTab === 'items' && itemsList.map(item => (
-              <div key={item.id} className="p-4 border rounded-xl hover:bg-gray-50 flex items-center gap-4 transition-colors group">
-                {item.image_url ? (
-                  <img src={item.image_url} alt={item.name} className="w-16 h-16 object-cover rounded-lg shadow-sm border" />
-                ) : (
-                  <div className="w-16 h-16 bg-gray-200 rounded-lg flex items-center justify-center text-2xl">📦</div>
-                )}
-                
-                <div className="flex-1">
-                  <div className="flex items-center gap-2">
-                    <span className="font-bold text-lg">{item.name}</span>
-                    <span className="text-xs font-bold bg-yellow-100 text-yellow-800 px-2 py-1 rounded">{item.item_type}</span>
-                    <span className="font-bold text-blue-600 ml-auto">{item.price_jpy > 0 ? `¥${item.price_jpy}` : '無料'}</span>
-                  </div>
-                  <div className="text-sm text-gray-600 mt-1">{item.description}</div>
-                  <div className="text-xs text-gray-400 mt-1">効果値: {item.effect_value}</div>
-                </div>
-                <button 
-                  onClick={() => handleDeleteItem(item.id, item.image_url)}
-                  className="bg-red-50 text-red-600 font-bold px-4 py-2 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-100"
-                >
-                  削除
-                </button>
-              </div>
-            ))}
-
-            {/* 4. お知らせ一覧 */}
-            {activeTab === 'news' && newsList.map(news => (
-              <div key={news.id} className={`p-4 border rounded-xl transition-colors ${news.is_active ? 'bg-white' : 'bg-gray-100 opacity-75'}`}>
-                <div className="flex justify-between items-start mb-2">
-                  <h3 className="font-bold text-lg">{news.title}</h3>
-                  <button 
-                    onClick={() => toggleNews(news.id, news.is_active)} 
-                    className={`text-xs font-bold px-3 py-1 rounded-full ${news.is_active ? 'bg-green-100 text-green-800' : 'bg-gray-300 text-gray-700'}`}
-                  >
-                    {news.is_active ? '配信中' : '非公開'}
-                  </button>
-                </div>
-                <p className="text-sm text-gray-600 whitespace-pre-wrap">{news.content}</p>
-                <div className="text-[10px] text-gray-400 mt-3 text-right">
-                  配信日時: {new Date(news.published_at).toLocaleString()}
-                </div>
-              </div>
-            ))}
-
-            {/* 5. ユーザー属性一覧 */}
-            {activeTab === 'users' && usersList.map(user => (
-              <div key={user.id} className="p-4 border rounded-xl flex justify-between items-center bg-gray-50">
-                <div>
-                  <div className="font-bold text-gray-800">
-                    ユーザーID: <span className="text-xs font-normal">{user.id.substring(0, 8)}...</span>
-                  </div>
-                  <div className="text-sm text-gray-600 mt-1">
-                    {user.birth_year ? `${user.birth_year}年生まれ` : '未設定'} / {user.gender === 'male' ? '男性' : user.gender === 'female' ? '女性' : user.gender === 'other' ? 'その他' : '未設定'}
-                  </div>
-                </div>
-                <div className="text-xs font-bold px-3 py-1 bg-white border rounded text-gray-600">
-                  通知: {user.email_notify_news ? 'ON' : 'OFF'}
-                </div>
-              </div>
-            ))}
-
-            {/* 空の時の表示 */}
-            {((activeTab === 'pets' && petsList.length === 0) || 
-              (activeTab === 'landmarks' && landmarksList.length === 0) || 
-              (activeTab === 'items' && itemsList.length === 0) ||
-              (activeTab === 'news' && newsList.length === 0) ||
-              (activeTab === 'users' && usersList.length === 0)) && (
-              <p className="text-center text-gray-400 py-10">データがありません</p>
-            )}
-          </div>
-        </div>
-        {/* --- 設定タブ: レアリティ / 属性 管理 --- */}
+        {/* --- 設定タブ: レアリティ / 属性 管理（設定タブ選択時のみ表示） --- */}
         {activeTab === 'settings' && (
           <div className="col-span-1 lg:col-span-2 bg-white p-6 rounded-2xl border border-gray-100">
             <h2 className="text-xl font-bold mb-4">⚙️ レアリティ / 属性 管理</h2>
