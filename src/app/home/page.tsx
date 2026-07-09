@@ -23,6 +23,16 @@ function getDistance(lat1: number, lon1: number, lat2: number, lon2: number) {
   return R * c;
 }
 
+// 💡 タグコードからグループ(A, Bなど)を判定する関数
+const getTagGroup = (code: string | null) => {
+  if (!code) return 'A';
+  // 例: "A-001" なら "A" を抽出
+  if (code.includes('-')) {
+    return code.split('-')[0];
+  }
+  return code.charAt(0).toUpperCase(); 
+};
+
 export default function HomeAR() {
   const [tagCode, setTagCode] = useState<string | null>(null);
   const router = useRouter();
@@ -58,10 +68,15 @@ export default function HomeAR() {
   const [level, setLevel] = useState(1);
   const [exp, setExp] = useState(0);
   
-  const [petModelUrlV1, setPetModelUrlV1] = useState<string>('/models/eggs/default_egg.glb');
+  // 💡 卵モデルと固定ターゲットマインド（初期値）
+  const [eggModelUrl, setEggModelUrl] = useState<string>('/models/eggs/egg_A.glb');
+  const [petMarkerUrl, setPetMarkerUrl] = useState<string>('/markers/target_A.mind'); 
+
+  // 孵化後のペットモデル
+  const [petModelUrlV1, setPetModelUrlV1] = useState<string>('');
   const [petModelUrlV2, setPetModelUrlV2] = useState<string | null>(null);
   const [petModelUrlV3, setPetModelUrlV3] = useState<string | null>(null);
-  const [petMarkerUrl, setPetMarkerUrl] = useState<string>('/targets.mind'); 
+  
   const [petRarity, setPetRarity] = useState<'N'|'R'|'SR'|'UR'|'?'>('?');
   const [hatchOverlay, setHatchOverlay] = useState<{ active: boolean; particles: any[]; rarity: string } | null>(null);
   const [hatchAnimating, setHatchAnimating] = useState(false);
@@ -224,12 +239,17 @@ export default function HomeAR() {
 
       // URLにタグ情報があればペット情報を取得
       if (tagCode) {
+        // 💡 タグからグループを判定し、卵モデルとマーカーを固定でセット
+        const group = getTagGroup(tagCode);
+        setEggModelUrl(`/models/eggs/egg_${group}.glb`);
+        setPetMarkerUrl(`/markers/target_${group}.mind`);
+
         const { data: pet } = await supabase
           .from('pets')
           .select(`
             id, owner_id, affection_level, sleeping_until, last_fed_at, 
             is_egg, walk_distance_m, level, exp, custom_name, birthday,
-            pet_masters(name, model_url, model_url_v2, model_url_v3, marker_url, rarity), 
+            pet_masters(name, model_url, model_url_v2, model_url_v3, rarity), 
             nfc_tags!inner(tag_code)
           `)
           .eq('nfc_tags.tag_code', tagCode)
@@ -250,7 +270,6 @@ export default function HomeAR() {
             setPetModelUrlV1(pm.model_url || `${fallbackBase}/v1.glb`);
             setPetModelUrlV2(pm.model_url_v2 || `${fallbackBase}/v2.glb`);
             setPetModelUrlV3(pm.model_url_v3 || `${fallbackBase}/v3.glb`);
-            setPetMarkerUrl(pm.marker_url || '/targets.mind');
             setPetMasterName(pm.name || '不明');
             setPetRarity(rarityPm);
           }
@@ -267,7 +286,6 @@ export default function HomeAR() {
 
         } else {
           setIsEggUnregistered(true); setIsEgg(true); 
-          setPetModelUrlV1('/models/eggs/default_egg.glb'); setPetMarkerUrl('/targets.mind');
         }
       }
     };
@@ -275,7 +293,8 @@ export default function HomeAR() {
   }, [tagCode, supabase]);
 
   const getCurrentModelUrl = () => {
-    if (isEgg || isEggUnregistered) return '/models/eggs/default_egg.glb';
+    // 💡 卵の間はグループごとの卵モデルを返す
+    if (isEgg || isEggUnregistered) return eggModelUrl;
     if (level >= 10 && petModelUrlV3) return petModelUrlV3;
     if (level >= 5 && petModelUrlV2) return petModelUrlV2;
     return petModelUrlV1;
@@ -338,7 +357,6 @@ export default function HomeAR() {
       setMotivationPercent(100);
       setCustomName(null);
       setBirthday(null);
-      setPetModelUrlV1('/models/eggs/default_egg.glb');
       setPetModelUrlV2(null);
       setPetModelUrlV3(null);
       setGameOverHandled(true);
@@ -515,7 +533,6 @@ export default function HomeAR() {
         setPetModelUrlV1(pm.model_url || `${fallbackBase}/v1.glb`);
         setPetModelUrlV2(pm.model_url_v2 || `${fallbackBase}/v2.glb`);
         setPetModelUrlV3(pm.model_url_v3 || `${fallbackBase}/v3.glb`);
-        setPetMarkerUrl(pm.marker_url || '/targets.mind');
         setPetMasterName(pm.name || '不明');
         setPetRarity(rarityRes);
         playSound('item');
