@@ -23,10 +23,9 @@ function getDistance(lat1: number, lon1: number, lat2: number, lon2: number) {
   return R * c;
 }
 
-// 💡 タグコードからグループ(A, Bなど)を判定する関数
+// 💡 タグコードからグループ(A, Bなど)を判定し、卵のモデルを変えるための関数
 const getTagGroup = (code: string | null) => {
   if (!code) return 'A';
-  // 例: "A-001" なら "A" を抽出
   if (code.includes('-')) {
     return code.split('-')[0];
   }
@@ -68,9 +67,11 @@ export default function HomeAR() {
   const [level, setLevel] = useState(1);
   const [exp, setExp] = useState(0);
   
-  // 💡 卵モデルと固定ターゲットマインド（初期値）
+  // 💡 ターゲットマインド（マーカー）は全ユーザー・全モデル共通で1つに完全固定！
+  const petMarkerUrl = '/markers/target.mind'; 
+  
+  // 卵モデルはタグに応じて動的に変えるためのState
   const [eggModelUrl, setEggModelUrl] = useState<string>('/models/eggs/egg_A.glb');
-  const [petMarkerUrl, setPetMarkerUrl] = useState<string>('/markers/target_A.mind'); 
 
   // 孵化後のペットモデル
   const [petModelUrlV1, setPetModelUrlV1] = useState<string>('');
@@ -140,7 +141,6 @@ export default function HomeAR() {
     const initAuthAndProfile = async () => {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) {
-        // 未ログインの場合はログイン画面へ
         router.push('/login');
         return;
       }
@@ -148,19 +148,16 @@ export default function HomeAR() {
       const userId = session.user.id;
       setSessionUserId(userId);
 
-      // プロフィールの確認
       const { data: profile } = await supabase.from('user_profiles').select('*').eq('id', userId).maybeSingle();
       
       if (!profile || !profile.birth_year) {
-        // プロフィール未設定の場合はモーダルを強制表示
         setShowProfileSetup(true);
       } else {
-        // 設定済みの場合はログインボーナスのチェックへ進む
         await checkLoginBonus(userId, profile);
       }
     };
     initAuthAndProfile();
-  }, [supabase, router]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [supabase, router]); 
 
   // --- ログインボーナス処理用関数 ---
   const grantLoginBonusItem = async (userId: string) => {
@@ -226,7 +223,6 @@ export default function HomeAR() {
   // --- NFCタグや一般データの取得 ---
   useEffect(() => {
     const fetchGameData = async () => {
-      // ショップ・ランドマーク・お知らせの取得
       const { data: items } = await supabase.from('item_masters').select('*').order('id', { ascending: false });
       if (items) setShopItems(items);
       const { data: spots } = await supabase.from('landmarks').select('*');
@@ -237,12 +233,10 @@ export default function HomeAR() {
       setGameOverNotice(null);
       setGameOverHandled(false);
 
-      // URLにタグ情報があればペット情報を取得
       if (tagCode) {
-        // 💡 タグからグループを判定し、卵モデルとマーカーを固定でセット
+        // 💡 タグからグループを判定し、卵モデルだけを動的にセット
         const group = getTagGroup(tagCode);
         setEggModelUrl(`/models/eggs/egg_${group}.glb`);
-        setPetMarkerUrl(`/markers/target_${group}.mind`);
 
         const { data: pet } = await supabase
           .from('pets')
@@ -261,12 +255,11 @@ export default function HomeAR() {
           setIsEgg(pet.is_egg); setWalkDistance(pet.walk_distance_m || 0); setLevel(pet.level || 1);
           setExp(pet.exp || 0); setCustomName(pet.custom_name); setBirthday(pet.birthday);
 
-          // @ts-ignore
           if (pet.pet_masters) { 
-            // `pet.pet_masters` may be an array; use first element when present
             const pm = (pet.pet_masters && pet.pet_masters[0]) || {};
             const rarityPm = (pm as any).rarity || '?';
             const fallbackBase = `/models/pet/${rarityPm}`;
+            
             setPetModelUrlV1(pm.model_url || `${fallbackBase}/v1.glb`);
             setPetModelUrlV2(pm.model_url_v2 || `${fallbackBase}/v2.glb`);
             setPetModelUrlV3(pm.model_url_v3 || `${fallbackBase}/v3.glb`);
@@ -526,15 +519,17 @@ export default function HomeAR() {
         setPetId(result.pet.id); setOwnerId(result.pet.owner_id); 
         setIsEgg(true); setIsEggUnregistered(false); setWalkDistance(0); setFeedCount(0); setLandmarkVisitCount(0); setEventCount(0);
         setGameOverNotice(null); setGameOverHandled(false); setLastFedAt(null); setSleepingUntil(null); setHungerPercent(100); setMotivationPercent(100); setLevel(1); setExp(0); setAffection(0);
-        // @ts-ignore
-        const pm = result.pet.pet_masters || {};
-        const rarityRes = pm.rarity || '?';
-        const fallbackBase = `/models/pet/${rarityRes}`;
-        setPetModelUrlV1(pm.model_url || `${fallbackBase}/v1.glb`);
-        setPetModelUrlV2(pm.model_url_v2 || `${fallbackBase}/v2.glb`);
-        setPetModelUrlV3(pm.model_url_v3 || `${fallbackBase}/v3.glb`);
-        setPetMasterName(pm.name || '不明');
-        setPetRarity(rarityRes);
+        
+        if (result.pet.pet_masters) {
+          const pm = result.pet.pet_masters;
+          const rarityRes = pm.rarity || '?';
+          const fallbackBase = `/models/pet/${rarityRes}`;
+          setPetModelUrlV1(pm.model_url || `${fallbackBase}/v1.glb`);
+          setPetModelUrlV2(pm.model_url_v2 || `${fallbackBase}/v2.glb`);
+          setPetModelUrlV3(pm.model_url_v3 || `${fallbackBase}/v3.glb`);
+          setPetMasterName(pm.name || '不明');
+          setPetRarity(rarityRes);
+        }
         playSound('item');
         alert(`不思議な卵を拾った！\nさんぽ、給餌、ランドマーク、イベントの全てをこなして孵化させよう！`);
       }
@@ -547,21 +542,16 @@ export default function HomeAR() {
       return alert('まだ孵化条件が揃っていません。歩数・給餌・ランドマーク・イベントを全て満たしてから試してください。');
     }
     playSound('hatch');
-    // 視覚エフェクトを表示してから孵化処理を続ける
     try {
       await showHatchEffect(petRarity);
     } catch (e) {
-      // エフェクト失敗しても孵化は続行
     }
 
-    // モデル切替のために一旦シーンキーを更新して a-scene を再レンダ
     setIsEgg(false);
     setSceneKey(prev => prev + 1);
-    // 孵化アニメーション（スケール）をトリガー
     setHatchAnimating(true);
-    // レアリティ別の演出音
     if (petRarity === 'SR' || petRarity === 'UR') playSound('levelup');
-    // アニメーション終了後にDB更新・通知
+    
     setTimeout(async () => {
       const today = new Date().toISOString().split('T')[0];
       setBirthday(today); setLastFedAt(new Date().toISOString());
