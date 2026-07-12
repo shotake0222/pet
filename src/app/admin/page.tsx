@@ -10,6 +10,29 @@ const extractFilePath = (url: string | null) => {
   return parts.length > 1 ? parts[1] : null;
 };
 
+// 全国ランダム配置用の座標ジェネレーター（おおよその日本領域）
+const generateRandomSpots = (master: any, count: number, startTime: string, endTime: string) => {
+  const spots = [];
+  for (let i = 0; i < count; i++) {
+    // 緯度: 約31.0 ~ 45.0, 経度: 約130.0 ~ 145.0
+    const lat = 31.0 + Math.random() * (45.0 - 31.0);
+    const lng = 130.0 + Math.random() * (145.0 - 130.0);
+    spots.push({
+      master_id: master.id,
+      name: master.name,
+      description: master.description,
+      radius_meters: master.radius_meters,
+      bonus_points: master.bonus_points,
+      model_url: master.model_url,
+      latitude: lat,
+      longitude: lng,
+      start_time: startTime ? new Date(startTime).toISOString() : null,
+      end_time: endTime ? new Date(endTime).toISOString() : null
+    });
+  }
+  return spots;
+};
+
 export default function AdminDashboard() {
   const supabase = createClient();
   const [activeTab, setActiveTab] = useState<'pets' | 'landmarks' | 'items' | 'news' | 'users' | 'settings'>('pets');
@@ -17,7 +40,8 @@ export default function AdminDashboard() {
 
   // --- 登録済みデータ一覧用のState ---
   const [petsList, setPetsList] = useState<any[]>([]);
-  const [landmarksList, setLandmarksList] = useState<any[]>([]);
+  const [landmarkMastersList, setLandmarkMastersList] = useState<any[]>([]); // スポットリスト用
+  const [landmarksList, setLandmarksList] = useState<any[]>([]);             // 実体のスポット用
   const [itemsList, setItemsList] = useState<any[]>([]);
   const [newsList, setNewsList] = useState<any[]>([]);
   const [usersList, setUsersList] = useState<any[]>([]);
@@ -43,6 +67,24 @@ export default function AdminDashboard() {
   const [newAttributeDesc, setNewAttributeDesc] = useState('');
 
   // --- ランドマーク用State ---
+  const [landmarkInputMode, setLandmarkInputMode] = useState<'master' | 'manual'>('master');
+  
+  // 1. スポットマスター（リスト）作成用
+  const [lmMasterName, setLmMasterName] = useState('');
+  const [lmMasterDesc, setLmMasterDesc] = useState('');
+  const [lmMasterRadius, setLmMasterRadius] = useState('50');
+  const [lmMasterPoints, setLmMasterPoints] = useState('100');
+  const [lmMasterIsPublic, setLmMasterIsPublic] = useState(false);
+  const [lmMasterModelFile, setLmMasterModelFile] = useState<File | null>(null);
+  
+  // 大量発生設定用 (マスター作成時＆既存マスターからの起動用)
+  const [lmAutoGenerate, setLmAutoGenerate] = useState(false);
+  const [lmGenCount, setLmGenCount] = useState('100');
+  const [lmGenStartTime, setLmGenStartTime] = useState('');
+  const [lmGenEndTime, setLmGenEndTime] = useState('');
+  const [activeMassGenMaster, setActiveMassGenMaster] = useState<any | null>(null);
+
+  // 2. 個別配置用 (従来機能)
   const [landmarkName, setLandmarkName] = useState('');
   const [landmarkDesc, setLandmarkDesc] = useState('');
   const [landmarkLat, setLandmarkLat] = useState('');
@@ -57,7 +99,7 @@ export default function AdminDashboard() {
   const [itemType, setItemType] = useState('food');
   const [itemPrice, setItemPrice] = useState('100');
   const [itemEffect, setItemEffect] = useState('10');
-  const [itemImageFile, setItemImageFile] = useState<File | null>(null); // 画像ファイル
+  const [itemImageFile, setItemImageFile] = useState<File | null>(null);
 
   // --- お知らせ用State ---
   const [newsTitle, setNewsTitle] = useState('');
@@ -65,8 +107,19 @@ export default function AdminDashboard() {
 
   // --- データの取得（一覧表示用） ---
   const fetchData = async () => {
-    const [petsRes, landmarksRes, itemsRes, newsRes, usersRes, raritiesRes, attributesRes, petAttrsRes] = await Promise.all([
+    const [
+      petsRes, 
+      landmarkMastersRes,
+      landmarksRes, 
+      itemsRes, 
+      newsRes, 
+      usersRes, 
+      raritiesRes, 
+      attributesRes, 
+      petAttrsRes
+    ] = await Promise.all([
       supabase.from('pet_masters').select('*').order('id', { ascending: false }),
+      supabase.from('landmark_masters').select('*').order('id', { ascending: false }),
       supabase.from('landmarks').select('*').order('id', { ascending: false }),
       supabase.from('item_masters').select('*').order('id', { ascending: false }),
       supabase.from('announcements').select('*').order('published_at', { ascending: false }),
@@ -88,6 +141,7 @@ export default function AdminDashboard() {
       });
       setPetsList(petsRes.data.map((p: any) => ({ ...p, attributes: petAttrMap[p.id] || [] })));
     }
+    if (landmarkMastersRes.data) setLandmarkMastersList(landmarkMastersRes.data);
     if (landmarksRes.data) setLandmarksList(landmarksRes.data);
     if (itemsRes.data) setItemsList(itemsRes.data);
     if (newsRes.data) setNewsList(newsRes.data);
@@ -253,13 +307,50 @@ export default function AdminDashboard() {
     }
   };
 
-  const handleAddLandmark = async (e: React.FormEvent) => {
+  // --- スポットマスター登録 ＆ 大量発生 ---
+  const handleAddLandmarkMaster = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!lmMasterModelFile || !lmMasterName) return alert('スポット名とモデルが必要です');
+    setIsSubmitting(true);
+    try {
+      const modelUrl = await uploadFile(lmMasterModelFile, 'models');
+      const { data: master, error } = await supabase.from('landmark_masters').insert({
+        name: lmMasterName,
+        description: lmMasterDesc,
+        radius_meters: parseInt(lmMasterRadius, 10),
+        bonus_points: parseInt(lmMasterPoints, 10),
+        model_url: modelUrl,
+        is_public: lmMasterIsPublic
+      }).select('*').single();
+      if (error) throw error;
+
+      if (lmAutoGenerate) {
+        const count = parseInt(lmGenCount, 10);
+        const spots = generateRandomSpots(master, count, lmGenStartTime, lmGenEndTime);
+        const { error: genErr } = await supabase.from('landmarks').insert(spots);
+        if (genErr) throw genErr;
+        alert(`スポット「${master.name}」をリストに登録し、全国に ${count} 箇所ランダム配置しました！`);
+      } else {
+        alert(`スポット「${master.name}」をリストに登録しました！`);
+      }
+
+      setLmMasterName(''); setLmMasterDesc(''); setLmMasterModelFile(null); setLmAutoGenerate(false);
+      setLmGenStartTime(''); setLmGenEndTime(''); setLmGenCount('100');
+      fetchData();
+    } catch (e: any) {
+      alert(`エラー: ${e.message}`);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  // --- 個別手動スポット配置 ---
+  const handleAddLandmarkManual = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!landmarkModelFile || !landmarkName || !landmarkLat || !landmarkLng) return alert('必須項目が不足しています');
     setIsSubmitting(true);
     try {
       const modelUrl = await uploadFile(landmarkModelFile, 'models');
-
       const { error } = await supabase.from('landmarks').insert({
         name: landmarkName,
         description: landmarkDesc,
@@ -276,6 +367,28 @@ export default function AdminDashboard() {
       fetchData();
     } catch (e: any) {
       alert(`エラー: ${e.message}`);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  // --- 既存のスポットマスターから大量発生を実行 ---
+  const handleExecuteMassGen = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!activeMassGenMaster) return;
+    setIsSubmitting(true);
+    try {
+      const count = parseInt(lmGenCount, 10);
+      const spots = generateRandomSpots(activeMassGenMaster, count, lmGenStartTime, lmGenEndTime);
+      const { error } = await supabase.from('landmarks').insert(spots);
+      if (error) throw error;
+
+      alert(`スケジュールを設定し、全国に ${count} 箇所を発生させました！`);
+      setActiveMassGenMaster(null);
+      setLmGenStartTime(''); setLmGenEndTime(''); setLmGenCount('100');
+      fetchData();
+    } catch (err: any) {
+      alert(`エラー: ${err.message}`);
     } finally {
       setIsSubmitting(false);
     }
@@ -358,16 +471,39 @@ export default function AdminDashboard() {
     }
   };
 
-  const handleDeleteLandmark = async (id: number, modelUrl: string) => {
-    if (!window.confirm('本当に削除しますか？')) return;
+  // スポットマスター(リスト)の削除
+  const handleDeleteLandmarkMaster = async (id: number, modelUrl: string) => {
+    if (!window.confirm('このスポットリストを削除しますか？\n※既に配置された実体のスポットは削除されません。')) return;
     try {
       const modelPath = extractFilePath(modelUrl);
-      if (modelPath) {
-        await supabase.storage.from('ar_assets').remove([modelPath]);
-      }
+      if (modelPath) await supabase.storage.from('ar_assets').remove([modelPath]);
+      const { error } = await supabase.from('landmark_masters').delete().eq('id', id);
+      if (error) throw error;
+      alert('スポットリストから削除しました。');
+      fetchData();
+    } catch (e: any) {
+      alert(`削除に失敗しました: ${e.message}`);
+    }
+  };
+
+  // スポットマスター(リスト)の公開状態トグル
+  const toggleLandmarkMasterPublic = async (id: number, current: boolean) => {
+    try {
+      const { error } = await supabase.from('landmark_masters').update({ is_public: !current }).eq('id', id);
+      if (error) throw error;
+      fetchData();
+    } catch (e: any) {
+      alert(`エラー: ${e.message}`);
+    }
+  };
+
+  // 配置済みスポットの削除
+  const handleDeleteLandmarkInstance = async (id: number) => {
+    if (!window.confirm('この配置済みスポットを削除しますか？')) return;
+    try {
       const { error } = await supabase.from('landmarks').delete().eq('id', id);
       if (error) throw error;
-      alert('削除しました。');
+      alert('スポットを撤去しました。');
       fetchData();
     } catch (e: any) {
       alert(`削除に失敗しました: ${e.message}`);
@@ -517,48 +653,124 @@ export default function AdminDashboard() {
                 </form>
               )}
 
-              {/* 2. ランドマーク追加フォーム */}
+              {/* 2. ランドマーク (スポット) 追加フォーム */}
               {activeTab === 'landmarks' && (
-                <form onSubmit={handleAddLandmark} className="space-y-5 bg-gray-50 p-6 rounded-2xl border border-gray-100">
-                  <h2 className="text-xl font-bold">新規スポット配置</h2>
-                  <div className="flex gap-4">
-                    <div className="flex-1">
-                      <label className="block text-sm font-bold mb-1">スポット名</label>
-                      <input type="text" value={landmarkName} onChange={e => setLandmarkName(e.target.value)} className="w-full border p-3 rounded-lg focus:ring-2 focus:ring-green-500" required />
-                    </div>
-                    <div className="flex-1">
-                      <label className="block text-sm font-bold mb-1">説明</label>
-                      <input type="text" value={landmarkDesc} onChange={e => setLandmarkDesc(e.target.value)} className="w-full border p-3 rounded-lg focus:ring-2 focus:ring-green-500" />
-                    </div>
+                <div className="space-y-4">
+                  <div className="flex gap-2 p-1 bg-gray-200 rounded-xl">
+                    <button onClick={() => setLandmarkInputMode('master')} className={`flex-1 font-bold text-sm py-2 rounded-lg transition-colors ${landmarkInputMode === 'master' ? 'bg-white shadow' : 'text-gray-500 hover:bg-gray-300'}`}>スポットリストの作成</button>
+                    <button onClick={() => setLandmarkInputMode('manual')} className={`flex-1 font-bold text-sm py-2 rounded-lg transition-colors ${landmarkInputMode === 'manual' ? 'bg-white shadow' : 'text-gray-500 hover:bg-gray-300'}`}>手動での個別配置</button>
                   </div>
-                  <div className="flex gap-4">
-                    <div className="flex-1">
-                      <label className="block text-sm font-bold mb-1">緯度 (Lat)</label>
-                      <input type="number" step="0.000001" value={landmarkLat} onChange={e => setLandmarkLat(e.target.value)} className="w-full border p-3 rounded-lg focus:ring-2 focus:ring-green-500" required />
-                    </div>
-                    <div className="flex-1">
-                      <label className="block text-sm font-bold mb-1">経度 (Lng)</label>
-                      <input type="number" step="0.000001" value={landmarkLng} onChange={e => setLandmarkLng(e.target.value)} className="w-full border p-3 rounded-lg focus:ring-2 focus:ring-green-500" required />
-                    </div>
-                  </div>
-                  <div className="flex gap-4">
-                    <div className="flex-1">
-                      <label className="block text-sm font-bold mb-1">判定半径(m)</label>
-                      <input type="number" value={landmarkRadius} onChange={e => setLandmarkRadius(e.target.value)} className="w-full border p-3 rounded-lg focus:ring-2 focus:ring-green-500" required />
-                    </div>
-                    <div className="flex-1">
-                      <label className="block text-sm font-bold mb-1">獲得pt</label>
-                      <input type="number" value={landmarkPoints} onChange={e => setLandmarkPoints(e.target.value)} className="w-full border p-3 rounded-lg focus:ring-2 focus:ring-green-500" required />
-                    </div>
-                  </div>
-                  <div className="bg-green-50 p-4 rounded-xl border border-green-100">
-                    <label className="block text-sm font-bold text-green-900 mb-2">出現3Dオブジェクト (.glb)</label>
-                    <input type="file" accept=".glb" onChange={e => setLandmarkModelFile(e.target.files?.[0] || null)} className="w-full text-sm" required />
-                  </div>
-                  <button disabled={isSubmitting} className="w-full bg-slate-900 text-white font-bold py-4 rounded-xl shadow-lg hover:bg-slate-800 disabled:bg-gray-400">
-                    {isSubmitting ? '処理中...' : 'スポットを配置'}
-                  </button>
-                </form>
+
+                  {/* モード1: マスター(リスト)作成 */}
+                  {landmarkInputMode === 'master' && (
+                    <form onSubmit={handleAddLandmarkMaster} className="space-y-5 bg-gray-50 p-6 rounded-2xl border border-gray-100">
+                      <h2 className="text-xl font-bold">スポットリストの作成</h2>
+                      <div className="flex gap-4">
+                        <div className="flex-1">
+                          <label className="block text-sm font-bold mb-1">スポット名 (例: お菓子屋さん)</label>
+                          <input type="text" value={lmMasterName} onChange={e => setLmMasterName(e.target.value)} className="w-full border p-3 rounded-lg focus:ring-2 focus:ring-green-500" required />
+                        </div>
+                      </div>
+                      <div>
+                        <label className="block text-sm font-bold mb-1">説明</label>
+                        <textarea value={lmMasterDesc} onChange={e => setLmMasterDesc(e.target.value)} className="w-full border p-3 rounded-lg focus:ring-2 focus:ring-green-500" rows={2} />
+                      </div>
+                      <div className="flex gap-4">
+                        <div className="flex-1">
+                          <label className="block text-sm font-bold mb-1">判定半径(m)</label>
+                          <input type="number" value={lmMasterRadius} onChange={e => setLmMasterRadius(e.target.value)} className="w-full border p-3 rounded-lg focus:ring-2 focus:ring-green-500" required />
+                        </div>
+                        <div className="flex-1">
+                          <label className="block text-sm font-bold mb-1">獲得pt</label>
+                          <input type="number" value={lmMasterPoints} onChange={e => setLmMasterPoints(e.target.value)} className="w-full border p-3 rounded-lg focus:ring-2 focus:ring-green-500" required />
+                        </div>
+                      </div>
+
+                      <div className="bg-green-50 p-4 rounded-xl border border-green-100">
+                        <label className="block text-sm font-bold text-green-900 mb-2">出現3Dオブジェクト (.glb)</label>
+                        <input type="file" accept=".glb" onChange={e => setLmMasterModelFile(e.target.files?.[0] || null)} className="w-full text-sm" required />
+                      </div>
+
+                      <div className="flex items-center gap-3 bg-white p-3 border rounded-lg">
+                        <label className="text-sm font-bold whitespace-nowrap">公開ステータス:</label>
+                        <button type="button" onClick={() => setLmMasterIsPublic(!lmMasterIsPublic)} className={`text-xs font-bold px-3 py-1 rounded-full ${lmMasterIsPublic ? 'bg-green-100 text-green-800' : 'bg-gray-300 text-gray-700'}`}>
+                          {lmMasterIsPublic ? '公開 (本番表示)' : '非公開 (準備中)'}
+                        </button>
+                      </div>
+
+                      <div className="bg-yellow-50 p-4 rounded-xl border border-yellow-200">
+                        <label className="flex items-center gap-2 font-bold text-sm text-yellow-900 cursor-pointer">
+                          <input type="checkbox" checked={lmAutoGenerate} onChange={e => setLmAutoGenerate(e.target.checked)} className="w-4 h-4" />
+                          <span>登録と同時に全国ランダム配置（大量発生）を行う</span>
+                        </label>
+                        {lmAutoGenerate && (
+                          <div className="grid grid-cols-3 gap-3 mt-4">
+                            <div>
+                              <label className="text-xs font-bold mb-1 block">発生数</label>
+                              <input type="number" value={lmGenCount} onChange={e => setLmGenCount(e.target.value)} className="w-full border p-2 rounded text-sm" />
+                            </div>
+                            <div>
+                              <label className="text-xs font-bold mb-1 block">開始日時 (任意)</label>
+                              <input type="datetime-local" value={lmGenStartTime} onChange={e => setLmGenStartTime(e.target.value)} className="w-full border p-2 rounded text-sm" />
+                            </div>
+                            <div>
+                              <label className="text-xs font-bold mb-1 block">終了日時 (任意)</label>
+                              <input type="datetime-local" value={lmGenEndTime} onChange={e => setLmGenEndTime(e.target.value)} className="w-full border p-2 rounded text-sm" />
+                            </div>
+                          </div>
+                        )}
+                      </div>
+
+                      <button disabled={isSubmitting} className="w-full bg-slate-900 text-white font-bold py-4 rounded-xl shadow-lg hover:bg-slate-800 disabled:bg-gray-400">
+                        {isSubmitting ? '処理中...' : 'スポットリストに登録する'}
+                      </button>
+                    </form>
+                  )}
+
+                  {/* モード2: 手動個別配置 */}
+                  {landmarkInputMode === 'manual' && (
+                    <form onSubmit={handleAddLandmarkManual} className="space-y-5 bg-gray-50 p-6 rounded-2xl border border-gray-100">
+                      <h2 className="text-xl font-bold">スポット個別配置</h2>
+                      <div className="flex gap-4">
+                        <div className="flex-1">
+                          <label className="block text-sm font-bold mb-1">スポット名</label>
+                          <input type="text" value={landmarkName} onChange={e => setLandmarkName(e.target.value)} className="w-full border p-3 rounded-lg focus:ring-2 focus:ring-green-500" required />
+                        </div>
+                        <div className="flex-1">
+                          <label className="block text-sm font-bold mb-1">説明</label>
+                          <input type="text" value={landmarkDesc} onChange={e => setLandmarkDesc(e.target.value)} className="w-full border p-3 rounded-lg focus:ring-2 focus:ring-green-500" />
+                        </div>
+                      </div>
+                      <div className="flex gap-4">
+                        <div className="flex-1">
+                          <label className="block text-sm font-bold mb-1">緯度 (Lat)</label>
+                          <input type="number" step="0.000001" value={landmarkLat} onChange={e => setLandmarkLat(e.target.value)} className="w-full border p-3 rounded-lg focus:ring-2 focus:ring-green-500" required />
+                        </div>
+                        <div className="flex-1">
+                          <label className="block text-sm font-bold mb-1">経度 (Lng)</label>
+                          <input type="number" step="0.000001" value={landmarkLng} onChange={e => setLandmarkLng(e.target.value)} className="w-full border p-3 rounded-lg focus:ring-2 focus:ring-green-500" required />
+                        </div>
+                      </div>
+                      <div className="flex gap-4">
+                        <div className="flex-1">
+                          <label className="block text-sm font-bold mb-1">判定半径(m)</label>
+                          <input type="number" value={landmarkRadius} onChange={e => setLandmarkRadius(e.target.value)} className="w-full border p-3 rounded-lg focus:ring-2 focus:ring-green-500" required />
+                        </div>
+                        <div className="flex-1">
+                          <label className="block text-sm font-bold mb-1">獲得pt</label>
+                          <input type="number" value={landmarkPoints} onChange={e => setLandmarkPoints(e.target.value)} className="w-full border p-3 rounded-lg focus:ring-2 focus:ring-green-500" required />
+                        </div>
+                      </div>
+                      <div className="bg-green-50 p-4 rounded-xl border border-green-100">
+                        <label className="block text-sm font-bold text-green-900 mb-2">出現3Dオブジェクト (.glb)</label>
+                        <input type="file" accept=".glb" onChange={e => setLandmarkModelFile(e.target.files?.[0] || null)} className="w-full text-sm" required />
+                      </div>
+                      <button disabled={isSubmitting} className="w-full bg-slate-900 text-white font-bold py-4 rounded-xl shadow-lg hover:bg-slate-800 disabled:bg-gray-400">
+                        {isSubmitting ? '処理中...' : 'ピンポイントで配置する'}
+                      </button>
+                    </form>
+                  )}
+                </div>
               )}
 
               {/* 3. アイテム追加フォーム */}
@@ -641,146 +853,232 @@ export default function AdminDashboard() {
 
             {/* --- 右カラム: 登録済みデータ一覧 --- */}
             <div className="bg-white border rounded-2xl p-6 h-[800px] overflow-y-auto shadow-inner">
-              <h2 className="text-xl font-bold mb-4 border-b pb-2">
-                {activeTab === 'pets' && '🐶 登録済みペット一覧'}
-                {activeTab === 'landmarks' && '📍 配置済みスポット一覧'}
-                {activeTab === 'items' && '🛒 登録済みアイテム一覧'}
-                {activeTab === 'news' && '📢 配信済みお知らせ一覧'}
-                {activeTab === 'users' && '👥 登録ユーザー一覧'}
-              </h2>
-
-              <div className="space-y-3">
-                {/* 1. ペット一覧 */}
-                {activeTab === 'pets' && petsList.map(pet => (
-                  <div key={pet.id} className="p-4 border rounded-xl hover:bg-gray-50 flex items-center justify-between transition-colors group">
-                    <div>
-                      <div className="font-bold text-lg">{pet.name} <span className="text-sm font-normal bg-gray-200 px-2 py-1 rounded ml-2">ランク: {pet.rarity}</span></div>
-                      <div className="text-sm text-gray-500 mt-1 flex flex-wrap gap-x-3 gap-y-1">
-                        <span>ウェイト: {pet.drop_weight}</span>
-                        <a href={pet.model_url} target="_blank" rel="noreferrer" className="text-blue-500 hover:underline">V1モデル</a>
-                        {pet.model_url_v2 && <a href={pet.model_url_v2} target="_blank" rel="noreferrer" className="text-blue-500 hover:underline">V2モデル(Lv5)</a>}
-                        {pet.model_url_v3 && <a href={pet.model_url_v3} target="_blank" rel="noreferrer" className="text-blue-500 hover:underline">V3モデル(Lv10)</a>}
-                        <a href={pet.marker_url} target="_blank" rel="noreferrer" className="text-blue-500 hover:underline">マーカー</a>
-                      </div>
-                      {pet.attributes && pet.attributes.length > 0 && (
-                        <div className="mt-2 flex flex-wrap gap-2">
-                          {pet.attributes.map((a: any) => (
-                            <span key={a.id} className="text-xs px-2 py-1 rounded-full bg-gray-100 border text-gray-700" style={{ background: a.color || undefined }}>{a.name}</span>
-                          ))}
+              
+              {/* 1. ペット一覧 */}
+              {activeTab === 'pets' && (
+                <>
+                  <h2 className="text-xl font-bold mb-4 border-b pb-2">🐶 登録済みペット一覧</h2>
+                  <div className="space-y-3">
+                    {petsList.map(pet => (
+                      <div key={pet.id} className="p-4 border rounded-xl hover:bg-gray-50 flex items-center justify-between transition-colors group">
+                        <div>
+                          <div className="font-bold text-lg">{pet.name} <span className="text-sm font-normal bg-gray-200 px-2 py-1 rounded ml-2">ランク: {pet.rarity}</span></div>
+                          <div className="text-sm text-gray-500 mt-1 flex flex-wrap gap-x-3 gap-y-1">
+                            <span>ウェイト: {pet.drop_weight}</span>
+                            <a href={pet.model_url} target="_blank" rel="noreferrer" className="text-blue-500 hover:underline">V1モデル</a>
+                            {pet.model_url_v2 && <a href={pet.model_url_v2} target="_blank" rel="noreferrer" className="text-blue-500 hover:underline">V2モデル(Lv5)</a>}
+                            {pet.model_url_v3 && <a href={pet.model_url_v3} target="_blank" rel="noreferrer" className="text-blue-500 hover:underline">V3モデル(Lv10)</a>}
+                            <a href={pet.marker_url} target="_blank" rel="noreferrer" className="text-blue-500 hover:underline">マーカー</a>
+                          </div>
+                          {pet.attributes && pet.attributes.length > 0 && (
+                            <div className="mt-2 flex flex-wrap gap-2">
+                              {pet.attributes.map((a: any) => (
+                                <span key={a.id} className="text-xs px-2 py-1 rounded-full bg-gray-100 border text-gray-700" style={{ background: a.color || undefined }}>{a.name}</span>
+                              ))}
+                            </div>
+                          )}
                         </div>
-                      )}
-                    </div>
-                    <div className="flex gap-2">
-                      <button onClick={() => {
-                        setActiveTab('pets');
-                        setEditingPetId(pet.id);
-                        setPetName(pet.name || '');
-                        setPetRarity(pet.rarity || 'N');
-                        setPetWeight(String(pet.drop_weight || 100));
-                        setSelectedAttributeIds((pet.attributes || []).map((a: any) => a.id));
-                        setPetModelFile(null); setPetModelV2File(null); setPetModelV3File(null); setPetMarkerFile(null);
-                      }} className="bg-blue-50 text-blue-600 font-bold px-4 py-2 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity hover:bg-blue-100">編集</button>
-                      <button 
-                        onClick={() => handleDeletePet(pet.id, pet.model_url, pet.marker_url, pet.model_url_v2, pet.model_url_v3)}
-                        className="bg-red-50 text-red-600 font-bold px-4 py-2 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-100"
-                      >
-                        削除
-                      </button>
-                    </div>
-                  </div>
-                ))}
-
-                {/* 2. ランドマーク一覧 */}
-                {activeTab === 'landmarks' && landmarksList.map(spot => (
-                  <div key={spot.id} className="p-4 border rounded-xl hover:bg-gray-50 flex justify-between items-center transition-colors group">
-                    <div>
-                      <div className="font-bold text-lg">{spot.name}</div>
-                      <div className="text-sm text-gray-600 my-1">{spot.description}</div>
-                      <div className="text-xs text-gray-500 mt-2">
-                        Lat: {spot.latitude.toFixed(4)} / Lng: {spot.longitude.toFixed(4)} <span className="font-bold text-green-600 ml-2">{spot.bonus_points} pt</span>
+                        <div className="flex gap-2">
+                          <button onClick={() => {
+                            setActiveTab('pets');
+                            setEditingPetId(pet.id);
+                            setPetName(pet.name || '');
+                            setPetRarity(pet.rarity || 'N');
+                            setPetWeight(String(pet.drop_weight || 100));
+                            setSelectedAttributeIds((pet.attributes || []).map((a: any) => a.id));
+                            setPetModelFile(null); setPetModelV2File(null); setPetModelV3File(null); setPetMarkerFile(null);
+                          }} className="bg-blue-50 text-blue-600 font-bold px-4 py-2 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity hover:bg-blue-100">編集</button>
+                          <button 
+                            onClick={() => handleDeletePet(pet.id, pet.model_url, pet.marker_url, pet.model_url_v2, pet.model_url_v3)}
+                            className="bg-red-50 text-red-600 font-bold px-4 py-2 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-100"
+                          >
+                            削除
+                          </button>
+                        </div>
                       </div>
-                    </div>
-                    <button 
-                      onClick={() => handleDeleteLandmark(spot.id, spot.model_url)}
-                      className="bg-red-50 text-red-600 font-bold px-4 py-2 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-100"
-                    >
-                      削除
-                    </button>
+                    ))}
+                    {petsList.length === 0 && <p className="text-center text-gray-400 py-10">データがありません</p>}
                   </div>
-                ))}
+                </>
+              )}
 
-                {/* 3. アイテム一覧 */}
-                {activeTab === 'items' && itemsList.map(item => (
-                  <div key={item.id} className="p-4 border rounded-xl hover:bg-gray-50 flex items-center gap-4 transition-colors group">
-                    {item.image_url ? (
-                      <img src={item.image_url} alt={item.name} className="w-16 h-16 object-cover rounded-lg shadow-sm border" />
-                    ) : (
-                      <div className="w-16 h-16 bg-gray-200 rounded-lg flex items-center justify-center text-2xl">📦</div>
-                    )}
-                    
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2">
-                        <span className="font-bold text-lg">{item.name}</span>
-                        <span className="text-xs font-bold bg-yellow-100 text-yellow-800 px-2 py-1 rounded">{item.item_type}</span>
-                        <span className="font-bold text-blue-600 ml-auto">{item.price_jpy > 0 ? `¥${item.price_jpy}` : '無料'}</span>
+              {/* 2. ランドマーク一覧 (マスター & 実体) */}
+              {activeTab === 'landmarks' && (
+                <div className="space-y-8">
+                  {/* スポットマスター一覧 */}
+                  <div>
+                    <h2 className="text-xl font-bold mb-4 border-b pb-2">📂 登録済みスポットリスト (マスター)</h2>
+                    <div className="space-y-4">
+                      {landmarkMastersList.map(master => (
+                        <div key={master.id} className="p-4 border rounded-xl bg-gray-50 flex flex-col gap-3">
+                          <div className="flex justify-between items-start">
+                            <div>
+                              <div className="font-bold text-lg flex items-center gap-2">
+                                {master.name}
+                                <button onClick={() => toggleLandmarkMasterPublic(master.id, master.is_public)} className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${master.is_public ? 'bg-green-100 text-green-800 border-green-300' : 'bg-gray-200 text-gray-600 border-gray-300'}`}>
+                                  {master.is_public ? '公開中' : '非公開'}
+                                </button>
+                              </div>
+                              <div className="text-sm text-gray-600 my-1">{master.description}</div>
+                              <div className="text-xs text-gray-500">半径: {master.radius_meters}m | 獲得pt: {master.bonus_points}</div>
+                            </div>
+                            <div className="flex gap-2">
+                              <button onClick={() => { setActiveMassGenMaster(master); setLmGenStartTime(''); setLmGenEndTime(''); setLmGenCount('100'); }} className="bg-yellow-100 text-yellow-800 font-bold text-xs px-3 py-1.5 rounded hover:bg-yellow-200 border border-yellow-300 shadow-sm">
+                                🚀 大量発生タイム設定
+                              </button>
+                              <button onClick={() => handleDeleteLandmarkMaster(master.id, master.model_url)} className="bg-red-50 text-red-600 font-bold text-xs px-3 py-1.5 rounded hover:bg-red-100">
+                                削除
+                              </button>
+                            </div>
+                          </div>
+
+                          {/* 大量発生インラインフォーム */}
+                          {activeMassGenMaster?.id === master.id && (
+                            <form onSubmit={handleExecuteMassGen} className="mt-2 p-4 bg-yellow-50 border border-yellow-200 rounded-xl">
+                              <h4 className="font-bold mb-3 text-sm text-yellow-900">🚀 スケジュール・大量発生設定</h4>
+                              <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-3">
+                                <div>
+                                  <label className="text-xs font-bold text-gray-700 block mb-1">発生数 (箇所)</label>
+                                  <input type="number" value={lmGenCount} onChange={e => setLmGenCount(e.target.value)} className="w-full border p-2 rounded text-sm" required />
+                                </div>
+                                <div>
+                                  <label className="text-xs font-bold text-gray-700 block mb-1">開始日時 (任意)</label>
+                                  <input type="datetime-local" value={lmGenStartTime} onChange={e => setLmGenStartTime(e.target.value)} className="w-full border p-2 rounded text-sm" />
+                                </div>
+                                <div>
+                                  <label className="text-xs font-bold text-gray-700 block mb-1">終了日時 (任意)</label>
+                                  <input type="datetime-local" value={lmGenEndTime} onChange={e => setLmGenEndTime(e.target.value)} className="w-full border p-2 rounded text-sm" />
+                                </div>
+                              </div>
+                              <div className="flex justify-end gap-2">
+                                <button type="button" onClick={() => setActiveMassGenMaster(null)} className="px-4 py-2 bg-gray-200 text-gray-700 rounded font-bold text-sm">キャンセル</button>
+                                <button type="submit" disabled={isSubmitting} className="px-4 py-2 bg-yellow-500 text-white rounded font-bold text-sm shadow hover:bg-yellow-600">発生させる！</button>
+                              </div>
+                            </form>
+                          )}
+                        </div>
+                      ))}
+                      {landmarkMastersList.length === 0 && <p className="text-center text-gray-400 py-4">スポットリストはまだありません</p>}
+                    </div>
+                  </div>
+
+                  {/* 実際の配置スポット一覧 */}
+                  <div>
+                    <h2 className="text-xl font-bold mb-4 border-b pb-2 mt-8">📍 マップに配置済みスポット (実体)</h2>
+                    <div className="space-y-3">
+                      {landmarksList.map(spot => (
+                        <div key={spot.id} className="p-4 border rounded-xl hover:bg-gray-50 flex justify-between items-center transition-colors group">
+                          <div>
+                            <div className="font-bold text-md">{spot.name}</div>
+                            <div className="text-xs text-gray-500 mt-1">
+                              Lat: {spot.latitude.toFixed(4)} / Lng: {spot.longitude.toFixed(4)}
+                            </div>
+                            {(spot.start_time || spot.end_time) && (
+                              <div className="text-[10px] text-yellow-700 mt-1 bg-yellow-50 inline-block px-2 py-0.5 rounded border border-yellow-200">
+                                ⏳ 期間限定: {spot.start_time ? new Date(spot.start_time).toLocaleString() : '指定なし'} 〜 {spot.end_time ? new Date(spot.end_time).toLocaleString() : '指定なし'}
+                              </div>
+                            )}
+                          </div>
+                          <button 
+                            onClick={() => handleDeleteLandmarkInstance(spot.id)}
+                            className="bg-red-50 text-red-600 font-bold px-4 py-2 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-100 text-xs"
+                          >
+                            撤去
+                          </button>
+                        </div>
+                      ))}
+                      {landmarksList.length === 0 && <p className="text-center text-gray-400 py-4">配置されているスポットはありません</p>}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* 3. アイテム一覧 */}
+              {activeTab === 'items' && (
+                <>
+                  <h2 className="text-xl font-bold mb-4 border-b pb-2">🛒 登録済みアイテム一覧</h2>
+                  <div className="space-y-3">
+                    {itemsList.map(item => (
+                      <div key={item.id} className="p-4 border rounded-xl hover:bg-gray-50 flex items-center gap-4 transition-colors group">
+                        {item.image_url ? (
+                          <img src={item.image_url} alt={item.name} className="w-16 h-16 object-cover rounded-lg shadow-sm border" />
+                        ) : (
+                          <div className="w-16 h-16 bg-gray-200 rounded-lg flex items-center justify-center text-2xl">📦</div>
+                        )}
+                        
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2">
+                            <span className="font-bold text-lg">{item.name}</span>
+                            <span className="text-xs font-bold bg-yellow-100 text-yellow-800 px-2 py-1 rounded">{item.item_type}</span>
+                            <span className="font-bold text-blue-600 ml-auto">{item.price_jpy > 0 ? `¥${item.price_jpy}` : '無料'}</span>
+                          </div>
+                          <div className="text-sm text-gray-600 mt-1">{item.description}</div>
+                          <div className="text-xs text-gray-400 mt-1">効果値: {item.effect_value}</div>
+                        </div>
+                        <button 
+                          onClick={() => handleDeleteItem(item.id, item.image_url)}
+                          className="bg-red-50 text-red-600 font-bold px-4 py-2 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-100"
+                        >
+                          削除
+                        </button>
                       </div>
-                      <div className="text-sm text-gray-600 mt-1">{item.description}</div>
-                      <div className="text-xs text-gray-400 mt-1">効果値: {item.effect_value}</div>
-                    </div>
-                    <button 
-                      onClick={() => handleDeleteItem(item.id, item.image_url)}
-                      className="bg-red-50 text-red-600 font-bold px-4 py-2 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-100"
-                    >
-                      削除
-                    </button>
+                    ))}
+                    {itemsList.length === 0 && <p className="text-center text-gray-400 py-10">データがありません</p>}
                   </div>
-                ))}
+                </>
+              )}
 
-                {/* 4. お知らせ一覧 */}
-                {activeTab === 'news' && newsList.map(news => (
-                  <div key={news.id} className={`p-4 border rounded-xl transition-colors ${news.is_active ? 'bg-white' : 'bg-gray-100 opacity-75'}`}>
-                    <div className="flex justify-between items-start mb-2">
-                      <h3 className="font-bold text-lg">{news.title}</h3>
-                      <button 
-                        onClick={() => toggleNews(news.id, news.is_active)} 
-                        className={`text-xs font-bold px-3 py-1 rounded-full ${news.is_active ? 'bg-green-100 text-green-800' : 'bg-gray-300 text-gray-700'}`}
-                      >
-                        {news.is_active ? '配信中' : '非公開'}
-                      </button>
-                    </div>
-                    <p className="text-sm text-gray-600 whitespace-pre-wrap">{news.content}</p>
-                    <div className="text-[10px] text-gray-400 mt-3 text-right">
-                      配信日時: {new Date(news.published_at).toLocaleString()}
-                    </div>
-                  </div>
-                ))}
-
-                {/* 5. ユーザー属性一覧 */}
-                {activeTab === 'users' && usersList.map(user => (
-                  <div key={user.id} className="p-4 border rounded-xl flex justify-between items-center bg-gray-50">
-                    <div>
-                      <div className="font-bold text-gray-800">
-                        ユーザーID: <span className="text-xs font-normal">{user.id.substring(0, 8)}...</span>
+              {/* 4. お知らせ一覧 */}
+              {activeTab === 'news' && (
+                <>
+                  <h2 className="text-xl font-bold mb-4 border-b pb-2">📢 配信済みお知らせ一覧</h2>
+                  <div className="space-y-3">
+                    {newsList.map(news => (
+                      <div key={news.id} className={`p-4 border rounded-xl transition-colors ${news.is_active ? 'bg-white' : 'bg-gray-100 opacity-75'}`}>
+                        <div className="flex justify-between items-start mb-2">
+                          <h3 className="font-bold text-lg">{news.title}</h3>
+                          <button 
+                            onClick={() => toggleNews(news.id, news.is_active)} 
+                            className={`text-xs font-bold px-3 py-1 rounded-full ${news.is_active ? 'bg-green-100 text-green-800' : 'bg-gray-300 text-gray-700'}`}
+                          >
+                            {news.is_active ? '配信中' : '非公開'}
+                          </button>
+                        </div>
+                        <p className="text-sm text-gray-600 whitespace-pre-wrap">{news.content}</p>
+                        <div className="text-[10px] text-gray-400 mt-3 text-right">
+                          配信日時: {new Date(news.published_at).toLocaleString()}
+                        </div>
                       </div>
-                      <div className="text-sm text-gray-600 mt-1">
-                        {user.birth_year ? `${user.birth_year}年生まれ` : '未設定'} / {user.gender === 'male' ? '男性' : user.gender === 'female' ? '女性' : user.gender === 'other' ? 'その他' : '未設定'}
-                      </div>
-                    </div>
-                    <div className="text-xs font-bold px-3 py-1 bg-white border rounded text-gray-600">
-                      通知: {user.email_notify_news ? 'ON' : 'OFF'}
-                    </div>
+                    ))}
+                    {newsList.length === 0 && <p className="text-center text-gray-400 py-10">データがありません</p>}
                   </div>
-                ))}
+                </>
+              )}
 
-                {/* 空の時の表示 */}
-                {((activeTab === 'pets' && petsList.length === 0) || 
-                  (activeTab === 'landmarks' && landmarksList.length === 0) || 
-                  (activeTab === 'items' && itemsList.length === 0) ||
-                  (activeTab === 'news' && newsList.length === 0) ||
-                  (activeTab === 'users' && usersList.length === 0)) && (
-                  <p className="text-center text-gray-400 py-10">データがありません</p>
-                )}
-              </div>
+              {/* 5. ユーザー属性一覧 */}
+              {activeTab === 'users' && (
+                <>
+                  <h2 className="text-xl font-bold mb-4 border-b pb-2">👥 登録ユーザー一覧</h2>
+                  <div className="space-y-3">
+                    {usersList.map(user => (
+                      <div key={user.id} className="p-4 border rounded-xl flex justify-between items-center bg-gray-50">
+                        <div>
+                          <div className="font-bold text-gray-800">
+                            ユーザーID: <span className="text-xs font-normal">{user.id.substring(0, 8)}...</span>
+                          </div>
+                          <div className="text-sm text-gray-600 mt-1">
+                            {user.birth_year ? `${user.birth_year}年生まれ` : '未設定'} / {user.gender === 'male' ? '男性' : user.gender === 'female' ? '女性' : user.gender === 'other' ? 'その他' : '未設定'}
+                          </div>
+                        </div>
+                        <div className="text-xs font-bold px-3 py-1 bg-white border rounded text-gray-600">
+                          通知: {user.email_notify_news ? 'ON' : 'OFF'}
+                        </div>
+                      </div>
+                    ))}
+                    {usersList.length === 0 && <p className="text-center text-gray-400 py-10">データがありません</p>}
+                  </div>
+                </>
+              )}
             </div>
           </>
         )}

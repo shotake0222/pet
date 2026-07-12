@@ -93,10 +93,14 @@ export default function HomeAR() {
   const [isNewsOpen, setIsNewsOpen] = useState(false);
   
   const [showProfileSetup, setShowProfileSetup] = useState(false);
-  const [inputNickname, setInputNickname] = useState('');
   const [inputBirthYear, setInputBirthYear] = useState('');
   const [inputGender, setInputGender] = useState('');
   const [isSetupSubmitting, setIsSetupSubmitting] = useState(false);
+
+  // --- 孵化後の名付けモーダル State ---
+  const [showNamingScreen, setShowNamingScreen] = useState(false);
+  const [namingInput, setNamingInput] = useState('');
+  const [isNamingSubmitting, setIsNamingSubmitting] = useState(false);
 
   // --- ログインボーナス State ---
   const [loginBonusState, setLoginBonusState] = useState({
@@ -111,16 +115,22 @@ export default function HomeAR() {
   const [gameOverNotice, setGameOverNotice] = useState<string | null>(null);
   const [gameOverHandled, setGameOverHandled] = useState(false);
 
+  // --- AR・カメラ制御 ＆ スポット機能 State ---
   const [location, setLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [prevLocation, setPrevLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [landmarks, setLandmarks] = useState<any[]>([]);
   const [activeLandmark, setActiveLandmark] = useState<any | null>(null);
-
+  const [isSpotMapOpen, setIsSpotMapOpen] = useState(false);
+  const [cameraFacing, setCameraFacing] = useState<'environment' | 'user'>('environment');
   const [sceneKey, setSceneKey] = useState(0);
+
   const targetDistanceToHatch = 1200;
   const targetFeedCount = 3;
   const targetLandmarkVisits = 2;
   const targetEventCount = 1;
+
+  // 1歩 = 約0.75m として歩数を計算
+  const stepCount = Math.floor(walkDistance / 0.75);
 
   useEffect(() => { setIsClient(true); }, []);
 
@@ -429,12 +439,10 @@ export default function HomeAR() {
       });
 
       setHatchOverlay({ active: true, particles, rarity });
-      // launch animation on next tick
       setTimeout(() => {
         setHatchOverlay(prev => prev ? { ...prev, particles: prev.particles.map(p => ({ ...p, launched: true })) } : prev);
       }, 40);
 
-      // cleanup after max duration
       const maxDuration = Math.max(...particles.map(p => p.duration)) + 300;
       setTimeout(() => {
         setHatchOverlay(null);
@@ -557,7 +565,9 @@ export default function HomeAR() {
       setBirthday(today); setLastFedAt(new Date().toISOString());
       await supabase.from('pets').update({ is_egg: false, last_fed_at: new Date().toISOString(), birthday: today }).eq('id', petId);
       setHatchAnimating(false);
-      alert(`✨ おめでとう！\n卵から ${displayName} が生まれました！`);
+      
+      // 孵化完了後、名付けモーダルを表示
+      setShowNamingScreen(true);
     }, 900);
   };
 
@@ -669,11 +679,6 @@ export default function HomeAR() {
         throw error;
       }
 
-      if (petId && inputNickname) {
-        await supabase.from('pets').update({ custom_name: inputNickname }).eq('id', petId);
-        setCustomName(inputNickname);
-      }
-
       setShowProfileSetup(false);
       alert('プロフィールを設定しました！');
 
@@ -690,6 +695,26 @@ export default function HomeAR() {
       alert(err?.message || 'エラーが発生しました。');
     } finally {
       setIsSetupSubmitting(false);
+    }
+  };
+
+  // --- 名付けモーダルの送信処理 ---
+  const handleNamingSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!petId || !namingInput.trim()) return;
+    
+    setIsNamingSubmitting(true);
+    try {
+      await supabase.from('pets').update({ custom_name: namingInput.trim() }).eq('id', petId);
+      setCustomName(namingInput.trim());
+      setShowNamingScreen(false);
+      playSound('levelup');
+      alert(`これからよろしくね、${namingInput.trim()}！\n（誕生日は今日の日付で記録されました）`);
+    } catch (err) {
+      console.error('名付けエラー', err);
+      alert('エラーが発生しました。');
+    } finally {
+      setIsNamingSubmitting(false);
     }
   };
 
@@ -735,13 +760,6 @@ export default function HomeAR() {
             <h2 className="text-xl font-bold text-center border-b pb-3 text-slate-800">🎉 ようこそ Straid AR へ！</h2>
             <p className="text-xs text-gray-500 text-center mb-4">サービス向上のため、情報を教えてください</p>
             
-            {petId && (
-              <div>
-                <label className="block text-sm font-bold text-gray-700 mb-1">ペットのニックネーム (任意)</label>
-                <input type="text" value={inputNickname} onChange={e => setInputNickname(e.target.value)} placeholder="例: ポチ" className="w-full border p-3 rounded-xl bg-gray-50 focus:ring-2 focus:ring-blue-500 text-black" />
-              </div>
-            )}
-            
             <div className="flex gap-3">
               <div className="flex-1">
                 <label className="block text-sm font-bold text-gray-700 mb-1">あなたの誕生年</label>
@@ -761,6 +779,88 @@ export default function HomeAR() {
               {isSetupSubmitting ? '保存中...' : 'はじめる！'}
             </button>
           </form>
+        </div>
+      )}
+
+      {/* --- 名付け設定モーダル（孵化直後） --- */}
+      {showNamingScreen && (
+        <div className="absolute inset-0 z-[125] bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
+          <form onSubmit={handleNamingSubmit} className="bg-white rounded-3xl p-6 w-full max-w-sm shadow-2xl space-y-5 relative">
+            <h2 className="text-2xl font-bold text-center border-b pb-3 text-slate-800">✨ 誕生おめでとう！</h2>
+            <p className="text-sm text-gray-600 text-center mb-4">新しく生まれたペットに<br/>名前をつけてあげましょう</p>
+            
+            <div>
+              <label className="block text-sm font-bold text-gray-700 mb-1">ペットの名前</label>
+              <input type="text" value={namingInput} onChange={e => setNamingInput(e.target.value)} placeholder="例: ポチ" className="w-full border p-3 rounded-xl bg-gray-50 focus:ring-2 focus:ring-pink-500 text-black" required />
+            </div>
+            
+            <button disabled={isNamingSubmitting || !namingInput.trim()} className="w-full bg-gradient-to-r from-pink-500 to-orange-400 text-white font-bold py-3 rounded-xl shadow-lg mt-4 disabled:bg-gray-400 transition-transform active:scale-95">
+              {isNamingSubmitting ? '保存中...' : '名前を決定する！'}
+            </button>
+          </form>
+        </div>
+      )}
+
+      {/* --- スポットマップ確認モーダル（レーダー） --- */}
+      {isSpotMapOpen && (
+        <div className="absolute inset-0 z-[120] bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl p-6 w-full max-w-sm shadow-2xl relative max-h-[90vh] flex flex-col">
+            <h2 className="text-xl font-bold text-center border-b pb-3 mb-4 text-slate-800">🗺️ 周辺のスポット</h2>
+            
+            {!location ? (
+              <p className="text-center text-gray-500 my-10">GPS座標を取得中...</p>
+            ) : (
+              <div className="flex-1 overflow-y-auto pr-1">
+                {/* 視覚的レーダーマップ */}
+                <div className="relative w-full aspect-square bg-green-50 rounded-2xl border-4 border-green-200 overflow-hidden mb-4 shadow-inner">
+                  <div className="absolute inset-0 flex items-center justify-center">
+                     <div className="w-full h-px bg-green-200"></div>
+                     <div className="absolute h-full w-px bg-green-200"></div>
+                     {/* ユーザー現在地 */}
+                     <div className="absolute w-4 h-4 bg-red-500 rounded-full border-2 border-white z-10 shadow-md animate-pulse"></div>
+                  </div>
+                  {/* 周辺スポットのピン表示 */}
+                  {landmarks.map(spot => {
+                     // 簡易的な距離変換 (緯度1度=約111km, 経度1度=約91km)
+                     const dLat = (spot.latitude - location.lat) * 111000;
+                     const dLng = (spot.longitude - location.lng) * 91000;
+                     const scale = 0.05; // 表示スケール
+                     const top = `calc(50% - ${dLat * scale}px)`;
+                     const left = `calc(50% + ${dLng * scale}px)`;
+                     return (
+                       <div key={`radar-${spot.id}`} className="absolute w-8 h-8 -ml-4 -mt-4 text-xl flex items-center justify-center filter drop-shadow z-0" style={{ top, left }} title={spot.name}>📍</div>
+                     )
+                  })}
+                </div>
+                
+                {/* スポットリスト */}
+                <div className="space-y-3">
+                  {landmarks.map(spot => {
+                    const dist = getDistance(location.lat, location.lng, spot.latitude, spot.longitude);
+                    return (
+                      <div key={`list-${spot.id}`} className="bg-gray-50 border rounded-xl p-3 flex justify-between items-center shadow-sm">
+                        <div>
+                           <div className="font-bold text-gray-800">{spot.name}</div>
+                           <div className="text-xs text-gray-500">現在地から約 {Math.floor(dist)}m</div>
+                        </div>
+                        <button onClick={() => { 
+                          setViewMode('gps'); 
+                          setIsSpotMapOpen(false); 
+                          setCameraFacing('environment'); 
+                          playSound('tap');
+                        }} className="bg-blue-600 text-white text-xs font-bold px-3 py-2 rounded-lg active:scale-95 transition-transform">
+                          ARで見る
+                        </button>
+                      </div>
+                    )
+                  })}
+                  {landmarks.length === 0 && <p className="text-xs text-gray-500 text-center">周辺にスポットが見つかりません</p>}
+                </div>
+              </div>
+            )}
+            
+            <button onClick={() => setIsSpotMapOpen(false)} className="mt-4 w-full bg-gray-200 text-gray-700 font-bold py-3 rounded-xl active:scale-95 transition-transform">閉じる</button>
+          </div>
         </div>
       )}
 
@@ -833,7 +933,10 @@ export default function HomeAR() {
                 <span>{isHatchReady ? '準備完了！' : 'あと少し...'}</span>
               </div>
               <div className="space-y-2 text-xs text-white">
-                <div className="flex justify-between"><span>🚶 歩行 {Math.floor(walkDistance)} / {targetDistanceToHatch}m</span><span>{Math.floor(hatchProgress.distance * 100)}%</span></div>
+                <div className="flex justify-between">
+                  <span>🚶 歩行 {Math.floor(walkDistance)} / {targetDistanceToHatch}m <span className="text-[10px] text-gray-300 ml-1">(約{stepCount}歩)</span></span>
+                  <span>{Math.floor(hatchProgress.distance * 100)}%</span>
+                </div>
                 <div className="w-full h-3 bg-gray-800 rounded-full overflow-hidden"><div className="h-full bg-yellow-400 transition-all duration-500" style={{ width: `${Math.min(100, hatchProgress.distance * 100)}%` }}></div></div>
                 <div className="flex justify-between"><span>🍚 給餌 {feedCount} / {targetFeedCount}回</span><span>{Math.floor(hatchProgress.feed * 100)}%</span></div>
                 <div className="w-full h-3 bg-gray-800 rounded-full overflow-hidden"><div className="h-full bg-orange-400 transition-all duration-500" style={{ width: `${Math.min(100, hatchProgress.feed * 100)}%` }}></div></div>
@@ -860,7 +963,10 @@ export default function HomeAR() {
                 <div className="w-full h-2 bg-gray-800 rounded-full overflow-hidden shadow-inner"><div className="h-full bg-blue-500 transition-all duration-500" style={{ width: `${(exp / expNeededForNextLevel) * 100}%` }}></div></div>
               </div>
               <div className="bg-black/70 p-3 rounded-xl shadow-lg pointer-events-auto border border-indigo-500 space-y-3 text-xs text-white">
-                <div className="flex justify-between"><span>🚶 次の条件</span><span>{walkDistance} / {nextLevelRequirements.distance}m</span></div>
+                <div className="flex justify-between">
+                  <span>🚶 次の条件 {Math.floor(walkDistance)} / {nextLevelRequirements.distance}m <span className="text-[10px] text-gray-300 ml-1">(約{stepCount}歩)</span></span>
+                  <span>{Math.floor(Math.min(100, (walkDistance / nextLevelRequirements.distance) * 100))}%</span>
+                </div>
                 <div className="w-full h-3 bg-gray-800 rounded-full overflow-hidden"><div className="h-full bg-indigo-400 transition-all duration-500" style={{ width: `${Math.min(100, (walkDistance / nextLevelRequirements.distance) * 100)}%` }}></div></div>
                 <div className="flex justify-between"><span>🍚 給餌</span><span>{feedCount} / {nextLevelRequirements.feed}</span></div>
                 <div className="w-full h-3 bg-gray-800 rounded-full overflow-hidden"><div className="h-full bg-orange-400 transition-all duration-500" style={{ width: `${Math.min(100, (feedCount / nextLevelRequirements.feed) * 100)}%` }}></div></div>
@@ -886,7 +992,30 @@ export default function HomeAR() {
         <button onClick={() => { setIsNewsOpen(true); playSound('tap'); }} className="bg-white/90 p-3 rounded-full shadow-2xl border border-gray-200 active:scale-90 flex items-center justify-center w-14 h-14 relative" aria-label="お知らせ">
           <span className="text-2xl">📢</span>{newsList.length > 0 && <span className="absolute top-0 right-0 w-4 h-4 bg-red-500 rounded-full border-2 border-white"></span>}
         </button>
-        <button onClick={takeSnapshot} className="bg-white/90 p-3 rounded-full shadow-2xl border border-gray-200 active:scale-90 transition-transform flex items-center justify-center w-14 h-14" aria-label="写真を撮る"><span className="text-2xl">📸</span></button>
+
+        {/* スポットが表示されている時だけ、専用の「カメラ切替」「撮影」ボタンを表示 */}
+        {viewMode === 'gps' && activeLandmark ? (
+          <>
+            <button 
+              onClick={() => { setCameraFacing(prev => prev === 'environment' ? 'user' : 'environment'); setSceneKey(k => k + 1); playSound('tap'); }} 
+              className="bg-white/90 p-3 rounded-full shadow-2xl border border-gray-200 active:scale-90 transition-transform flex items-center justify-center w-14 h-14" 
+              aria-label="カメラ切替"
+            >
+              <span className="text-2xl">🔄</span>
+            </button>
+            <button 
+              onClick={takeSnapshot} 
+              className="bg-white/90 p-3 rounded-full shadow-2xl border border-gray-200 active:scale-90 transition-transform flex items-center justify-center w-14 h-14" 
+              aria-label="写真を撮る"
+            >
+              <span className="text-2xl">📸</span>
+            </button>
+          </>
+        ) : viewMode === 'mindar' ? (
+           <button onClick={takeSnapshot} className="bg-white/90 p-3 rounded-full shadow-2xl border border-gray-200 active:scale-90 transition-transform flex items-center justify-center w-14 h-14" aria-label="写真を撮る">
+             <span className="text-2xl">📸</span>
+           </button>
+        ) : null}
       </div>
 
       {gameOverNotice && (
@@ -956,13 +1085,21 @@ export default function HomeAR() {
         {viewMode === 'gps' && (
           <>
             <div className="bg-green-600/90 text-white p-3 rounded-xl font-bold shadow-lg w-full text-center text-sm backdrop-blur-sm">
-              {location ? `🚶‍♂️ 現在地周辺を散歩中... ${isEgg && petId ? `(歩行: ${Math.floor(walkDistance)}m)` : ''}` : '📡 GPSを探索中...'}
+              {location ? `🚶‍♂️ 現在地周辺を散歩中... ${petId ? `(歩行: ${Math.floor(walkDistance)}m / 約${stepCount}歩)` : ''}` : '📡 GPSを探索中...'}
             </div>
             {activeLandmark && !isEgg && petId && (
               <button onClick={handleCheckIn} className="bg-gradient-to-br from-yellow-300 to-yellow-500 text-yellow-900 p-4 rounded-2xl font-bold shadow-2xl w-full border-4 border-yellow-200 animate-bounce text-lg">✨ 【{activeLandmark.name}】を発見！<br/>タップして経験値GET！</button>
             )}
           </>
         )}
+
+        {/* 🗺️ スポットを探すボタン */}
+        <button 
+          onClick={() => { setIsSpotMapOpen(true); playSound('tap'); }} 
+          className="bg-gradient-to-r from-teal-400 to-teal-600 text-white p-3 rounded-2xl font-bold shadow-lg w-full flex justify-center items-center gap-2 border-2 border-teal-300 active:scale-95 transition-transform text-lg"
+        >
+          🗺️ 地図でスポットを探す
+        </button>
 
         <div className="flex justify-around bg-white p-3 rounded-2xl shadow-xl border border-gray-100">
           <button onClick={() => { setViewMode('mindar'); playSound('tap'); }} className={`font-bold flex flex-col items-center gap-1 ${viewMode === 'mindar' ? 'text-blue-600' : 'text-gray-400'}`}><span className="text-xl">🏠</span><span className="text-xs">おうち</span></button>
@@ -973,6 +1110,7 @@ export default function HomeAR() {
 
       {/* --- 背面：ARレイヤー (embedded指定でコンテナに収める) --- */}
       <div className="absolute top-0 left-0 w-full h-full z-0">
+        
         {viewMode === 'mindar' && tagCode && (
           /* @ts-ignore */
           <a-scene embedded key={`mindar-${sceneKey}-${petMarkerUrl}`} style={{ height: '100%', width: '100%' }} mindar-image={`imageTargetSrc: ${petMarkerUrl}; autoStart: true; uiLoading: no; uiError: no;`} renderer="preserveDrawingBuffer: true; colorManagement: true; physicallyCorrectLights: true;" color-space="sRGB" vr-mode-ui="enabled: false" device-orientation-permission-ui="enabled: false">
@@ -1004,19 +1142,32 @@ export default function HomeAR() {
 
         {viewMode === 'gps' && location && (
           /* @ts-ignore */
-          <a-scene embedded key={`gps-${sceneKey}`} style={{ height: '100%', width: '100%' }} vr-mode-ui="enabled: false" renderer="preserveDrawingBuffer: true; colorManagement: true;" arjs="sourceType: webcam; videoTexture: true; debugUIEnabled: false;">
+          <a-scene embedded key={`gps-${sceneKey}-${cameraFacing}`} style={{ height: '100%', width: '100%' }} vr-mode-ui="enabled: false" renderer="preserveDrawingBuffer: true; colorManagement: true;" arjs={`sourceType: webcam; videoTexture: true; debugUIEnabled: false; facingMode: ${cameraFacing};`}>
             {/* @ts-ignore */}
             <a-assets><a-asset-item id="pet-asset-gps" src={activeModelUrl}></a-asset-item>{activeLandmark && activeLandmark.model_url && (<a-asset-item id="landmark-asset-dynamic" src={activeLandmark.model_url}></a-asset-item>)}</a-assets>
             {/* @ts-ignore */}
             <a-light type="ambient" color="#ffffff" intensity="0.7"></a-light>
             {/* @ts-ignore */}
             <a-light type="directional" color="#ffffff" intensity="1.5" position="0 5 0"></a-light>
+            
+            {/* 💡 ペットをカメラ（自分）に追従するように配置！一緒にスポットが見れる＆自撮り対応 */}
             {/* @ts-ignore */}
-            <a-camera gps-camera rotation-reader></a-camera>
-            {!isEgg && petId && (
-              /* @ts-ignore */
-              <a-entity gps-entity-place={`latitude: ${location.lat}; longitude: ${location.lng};`} gltf-model={activeModelUrl} scale="2 2 2" position="0 -2 0" look-at="[gps-camera]" animation-mixer="clip: Walk; loop: repeat;"></a-entity>
-            )}
+            <a-camera gps-camera rotation-reader>
+              {!isEgg && petId && (
+                /* @ts-ignore */
+                <a-entity
+                  gltf-model={activeModelUrl}
+                  scale="1.5 1.5 1.5"
+                  // 常にカメラの前に配置される。自撮り(user)の時は少し手前(-2)、通常時は少し奥(-4)
+                  position={`0 -1.5 ${cameraFacing === 'user' ? '-2' : '-4'}`}
+                  // ペットを常に自分の方へ向かせる
+                  rotation={`0 180 0`}
+                  animation-mixer="clip: Happy; loop: repeat;"
+                ></a-entity>
+              )}
+            </a-camera>
+
+            {/* スポットの実体は実際のGPS座標に配置 */}
             {activeLandmark && !isEgg && petId && (
               /* @ts-ignore */
               <a-entity gps-entity-place={`latitude: ${activeLandmark.latitude}; longitude: ${activeLandmark.longitude};`} gltf-model={activeLandmark.model_url ? "#landmark-asset-dynamic" : "/models/treasure.glb"} scale="5 5 5" position="0 2 0" animation="property: rotation; to: 0 360 0; loop: true; dur: 4000; easing: linear;"></a-entity>
