@@ -124,7 +124,7 @@ export default function AdminDashboard() {
   const [newsTitle, setNewsTitle] = useState('');
   const [newsContent, setNewsContent] = useState('');
 
-  // --- データの取得（一覧表示用） ---
+ // --- データの取得（一覧表示用） ---
   const fetchData = async () => {
     const [
       petsRes, 
@@ -144,14 +144,14 @@ export default function AdminDashboard() {
       supabase.from('landmark_masters').select('*').order('id', { ascending: false }),
       supabase.from('landmarks').select('*').order('id', { ascending: false }),
       supabase.from('item_masters').select('*').order('id', { ascending: false }),
-      supabase.from('coupon_masters').select('*').order('id', { ascending: false }).catch(() => ({ data: [] })), // テーブルが無い場合のエラー回避
+      supabase.from('coupon_masters').select('*').order('id', { ascending: false }),
       supabase.from('announcements').select('*').order('published_at', { ascending: false }),
       supabase.from('user_profiles').select('*').order('created_at', { ascending: false }),
       supabase.from('rarities').select('*').order('id', { ascending: true }),
       supabase.from('attributes').select('*').order('id', { ascending: true }),
       supabase.from('pet_master_attributes').select('*'),
-      supabase.from('pets').select('*, pet_masters(name)').order('created_at', { ascending: false }), // ユーザーのペット情報
-      supabase.from('facility_drop_masters').select('*, item_masters(name, image_url), coupon_masters(name, qr_image_url)').order('id', { ascending: false }).catch(() => ({ data: [] })) // ドロップ報酬
+      supabase.from('pets').select('*, pet_masters(name)').order('created_at', { ascending: false }),
+      supabase.from('facility_drop_masters').select('*, item_masters(name, image_url), coupon_masters(name, qr_image_url)').order('id', { ascending: false })
     ]);
     
     if (petsRes.data) {
