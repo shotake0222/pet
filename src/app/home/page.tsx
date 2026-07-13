@@ -53,7 +53,7 @@ export default function HomeAR() {
   const [level, setLevel] = useState(1);
   const [exp, setExp] = useState(0);
   
-  // 💡 ターゲットマインド（マーカー）は全ユーザー・全モデル共通で1つに完全固定！
+  // ターゲットマインド（マーカー）
   const petMarkerUrl = '/markers/target.mind'; 
   
   // 卵モデルはDBのegg_typeに応じて動的に変えるためのState
@@ -67,6 +67,9 @@ export default function HomeAR() {
   const [petRarity, setPetRarity] = useState<'N'|'R'|'SR'|'UR'|'?'>('?');
   const [hatchOverlay, setHatchOverlay] = useState<{ active: boolean; particles: any[]; rarity: string } | null>(null);
   const [hatchAnimating, setHatchAnimating] = useState(false);
+
+  // --- 🌟 レベルアップ用エフェクト State ---
+  const [levelUpOverlay, setLevelUpOverlay] = useState<{ active: boolean; particles: any[]; level: number; isMilestone: boolean } | null>(null);
 
   // --- インベントリ ＆ ショップ ---
   const [inventory, setInventory] = useState<any[]>([]);
@@ -231,7 +234,6 @@ export default function HomeAR() {
       setGameOverNotice(null);
       setGameOverHandled(false);
 
-      // 💡 ユーザーの最新のアクティブなペットをDBから取得 (egg_typeを追加で取得)
       const { data: pet } = await supabase
         .from('pets')
         .select(`
@@ -245,14 +247,12 @@ export default function HomeAR() {
         .maybeSingle();
 
       if (pet) {
-        // すでにペット（または卵）を持っている場合
         setPetId(pet.id); setOwnerId(pet.owner_id); setAffection(pet.affection_level || 0); 
         setSleepingUntil(pet.sleeping_until); setLastFedAt(pet.last_fed_at); 
         setIsEgg(pet.is_egg); setWalkDistance(pet.walk_distance_m || 0); setLevel(pet.level || 1);
         setExp(pet.exp || 0); setCustomName(pet.custom_name); setBirthday(pet.birthday);
         setIsEggUnregistered(false); 
 
-        // 💡 DBのペットマスターに設定された卵タイプ(egg_type)を参照してモデルを決定
         if (pet.pet_masters) { 
           const pm = (pet.pet_masters && pet.pet_masters[0] ? pet.pet_masters[0] : pet.pet_masters) || {};
           const rarityPm = (pm as any).rarity || '?';
@@ -264,7 +264,6 @@ export default function HomeAR() {
           setPetMasterName((pm as any).name || '不明');
           setPetRarity(rarityPm);
 
-          // egg_typeが設定されていなければデフォルトで 'A' にする
           const eggGroup = (pm as any).egg_type || 'A'; 
           setEggModelUrl(`/models/eggs/egg_${eggGroup}.glb`);
         }
@@ -280,10 +279,9 @@ export default function HomeAR() {
         if (landmarkCount !== null) setLandmarkVisitCount(landmarkCount);
 
       } else {
-        // ペットをまだ持っていない（未登録状態）
         setIsEggUnregistered(true); 
         setIsEgg(true); 
-        setEggModelUrl('/models/eggs/egg_A.glb'); // 初期デフォルトの卵
+        setEggModelUrl('/models/eggs/egg_A.glb');
       }
     };
     fetchGameData();
@@ -444,6 +442,44 @@ export default function HomeAR() {
     });
   };
 
+  // --- 🌟 レベルアップ演出用エフェクトロジック ---
+  const showLevelUpEffect = (newLevel: number) => {
+    return new Promise<void>((resolve) => {
+      // 5の倍数をキリ番（マイルストーン）として判定
+      const isMilestone = newLevel % 5 === 0;
+      const count = isMilestone ? 150 : 50;
+      
+      const colors = isMilestone
+        ? ['#FFD700', '#FF73FA', '#7CF0FF', '#FF9F1C', '#FFFFFF'] // キリ番は豪華な色
+        : ['#60A5FA', '#34D399', '#FBBF24']; // 通常レベルアップ
+
+      const particles = Array.from({ length: count }).map((_, i) => {
+        const angle = (Math.random() - 0.5) * Math.PI * 2;
+        const distance = isMilestone ? 150 + Math.random() * 250 : 80 + Math.random() * 150;
+        return {
+          id: `lvl_${Date.now()}_${i}`,
+          dx: Math.cos(angle) * distance,
+          dy: Math.sin(angle) * distance - (Math.random() * 100),
+          color: colors[Math.floor(Math.random() * colors.length)],
+          size: isMilestone ? 8 + Math.random() * 12 : 6 + Math.random() * 8,
+          duration: isMilestone ? 1000 + Math.random() * 1500 : 700 + Math.random() * 800
+        };
+      });
+
+      setLevelUpOverlay({ active: true, particles, level: newLevel, isMilestone });
+      
+      setTimeout(() => {
+        setLevelUpOverlay(prev => prev ? { ...prev, particles: prev.particles.map(p => ({ ...p, launched: true })) } : prev);
+      }, 40);
+
+      const maxDuration = Math.max(...particles.map(p => p.duration)) + 300;
+      setTimeout(() => {
+        setLevelUpOverlay(null);
+        resolve();
+      }, maxDuration);
+    });
+  };
+
   const addExperience = async (amount: number) => {
     if (!petId) return;
     let newExp = exp + amount; let newLevel = level; let leveledUp = false;
@@ -461,8 +497,13 @@ export default function HomeAR() {
     }
     setExp(newExp); setLevel(newLevel);
     await supabase.from('pets').update({ exp: newExp, level: newLevel }).eq('id', petId);
+    
+    // レベルアップした時の処理
     if (leveledUp) {
-      playSound('levelup'); alert(`🌟 レベルアップ！ Lv.${newLevel} になりました！`);
+      playSound('levelup'); 
+      await showLevelUpEffect(newLevel); // 🌟 レベルアップエフェクトの呼び出し
+      
+      alert(`🌟 レベルアップ！ Lv.${newLevel} になりました！`);
       if (newLevel === 5 && petModelUrlV2) alert('体が大きくなったみたい…！');
       if (newLevel === 10 && petModelUrlV3) alert('姿が大きく変わった…！');
     }
@@ -505,25 +546,29 @@ export default function HomeAR() {
         setAffection(prev => { const val = prev + 1; supabase.from('pets').update({ affection_level: val }).eq('id', petId).then(); return val; });
         setEventCount(prev => prev + 1);
         supabase.from('activity_logs').insert({ pet_id: petId, action_type: 'event', points_earned: 5 }).then();
-        setActionAnim('*'); addExperience(5); setTimeout(() => setActionAnim(null), 1500);
+        
+        // 🌟 タップ時のリアクションとして Jump, Fly, Happy をランダムで再生
+        const tapActions = ['Jump', 'Fly', 'Happy'];
+        const randomAction = tapActions[Math.floor(Math.random() * tapActions.length)];
+        setActionAnim(randomAction); 
+        setTimeout(() => setActionAnim(null), 1500);
+        
+        addExperience(5); 
       };
       petModel?.addEventListener('click', handlePetTap);
       return () => petModel?.removeEventListener('click', handlePetTap);
     }
   }, [viewMode, isClient, petId, supabase, isEgg, isSleeping, sceneKey]);
 
-  // 💡 ランダムな卵・ペットを生成
   const handleCreateEgg = async () => {
     if (!sessionUserId) return;
     try {
-      // サーバー側でランダムにペットを生成
       const result = await hatchPet('random_encounter'); 
       if (result.success) {
         setPetId(result.pet.id); setOwnerId(result.pet.owner_id); 
         setIsEgg(true); setIsEggUnregistered(false); setWalkDistance(0); setFeedCount(0); setLandmarkVisitCount(0); setEventCount(0);
         setGameOverNotice(null); setGameOverHandled(false); setLastFedAt(null); setSleepingUntil(null); setHungerPercent(100); setMotivationPercent(100); setLevel(1); setExp(0); setAffection(0);
         
-        // 💡 生成されたペットのマスターデータ(egg_type)から卵モデルを決定
         if (result.pet.pet_masters) {
           const pm = result.pet.pet_masters;
           const eggGroup = (pm as any).egg_type || 'A';
@@ -568,14 +613,15 @@ export default function HomeAR() {
       await supabase.from('pets').update({ is_egg: false, last_fed_at: new Date().toISOString(), birthday: today }).eq('id', petId);
       setHatchAnimating(false);
       
-      // 孵化完了後、名付けモーダルを表示
       setShowNamingScreen(true);
     }, 900);
   };
 
   const handleFeed = async () => {
     if (!petId || isSleeping) return;
-    playSound('eat'); setActionAnim('Eat'); setTimeout(() => setActionAnim(null), 2000);
+    playSound('eat'); 
+    setActionAnim('Eat'); // 🌟 食事のアニメーション
+    setTimeout(() => setActionAnim(null), 2000);
     setFeedCount(prev => prev + 1);
     await supabase.from('activity_logs').insert({ pet_id: petId, action_type: 'feed', points_earned: 10 });
     if (!isEgg) {
@@ -645,7 +691,6 @@ export default function HomeAR() {
     const link = document.createElement('a'); link.download = `straid-ar-snap-${Date.now()}.png`; link.href = canvas.toDataURL('image/png'); link.click();
   };
 
-  // --- プロフィール設定（初回ログイン時） ---
   const handleProfileSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!sessionUserId) {
@@ -700,7 +745,6 @@ export default function HomeAR() {
     }
   };
 
-  // --- 名付けモーダルの送信処理 ---
   const handleNamingSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!petId || !namingInput.trim()) return;
@@ -729,9 +773,40 @@ export default function HomeAR() {
       <Script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-aframe.prod.js" strategy="beforeInteractive" />
       <Script src="https://raw.githack.com/AR-js-org/AR.js/master/aframe/build/aframe-ar-nft.js" strategy="beforeInteractive" />
 
+      {/* --- レベルアップエフェクトオーバーレイ --- */}
+      {levelUpOverlay?.active && (
+        <div className="pointer-events-none fixed inset-0 z-[140] overflow-hidden flex items-center justify-center">
+          {levelUpOverlay.particles.map((p: any) => (
+            <div
+              key={p.id}
+              style={{
+                position: 'absolute',
+                left: '50%',
+                top: '50%',
+                width: p.size,
+                height: p.size,
+                background: p.color,
+                borderRadius: '50%',
+                transform: p.launched ? `translate(calc(-50% + ${p.dx}px), calc(-50% + ${p.dy}px)) scale(1) rotate(${Math.random() * 360}deg)` : 'translate(-50%,-50%) scale(0.2)',
+                opacity: p.launched ? 0 : 1,
+                transition: `transform ${p.duration}ms cubic-bezier(.2,.8,.2,1), opacity ${p.duration}ms linear`
+              }}
+            />
+          ))}
+          <div className="absolute text-center drop-shadow-2xl animate-bounce">
+            <div className={`font-black italic tracking-wider ${levelUpOverlay.isMilestone ? 'text-6xl text-transparent bg-clip-text bg-gradient-to-r from-yellow-300 via-pink-400 to-cyan-400 drop-shadow-[0_0_15px_rgba(255,255,255,0.8)]' : 'text-5xl text-yellow-300 drop-shadow-md'}`}>
+              LEVEL UP!
+            </div>
+            <div className="text-white text-3xl font-bold mt-2">
+              Lv. {levelUpOverlay.level}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* --- 孵化エフェクトオーバーレイ --- */}
       {hatchOverlay?.active && (
-        <div className="pointer-events-none fixed inset-0 z-50 overflow-hidden">
+        <div className="pointer-events-none fixed inset-0 z-[130] overflow-hidden">
           {hatchOverlay.particles.map((p: any) => (
             <div
               key={p.id}
@@ -823,10 +898,9 @@ export default function HomeAR() {
                   </div>
                   {/* 周辺スポットのピン表示 */}
                   {landmarks.map(spot => {
-                     // 簡易的な距離変換 (緯度1度=約111km, 経度1度=約91km)
                      const dLat = (spot.latitude - location.lat) * 111000;
                      const dLng = (spot.longitude - location.lng) * 91000;
-                     const scale = 0.05; // 表示スケール
+                     const scale = 0.05; 
                      const top = `calc(50% - ${dLat * scale}px)`;
                      const left = `calc(50% + ${dLng * scale}px)`;
                      return (
@@ -988,7 +1062,6 @@ export default function HomeAR() {
           <span className="text-2xl">📢</span>{newsList.length > 0 && <span className="absolute top-0 right-0 w-4 h-4 bg-red-500 rounded-full border-2 border-white"></span>}
         </button>
 
-        {/* 💡 スポットが表示されている時だけ、専用の「カメラ切替」「撮影」ボタンを表示 */}
         {viewMode === 'gps' && activeLandmark ? (
           <>
             <button 
@@ -1088,7 +1161,6 @@ export default function HomeAR() {
           </>
         )}
 
-        {/* 🗺️ スポットを探すボタン */}
         <button 
           onClick={() => { setIsSpotMapOpen(true); playSound('tap'); }} 
           className="bg-gradient-to-r from-teal-400 to-teal-600 text-white p-3 rounded-2xl font-bold shadow-lg w-full flex justify-center items-center gap-2 border-2 border-teal-300 active:scale-95 transition-transform text-lg"
@@ -1128,7 +1200,8 @@ export default function HomeAR() {
                 scale={hatchAnimating ? "0.1 0.1 0.1" : "0.5 0.5 0.5"}
                 src={activeModelUrl}
                 shadow="cast: true; receive: true"
-                animation-mixer={isEgg ? "" : `clip: ${actionAnim || currentMood.clip}; loop: ${actionAnim ? 'once' : 'repeat'}; timeScale: ${actionAnim === '*' ? 1.5 : 1.0}; crossFadeDuration: 0.3;`}
+                // 🌟 アクションアニメーション (Idle, Eat, Jump, Sleep 等の切り替えを適用)
+                animation-mixer={isEgg ? "" : `clip: ${actionAnim || currentMood.clip}; loop: ${actionAnim ? 'once' : 'repeat'}; crossFadeDuration: 0.3;`}
                 animation={hatchAnimating ? `property: scale; to: 0.5 0.5 0.5; dur: 800; easing: easeOutElastic;` : undefined}
               ></a-gltf-model>
             </a-entity>
@@ -1145,7 +1218,6 @@ export default function HomeAR() {
             {/* @ts-ignore */}
             <a-light type="directional" color="#ffffff" intensity="1.5" position="0 5 0"></a-light>
             
-            {/* 💡 ペットをカメラ（自分）に追従するように配置！一緒にスポットが見れる＆自撮り対応 */}
             {/* @ts-ignore */}
             <a-camera gps-camera rotation-reader>
               {!isEgg && petId && (
@@ -1153,11 +1225,10 @@ export default function HomeAR() {
                 <a-entity
                   gltf-model={activeModelUrl}
                   scale="1.5 1.5 1.5"
-                  // 常にカメラの前に配置される。自撮り(user)の時は少し手前(-2)、通常時は少し奥(-4)
                   position={`0 -1.5 ${cameraFacing === 'user' ? '-2' : '-4'}`}
-                  // ペットを常に自分の方へ向かせる
                   rotation={`0 180 0`}
-                  animation-mixer="clip: Happy; loop: repeat;"
+                  // 🌟 お散歩モード中は Walk アニメーションを適用
+                  animation-mixer="clip: Walk; loop: repeat; crossFadeDuration: 0.3;"
                 ></a-entity>
               )}
             </a-camera>

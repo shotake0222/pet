@@ -50,6 +50,7 @@ export default function AdminDashboard() {
 
   // --- ペット用State ---
   const [petName, setPetName] = useState('');
+  const [petEggType, setPetEggType] = useState('A'); // 💡 卵タイプのState追加
   const [petRarity, setPetRarity] = useState('N');
   const [petWeight, setPetWeight] = useState('100');
   const [petModelFile, setPetModelFile] = useState<File | null>(null);         // 第1形態
@@ -254,6 +255,7 @@ export default function AdminDashboard() {
         const updatePayload: any = {
           name: petName,
           rarity: petRarity,
+          egg_type: petEggType, // 💡 卵タイプを保存
           drop_weight: parseInt(petWeight, 10)
         };
         if (modelUrl) updatePayload.model_url = modelUrl;
@@ -282,6 +284,7 @@ export default function AdminDashboard() {
           model_url_v3: modelV3Url,
           marker_url: markerUrl,
           rarity: petRarity,
+          egg_type: petEggType, // 💡 卵タイプを保存
           drop_weight: parseInt(petWeight, 10)
         }).select('id').single();
         if (insertError) throw insertError;
@@ -297,6 +300,7 @@ export default function AdminDashboard() {
       }
 
       setPetName(''); setPetModelFile(null); setPetModelV2File(null); setPetModelV3File(null); setPetMarkerFile(null);
+      setPetEggType('A');
       setSelectedAttributeIds([]);
       setEditingPetId(null);
       fetchData();
@@ -536,6 +540,14 @@ export default function AdminDashboard() {
     }
   };
 
+  // 💡 ペットリストを卵タイプごとにグループ化
+  const groupedPets = petsList.reduce((acc, pet) => {
+    const type = pet.egg_type || 'A';
+    if (!acc[type]) acc[type] = [];
+    acc[type].push(pet);
+    return acc;
+  }, {} as Record<string, any[]>);
+  const eggTypes = Object.keys(groupedPets).sort();
 
   return (
     <div className="max-w-6xl mx-auto p-6 bg-white shadow-xl rounded-3xl mt-8 mb-20">
@@ -572,10 +584,23 @@ export default function AdminDashboard() {
                 <form onSubmit={handleSavePet} className="space-y-5 bg-gray-50 p-6 rounded-2xl border border-gray-100">
                   <h2 className="text-xl font-bold">新規ペット登録</h2>
                   {editingPetId && <div className="text-sm text-yellow-700 mb-2">編集中: ID {editingPetId} — 変更が終わったら保存してください</div>}
-                  <div>
-                    <label className="block text-sm font-bold mb-1">ペットの名前</label>
-                    <input type="text" value={petName} onChange={e => setPetName(e.target.value)} className="w-full border p-3 rounded-lg focus:ring-2 focus:ring-blue-500" required />
+                  
+                  <div className="flex gap-4">
+                    <div className="flex-[2]">
+                      <label className="block text-sm font-bold mb-1">ペットの名前</label>
+                      <input type="text" value={petName} onChange={e => setPetName(e.target.value)} className="w-full border p-3 rounded-lg focus:ring-2 focus:ring-blue-500" required />
+                    </div>
+                    <div className="flex-[1]">
+                      <label className="block text-sm font-bold mb-1 text-orange-700">属する卵タイプ</label>
+                      <select value={petEggType} onChange={e => setPetEggType(e.target.value)} className="w-full border p-3 rounded-lg focus:ring-2 focus:ring-orange-500 font-bold bg-orange-50 text-orange-900 border-orange-200">
+                        <option value="A">卵 A</option>
+                        <option value="B">卵 B</option>
+                        <option value="C">卵 C</option>
+                        <option value="D">卵 D</option>
+                      </select>
+                    </div>
                   </div>
+
                   <div className="flex gap-4">
                     <div className="flex-1">
                       <label className="block text-sm font-bold mb-1">レアリティ</label>
@@ -613,15 +638,15 @@ export default function AdminDashboard() {
                       </div>
                     </div>
                     <div className="flex-1">
-                      <label className="block text-sm font-bold mb-1">排出ウェイト</label>
-                      <input type="number" value={petWeight} onChange={e => setPetWeight(e.target.value)} className="w-full border p-3 rounded-lg focus:ring-2 focus:ring-blue-500" required />
+                      <label className="block text-sm font-bold mb-1 text-blue-700">排出ウェイト</label>
+                      <input type="number" value={petWeight} onChange={e => setPetWeight(e.target.value)} className="w-full border p-3 rounded-lg focus:ring-2 focus:ring-blue-500 bg-blue-50" required />
                     </div>
                   </div>
                   
                   <div className="bg-blue-50 p-4 rounded-xl border border-blue-100 space-y-4">
                     <div>
                       <label className="block text-sm font-bold text-blue-900 mb-1">第1形態 3Dモデル (.glb) <span className="text-red-500">*</span></label>
-                      <input type="file" accept=".glb" onChange={e => setPetModelFile(e.target.files?.[0] || null)} className="w-full text-sm" required />
+                      <input type="file" accept=".glb" onChange={e => setPetModelFile(e.target.files?.[0] || null)} className="w-full text-sm" required={!editingPetId} />
                     </div>
                     <div>
                       <label className="block text-sm font-bold text-blue-800 mb-1">第2形態 (Lv5進化用) <span className="text-xs font-normal">※任意</span></label>
@@ -635,7 +660,7 @@ export default function AdminDashboard() {
 
                   <div className="bg-purple-50 p-4 rounded-xl border border-purple-100">
                     <label className="block text-sm font-bold text-purple-900 mb-2">認識マーカー (.mind) <span className="text-red-500">*</span></label>
-                    <input type="file" accept=".mind" onChange={e => setPetMarkerFile(e.target.files?.[0] || null)} className="w-full text-sm" required />
+                    <input type="file" accept=".mind" onChange={e => setPetMarkerFile(e.target.files?.[0] || null)} className="w-full text-sm" required={!editingPetId} />
                   </div>
 
                   <div className="flex gap-3">
@@ -645,7 +670,7 @@ export default function AdminDashboard() {
                     {editingPetId && (
                       <button type="button" onClick={() => {
                         setEditingPetId(null);
-                        setPetName(''); setPetRarity('N'); setPetWeight('100'); setSelectedAttributeIds([]);
+                        setPetName(''); setPetEggType('A'); setPetRarity('N'); setPetWeight('100'); setSelectedAttributeIds([]);
                         setPetModelFile(null); setPetModelV2File(null); setPetModelV3File(null); setPetMarkerFile(null);
                       }} className="bg-gray-200 text-gray-700 font-bold py-4 px-4 rounded-xl">キャンセル</button>
                     )}
@@ -852,53 +877,118 @@ export default function AdminDashboard() {
             </div>
 
             {/* --- 右カラム: 登録済みデータ一覧 --- */}
-            <div className="bg-white border rounded-2xl p-6 h-[800px] overflow-y-auto shadow-inner">
+            <div className="bg-gray-50 border rounded-2xl p-6 h-[800px] overflow-y-auto shadow-inner">
               
-              {/* 1. ペット一覧 */}
+              {/* 1. ペット一覧 (💡 卵タイプごとにグルーピング表示) */}
               {activeTab === 'pets' && (
                 <>
-                  <h2 className="text-xl font-bold mb-4 border-b pb-2">🐶 登録済みペット一覧</h2>
-                  <div className="space-y-3">
-                    {petsList.map(pet => (
-                      <div key={pet.id} className="p-4 border rounded-xl hover:bg-gray-50 flex items-center justify-between transition-colors group">
-                        <div>
-                          <div className="font-bold text-lg">{pet.name} <span className="text-sm font-normal bg-gray-200 px-2 py-1 rounded ml-2">ランク: {pet.rarity}</span></div>
-                          <div className="text-sm text-gray-500 mt-1 flex flex-wrap gap-x-3 gap-y-1">
-                            <span>ウェイト: {pet.drop_weight}</span>
-                            <a href={pet.model_url} target="_blank" rel="noreferrer" className="text-blue-500 hover:underline">V1モデル</a>
-                            {pet.model_url_v2 && <a href={pet.model_url_v2} target="_blank" rel="noreferrer" className="text-blue-500 hover:underline">V2モデル(Lv5)</a>}
-                            {pet.model_url_v3 && <a href={pet.model_url_v3} target="_blank" rel="noreferrer" className="text-blue-500 hover:underline">V3モデル(Lv10)</a>}
-                            <a href={pet.marker_url} target="_blank" rel="noreferrer" className="text-blue-500 hover:underline">マーカー</a>
-                          </div>
-                          {pet.attributes && pet.attributes.length > 0 && (
-                            <div className="mt-2 flex flex-wrap gap-2">
-                              {pet.attributes.map((a: any) => (
-                                <span key={a.id} className="text-xs px-2 py-1 rounded-full bg-gray-100 border text-gray-700" style={{ background: a.color || undefined }}>{a.name}</span>
-                              ))}
-                            </div>
-                          )}
+                  <h2 className="text-xl font-bold mb-6 border-b-2 border-gray-300 pb-2 flex items-center justify-between">
+                    <span>🐶 登録済みペット一覧</span>
+                    <span className="text-sm font-normal text-gray-500">全 {petsList.length} 匹</span>
+                  </h2>
+
+                  {eggTypes.length === 0 && <p className="text-center text-gray-400 py-10 bg-white rounded-xl">データがありません</p>}
+                  
+                  {eggTypes.map(type => {
+                    const petsInEgg = groupedPets[type];
+                    // 総ウェイトの計算
+                    const totalWeight = petsInEgg.reduce((sum, p) => sum + (p.drop_weight || 0), 0);
+                    // レアリティごとのウェイト集計
+                    const weightsByRarity = petsInEgg.reduce((acc, p) => {
+                      const r = p.rarity || 'N';
+                      acc[r] = (acc[r] || 0) + (p.drop_weight || 0);
+                      return acc;
+                    }, {} as Record<string, number>);
+
+                    return (
+                      <div key={type} className="mb-8 bg-white p-5 rounded-2xl shadow-sm border border-orange-100 relative">
+                        <div className="absolute top-0 right-0 bg-orange-100 text-orange-800 text-xs font-bold px-3 py-1 rounded-bl-xl rounded-tr-xl">
+                          {petsInEgg.length} 匹
                         </div>
-                        <div className="flex gap-2">
-                          <button onClick={() => {
-                            setActiveTab('pets');
-                            setEditingPetId(pet.id);
-                            setPetName(pet.name || '');
-                            setPetRarity(pet.rarity || 'N');
-                            setPetWeight(String(pet.drop_weight || 100));
-                            setSelectedAttributeIds((pet.attributes || []).map((a: any) => a.id));
-                            setPetModelFile(null); setPetModelV2File(null); setPetModelV3File(null); setPetMarkerFile(null);
-                          }} className="bg-blue-50 text-blue-600 font-bold px-4 py-2 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity hover:bg-blue-100">編集</button>
-                          <button 
-                            onClick={() => handleDeletePet(pet.id, pet.model_url, pet.marker_url, pet.model_url_v2, pet.model_url_v3)}
-                            className="bg-red-50 text-red-600 font-bold px-4 py-2 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-100"
-                          >
-                            削除
-                          </button>
+                        <h3 className="font-bold text-xl mb-3 text-orange-900 border-b border-orange-100 pb-2">
+                          🥚 卵タイプ: {type}
+                        </h3>
+
+                        {/* 💡 排出確率の可視化バー */}
+                        {totalWeight > 0 ? (
+                          <div className="mb-4 bg-orange-50 p-3 rounded-xl border border-orange-200">
+                            <div className="flex items-center gap-2 mb-2">
+                              <span className="text-sm font-bold text-orange-900">📊 卵からの排出確率</span>
+                              <span className="text-xs text-orange-700 ml-auto">総ウェイト: {totalWeight}</span>
+                            </div>
+                            <div className="flex flex-wrap gap-2 text-xs font-bold">
+                              {Object.entries(weightsByRarity).map(([r, w]) => {
+                                const percentage = ((w / totalWeight) * 100).toFixed(1);
+                                return (
+                                  <div key={r} className="flex items-center bg-white px-2 py-1 rounded border shadow-sm">
+                                    <span className="text-gray-500 mr-1 w-5 text-center">{r}</span>
+                                    <span className="text-blue-600">{percentage}%</span>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="mb-4 text-xs text-red-500">※ウェイトが0のため確率が計算できません</div>
+                        )}
+
+                        <div className="space-y-3">
+                          {/* 卵の中のペットをレアリティやウェイト順に並べる */}
+                          {petsInEgg
+                            .sort((a, b) => (b.drop_weight || 0) - (a.drop_weight || 0)) // ウェイト順にソート
+                            .map(pet => (
+                            <div key={pet.id} className="p-4 border rounded-xl hover:bg-gray-50 flex items-center justify-between transition-colors group">
+                              <div>
+                                <div className="font-bold text-lg flex items-center">
+                                  {pet.name} 
+                                  <span className={`text-xs font-bold px-2 py-0.5 rounded ml-2 border ${
+                                    pet.rarity === 'UR' ? 'bg-purple-100 text-purple-700 border-purple-200' : 
+                                    pet.rarity === 'SR' ? 'bg-red-100 text-red-700 border-red-200' :
+                                    pet.rarity === 'R' ? 'bg-blue-100 text-blue-700 border-blue-200' :
+                                    'bg-gray-100 text-gray-700 border-gray-200'
+                                  }`}>
+                                    {pet.rarity}
+                                  </span>
+                                </div>
+                                <div className="text-sm text-gray-500 mt-1 flex flex-wrap gap-x-3 gap-y-1">
+                                  <span className="font-bold text-blue-600 bg-blue-50 px-1.5 rounded">ウェイト: {pet.drop_weight}</span>
+                                  <a href={pet.model_url} target="_blank" rel="noreferrer" className="text-blue-500 hover:underline">V1モデル</a>
+                                  {pet.model_url_v2 && <a href={pet.model_url_v2} target="_blank" rel="noreferrer" className="text-blue-500 hover:underline">V2モデル(Lv5)</a>}
+                                  {pet.model_url_v3 && <a href={pet.model_url_v3} target="_blank" rel="noreferrer" className="text-blue-500 hover:underline">V3モデル(Lv10)</a>}
+                                  <a href={pet.marker_url} target="_blank" rel="noreferrer" className="text-blue-500 hover:underline">マーカー</a>
+                                </div>
+                                {pet.attributes && pet.attributes.length > 0 && (
+                                  <div className="mt-2 flex flex-wrap gap-2">
+                                    {pet.attributes.map((a: any) => (
+                                      <span key={a.id} className="text-xs px-2 py-1 rounded-full bg-gray-100 border text-gray-700" style={{ background: a.color || undefined }}>{a.name}</span>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                              <div className="flex gap-2">
+                                <button onClick={() => {
+                                  setActiveTab('pets');
+                                  setEditingPetId(pet.id);
+                                  setPetName(pet.name || '');
+                                  setPetEggType(pet.egg_type || 'A'); // 💡 編集時に卵タイプをセット
+                                  setPetRarity(pet.rarity || 'N');
+                                  setPetWeight(String(pet.drop_weight || 100));
+                                  setSelectedAttributeIds((pet.attributes || []).map((a: any) => a.id));
+                                  setPetModelFile(null); setPetModelV2File(null); setPetModelV3File(null); setPetMarkerFile(null);
+                                }} className="bg-blue-50 text-blue-600 font-bold px-4 py-2 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity hover:bg-blue-100 shadow-sm border border-blue-200">編集</button>
+                                <button 
+                                  onClick={() => handleDeletePet(pet.id, pet.model_url, pet.marker_url, pet.model_url_v2, pet.model_url_v3)}
+                                  className="bg-red-50 text-red-600 font-bold px-4 py-2 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-100 shadow-sm border border-red-200"
+                                >
+                                  削除
+                                </button>
+                              </div>
+                            </div>
+                          ))}
                         </div>
                       </div>
-                    ))}
-                    {petsList.length === 0 && <p className="text-center text-gray-400 py-10">データがありません</p>}
-                  </div>
+                    );
+                  })}
                 </>
               )}
 
@@ -910,7 +1000,7 @@ export default function AdminDashboard() {
                     <h2 className="text-xl font-bold mb-4 border-b pb-2">📂 登録済みスポットリスト (マスター)</h2>
                     <div className="space-y-4">
                       {landmarkMastersList.map(master => (
-                        <div key={master.id} className="p-4 border rounded-xl bg-gray-50 flex flex-col gap-3">
+                        <div key={master.id} className="p-4 border rounded-xl bg-white flex flex-col gap-3 shadow-sm">
                           <div className="flex justify-between items-start">
                             <div>
                               <div className="font-bold text-lg flex items-center gap-2">
@@ -967,7 +1057,7 @@ export default function AdminDashboard() {
                     <h2 className="text-xl font-bold mb-4 border-b pb-2 mt-8">📍 マップに配置済みスポット (実体)</h2>
                     <div className="space-y-3">
                       {landmarksList.map(spot => (
-                        <div key={spot.id} className="p-4 border rounded-xl hover:bg-gray-50 flex justify-between items-center transition-colors group">
+                        <div key={spot.id} className="p-4 border rounded-xl hover:bg-gray-50 bg-white flex justify-between items-center transition-colors group shadow-sm">
                           <div>
                             <div className="font-bold text-md">{spot.name}</div>
                             <div className="text-xs text-gray-500 mt-1">
@@ -981,7 +1071,7 @@ export default function AdminDashboard() {
                           </div>
                           <button 
                             onClick={() => handleDeleteLandmarkInstance(spot.id)}
-                            className="bg-red-50 text-red-600 font-bold px-4 py-2 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-100 text-xs"
+                            className="bg-red-50 text-red-600 font-bold px-4 py-2 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-100 text-xs border border-red-200"
                           >
                             撤去
                           </button>
@@ -999,7 +1089,7 @@ export default function AdminDashboard() {
                   <h2 className="text-xl font-bold mb-4 border-b pb-2">🛒 登録済みアイテム一覧</h2>
                   <div className="space-y-3">
                     {itemsList.map(item => (
-                      <div key={item.id} className="p-4 border rounded-xl hover:bg-gray-50 flex items-center gap-4 transition-colors group">
+                      <div key={item.id} className="p-4 border rounded-xl bg-white hover:bg-gray-50 flex items-center gap-4 transition-colors group shadow-sm">
                         {item.image_url ? (
                           <img src={item.image_url} alt={item.name} className="w-16 h-16 object-cover rounded-lg shadow-sm border" />
                         ) : (
@@ -1017,7 +1107,7 @@ export default function AdminDashboard() {
                         </div>
                         <button 
                           onClick={() => handleDeleteItem(item.id, item.image_url)}
-                          className="bg-red-50 text-red-600 font-bold px-4 py-2 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-100"
+                          className="bg-red-50 text-red-600 font-bold px-4 py-2 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-100 border border-red-200"
                         >
                           削除
                         </button>
@@ -1034,12 +1124,12 @@ export default function AdminDashboard() {
                   <h2 className="text-xl font-bold mb-4 border-b pb-2">📢 配信済みお知らせ一覧</h2>
                   <div className="space-y-3">
                     {newsList.map(news => (
-                      <div key={news.id} className={`p-4 border rounded-xl transition-colors ${news.is_active ? 'bg-white' : 'bg-gray-100 opacity-75'}`}>
+                      <div key={news.id} className={`p-4 border rounded-xl shadow-sm transition-colors ${news.is_active ? 'bg-white' : 'bg-gray-100 opacity-75'}`}>
                         <div className="flex justify-between items-start mb-2">
                           <h3 className="font-bold text-lg">{news.title}</h3>
                           <button 
                             onClick={() => toggleNews(news.id, news.is_active)} 
-                            className={`text-xs font-bold px-3 py-1 rounded-full ${news.is_active ? 'bg-green-100 text-green-800' : 'bg-gray-300 text-gray-700'}`}
+                            className={`text-xs font-bold px-3 py-1 rounded-full ${news.is_active ? 'bg-green-100 text-green-800 border border-green-300' : 'bg-gray-300 text-gray-700'}`}
                           >
                             {news.is_active ? '配信中' : '非公開'}
                           </button>
@@ -1061,7 +1151,7 @@ export default function AdminDashboard() {
                   <h2 className="text-xl font-bold mb-4 border-b pb-2">👥 登録ユーザー一覧</h2>
                   <div className="space-y-3">
                     {usersList.map(user => (
-                      <div key={user.id} className="p-4 border rounded-xl flex justify-between items-center bg-gray-50">
+                      <div key={user.id} className="p-4 border rounded-xl flex justify-between items-center bg-white shadow-sm">
                         <div>
                           <div className="font-bold text-gray-800">
                             ユーザーID: <span className="text-xs font-normal">{user.id.substring(0, 8)}...</span>
@@ -1070,7 +1160,7 @@ export default function AdminDashboard() {
                             {user.birth_year ? `${user.birth_year}年生まれ` : '未設定'} / {user.gender === 'male' ? '男性' : user.gender === 'female' ? '女性' : user.gender === 'other' ? 'その他' : '未設定'}
                           </div>
                         </div>
-                        <div className="text-xs font-bold px-3 py-1 bg-white border rounded text-gray-600">
+                        <div className="text-xs font-bold px-3 py-1 bg-gray-50 border rounded text-gray-600">
                           通知: {user.email_notify_news ? 'ON' : 'OFF'}
                         </div>
                       </div>
@@ -1103,7 +1193,7 @@ export default function AdminDashboard() {
                     <label className="text-sm font-bold">カラー (任意)</label>
                     <input type="color" value={newRarityColor} onChange={e => setNewRarityColor(e.target.value)} className="w-24 h-10 p-1" />
                   </div>
-                  <button disabled={isSubmitting} className="bg-slate-900 text-white px-4 py-2 rounded mt-2">追加</button>
+                  <button disabled={isSubmitting} className="bg-slate-900 text-white px-4 py-2 rounded mt-2 hover:bg-slate-800">追加</button>
                 </form>
 
                 <div className="mt-6">
@@ -1111,12 +1201,12 @@ export default function AdminDashboard() {
                   <div className="space-y-2">
                     {raritiesList.length === 0 && <div className="text-sm text-gray-500">まだ登録されていません</div>}
                     {raritiesList.map(r => (
-                      <div key={r.id} className="flex items-center justify-between bg-white p-2 rounded border">
+                      <div key={r.id} className="flex items-center justify-between bg-white p-2 rounded border shadow-sm">
                         <div className="flex items-center gap-3">
                           <div style={{ width: 18, height: 18, background: r.color || '#ddd', borderRadius: 4 }} />
                           <div className="text-sm">{r.code} {r.label ? `- ${r.label}` : ''}</div>
                         </div>
-                        <button onClick={() => handleDeleteRarity(r.id)} className="text-red-600 text-sm">削除</button>
+                        <button onClick={() => handleDeleteRarity(r.id)} className="text-red-600 text-sm hover:underline">削除</button>
                       </div>
                     ))}
                   </div>
@@ -1134,7 +1224,7 @@ export default function AdminDashboard() {
                     <label className="text-sm font-bold">説明 (任意)</label>
                     <input value={newAttributeDesc} onChange={e => setNewAttributeDesc(e.target.value)} className="w-full border p-2 rounded" />
                   </div>
-                  <button disabled={isSubmitting} className="bg-slate-900 text-white px-4 py-2 rounded mt-2">追加</button>
+                  <button disabled={isSubmitting} className="bg-slate-900 text-white px-4 py-2 rounded mt-2 hover:bg-slate-800">追加</button>
                 </form>
 
                 <div className="mt-6">
@@ -1142,12 +1232,12 @@ export default function AdminDashboard() {
                   <div className="space-y-2">
                     {attributesList.length === 0 && <div className="text-sm text-gray-500">まだ登録されていません</div>}
                     {attributesList.map(a => (
-                      <div key={a.id} className="flex items-center justify-between bg-white p-2 rounded border">
+                      <div key={a.id} className="flex items-center justify-between bg-white p-2 rounded border shadow-sm">
                         <div>
                           <div className="text-sm font-bold">{a.name}</div>
                           {a.description && <div className="text-xs text-gray-500">{a.description}</div>}
                         </div>
-                        <button onClick={() => handleDeleteAttribute(a.id)} className="text-red-600 text-sm">削除</button>
+                        <button onClick={() => handleDeleteAttribute(a.id)} className="text-red-600 text-sm hover:underline">削除</button>
                       </div>
                     ))}
                   </div>
