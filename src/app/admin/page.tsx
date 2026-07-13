@@ -1012,19 +1012,28 @@ export default function AdminDashboard() {
 
                   {eggTypes.length === 0 && <p className="text-center text-gray-400 py-10 bg-white rounded-xl">データがありません</p>}
                   
-                  {eggTypes.map(type => {
-                    const petsInEgg = groupedPets[type];
-                    // 総ウェイトの計算
-                    const totalWeight = petsInEgg.reduce(
-  (sum: number, p: Pet) => sum + (p.drop_weight || 0),
-  0
-);
-                    // レアリティごとのウェイト集計
-                    const weightsByRarity = petsInEgg.reduce((acc, p) => {
-                      const r = p.rarity || 'N';
-                      acc[r] = (acc[r] || 0) + (p.drop_weight || 0);
-                      return acc;
-                    }, {} as Record<string, number>);
+                 {eggTypes.map(type => {
+  const petsInEgg = groupedPets[type];
+
+  // 総ウェイトの計算
+  const totalWeight = petsInEgg.reduce(
+    (sum: number, p: (typeof petsInEgg)[number]) =>
+      sum + (p.drop_weight || 0),
+    0
+  );
+
+  // レアリティごとのウェイト集計
+  const weightsByRarity = petsInEgg.reduce(
+    (
+      acc: Record<string, number>,
+      p: (typeof petsInEgg)[number]
+    ) => {
+      const r = p.rarity || "N";
+      acc[r] = (acc[r] || 0) + (p.drop_weight || 0);
+      return acc;
+    },
+    {}
+  );
 
                     return (
                       <div key={type} className="mb-8 bg-white p-5 rounded-2xl shadow-sm border border-orange-100 relative">
