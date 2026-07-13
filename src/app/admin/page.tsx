@@ -67,6 +67,7 @@ export default function AdminDashboard() {
   const [newRarityCode, setNewRarityCode] = useState('');
   const [newRarityLabel, setNewRarityLabel] = useState('');
   const [newRarityColor, setNewRarityColor] = useState('#ffffff');
+  const [newRarityWeight, setNewRarityWeight] = useState('100'); // 🌟 レアリティの排出ウェイト
   const [newAttributeName, setNewAttributeName] = useState('');
   const [newAttributeDesc, setNewAttributeDesc] = useState('');
 
@@ -76,7 +77,7 @@ export default function AdminDashboard() {
   // 1. スポットマスター（リスト）作成用
   const [lmMasterName, setLmMasterName] = useState('');
   const [lmMasterDesc, setLmMasterDesc] = useState('');
-  const [lmMasterFacilityType, setLmMasterFacilityType] = useState('normal'); // 🌟 施設タイプ
+  const [lmMasterFacilityType, setLmMasterFacilityType] = useState('normal');
   const [lmMasterRadius, setLmMasterRadius] = useState('50');
   const [lmMasterPoints, setLmMasterPoints] = useState('100');
   const [lmMasterIsPublic, setLmMasterIsPublic] = useState(false);
@@ -106,7 +107,7 @@ export default function AdminDashboard() {
   const [itemEffect, setItemEffect] = useState('10');
   const [itemImageFile, setItemImageFile] = useState<File | null>(null);
 
-  // --- クーポン用State (新機能) ---
+  // --- クーポン用State ---
   const [couponName, setCouponName] = useState('');
   const [couponDesc, setCouponDesc] = useState('');
   const [couponCode, setCouponCode] = useState('');
@@ -124,7 +125,7 @@ export default function AdminDashboard() {
   const [newsTitle, setNewsTitle] = useState('');
   const [newsContent, setNewsContent] = useState('');
 
- // --- データの取得（一覧表示用） ---
+  // --- データの取得（一覧表示用） ---
   const fetchData = async () => {
     const [
       petsRes, 
@@ -188,15 +189,37 @@ export default function AdminDashboard() {
     if (!newRarityCode || !newRarityLabel) return alert('コードとラベルを入力してください');
     setIsSubmitting(true);
     try {
-      const { error } = await supabase.from('rarities').insert({ code: newRarityCode, label: newRarityLabel, color: newRarityColor });
+      const { error } = await supabase.from('rarities').insert({ 
+        code: newRarityCode, 
+        label: newRarityLabel, 
+        color: newRarityColor,
+        drop_weight: parseInt(newRarityWeight, 10) // 🌟 ウェイトの保存
+      });
       if (error) throw error;
-      setNewRarityCode(''); setNewRarityLabel(''); setNewRarityColor('#ffffff');
+      setNewRarityCode(''); setNewRarityLabel(''); setNewRarityColor('#ffffff'); setNewRarityWeight('100');
       fetchData();
       alert('レアリティを追加しました');
     } catch (e: any) {
       alert(`追加に失敗しました: ${e.message}`);
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  // 🌟 既存レアリティのウェイト更新機能
+  const handleUpdateRarityWeight = async (id: number, currentWeight: number) => {
+    const newWeightStr = window.prompt('新しい排出ウェイトを入力してください（整数）\n※数値が大きいほど出やすくなります。', String(currentWeight));
+    if (newWeightStr === null) return; // キャンセル時
+    const newWeight = parseInt(newWeightStr, 10);
+    if (isNaN(newWeight) || newWeight < 0) return alert('正しい数値を入力してください');
+
+    try {
+      const { error } = await supabase.from('rarities').update({ drop_weight: newWeight }).eq('id', id);
+      if (error) throw error;
+      fetchData();
+      alert('ウェイトを更新しました');
+    } catch (e: any) {
+      alert(`更新に失敗しました: ${e.message}`);
     }
   };
 
@@ -338,7 +361,6 @@ export default function AdminDashboard() {
     }
   };
 
-  // --- スポットマスター登録 ＆ 大量発生 ---
   const handleAddLandmarkMaster = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!lmMasterModelFile || !lmMasterName) return alert('スポット名とモデルが必要です');
@@ -348,7 +370,7 @@ export default function AdminDashboard() {
       const { data: master, error } = await supabase.from('landmark_masters').insert({
         name: lmMasterName,
         description: lmMasterDesc,
-        facility_type: lmMasterFacilityType, // 🌟 施設タイプの保存
+        facility_type: lmMasterFacilityType,
         radius_meters: parseInt(lmMasterRadius, 10),
         bonus_points: parseInt(lmMasterPoints, 10),
         model_url: modelUrl,
@@ -376,7 +398,6 @@ export default function AdminDashboard() {
     }
   };
 
-  // --- 個別手動スポット配置 ---
   const handleAddLandmarkManual = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!landmarkModelFile || !landmarkName || !landmarkLat || !landmarkLng) return alert('必須項目が不足しています');
@@ -404,7 +425,6 @@ export default function AdminDashboard() {
     }
   };
 
-  // --- 既存のスポットマスターから大量発生を実行 ---
   const handleExecuteMassGen = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!activeMassGenMaster) return;
@@ -426,7 +446,6 @@ export default function AdminDashboard() {
     }
   };
 
-  // --- アイテム追加 ---
   const handleAddItem = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!itemName) return alert('アイテム名が必要です');
@@ -457,7 +476,6 @@ export default function AdminDashboard() {
     }
   };
 
-  // --- 🎫 クーポン追加 (新機能) ---
   const handleAddCoupon = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!couponName) return alert('クーポン名が必要です');
@@ -486,7 +504,6 @@ export default function AdminDashboard() {
     }
   };
 
-  // --- 🌟 施設ドロップ報酬の追加 ---
   const handleAddFacilityDrop = async (e: React.FormEvent) => {
     e.preventDefault();
     if (dropRewardType === 'item' && !dropItemId) return alert('アイテムを選択してください');
@@ -533,7 +550,6 @@ export default function AdminDashboard() {
     }
   };
 
-  // --- 🌟 ユーザーペットの状態異常更新ハンドラ ---
   const handleUpdatePetCondition = async (petId: string, newCondition: string) => {
     if (!window.confirm(`このペットのステータスを「${newCondition === 'healthy' ? '健康' : newCondition === 'sick' ? '病気' : '飢餓'}」に変更しますか？`)) return;
     try {
@@ -572,7 +588,6 @@ export default function AdminDashboard() {
     }
   };
 
-  // スポットマスター(リスト)の削除
   const handleDeleteLandmarkMaster = async (id: number, modelUrl: string) => {
     if (!window.confirm('このスポットリストを削除しますか？\n※既に配置された実体のスポットは削除されません。')) return;
     try {
@@ -587,7 +602,6 @@ export default function AdminDashboard() {
     }
   };
 
-  // スポットマスター(リスト)の公開状態トグル
   const toggleLandmarkMasterPublic = async (id: number, current: boolean) => {
     try {
       const { error } = await supabase.from('landmark_masters').update({ is_public: !current }).eq('id', id);
@@ -598,7 +612,6 @@ export default function AdminDashboard() {
     }
   };
 
-  // 配置済みスポットの削除
   const handleDeleteLandmarkInstance = async (id: number) => {
     if (!window.confirm('この配置済みスポットを削除しますか？')) return;
     try {
@@ -673,6 +686,9 @@ export default function AdminDashboard() {
     return acc;
   }, {} as Record<string, any[]>);
   const eggTypes = Object.keys(groupedPets).sort();
+
+  // レアリティの全体のウェイト合計（表示用）
+  const totalRarityWeight = raritiesList.reduce((sum, r) => sum + (r.drop_weight || 0), 0);
 
   return (
     <div className="max-w-6xl mx-auto p-6 bg-white shadow-xl rounded-3xl mt-8 mb-20">
@@ -765,7 +781,7 @@ export default function AdminDashboard() {
                       </div>
                     </div>
                     <div className="flex-1">
-                      <label className="block text-sm font-bold mb-1 text-blue-700">排出ウェイト</label>
+                      <label className="block text-sm font-bold mb-1 text-blue-700">個別ウェイト</label>
                       <input type="number" value={petWeight} onChange={e => setPetWeight(e.target.value)} className="w-full border p-3 rounded-lg focus:ring-2 focus:ring-blue-500 bg-blue-50" required />
                     </div>
                   </div>
@@ -977,7 +993,7 @@ export default function AdminDashboard() {
                 </form>
               )}
 
-              {/* 3.5. 🎫 クーポン追加フォーム (新機能) */}
+              {/* 3.5. 🎫 クーポン追加フォーム */}
               {activeTab === 'coupons' && (
                 <form onSubmit={handleAddCoupon} className="space-y-5 bg-teal-50 p-6 rounded-2xl border border-teal-100">
                   <h2 className="text-xl font-bold text-teal-900">🎫 新規クーポン追加</h2>
@@ -1124,12 +1140,9 @@ export default function AdminDashboard() {
                   {eggTypes.length === 0 && <p className="text-center text-gray-400 py-10 bg-white rounded-xl">データがありません</p>}
                   
                   {eggTypes.map(type => {
-                    // ここで型を明示的に any[] に指定して後続の型エラーを防ぎます
                     const petsInEgg: any[] = groupedPets[type];
-                    // 総ウェイトの計算
                     const totalWeight = petsInEgg.reduce((sum, p) => sum + (Number(p.drop_weight) || 0), 0);
                     
-                    // レアリティごとのウェイト集計（型エラー修正済: 型引数ではなく引数と初期値に型を明示）
                     const weightsByRarity = petsInEgg.reduce((acc: Record<string, number>, p: any) => {
                       const r = p.rarity || 'N';
                       acc[r] = (acc[r] || 0) + (Number(p.drop_weight) || 0);
@@ -1145,12 +1158,12 @@ export default function AdminDashboard() {
                           🥚 卵タイプ: {type}
                         </h3>
 
-                        {/* 💡 排出確率の可視化バー */}
+                        {/* 💡 個別確率の可視化 */}
                         {totalWeight > 0 ? (
                           <div className="mb-4 bg-orange-50 p-3 rounded-xl border border-orange-200">
                             <div className="flex items-center gap-2 mb-2">
-                              <span className="text-sm font-bold text-orange-900">📊 卵からの排出確率</span>
-                              <span className="text-xs text-orange-700 ml-auto">総ウェイト: {totalWeight}</span>
+                              <span className="text-sm font-bold text-orange-900">📊 同一レアリティ内での選出確率</span>
+                              <span className="text-xs text-orange-700 ml-auto">総個別ウェイト: {totalWeight}</span>
                             </div>
                             <div className="flex flex-wrap gap-2 text-xs font-bold">
                               {Object.entries(weightsByRarity).map(([r, w]) => {
@@ -1186,7 +1199,7 @@ export default function AdminDashboard() {
                                   </span>
                                 </div>
                                 <div className="text-sm text-gray-500 mt-1 flex flex-wrap gap-x-3 gap-y-1">
-                                  <span className="font-bold text-blue-600 bg-blue-50 px-1.5 rounded">ウェイト: {pet.drop_weight}</span>
+                                  <span className="font-bold text-blue-600 bg-blue-50 px-1.5 rounded border border-blue-100">個別ウェイト: {pet.drop_weight}</span>
                                   <a href={pet.model_url} target="_blank" rel="noreferrer" className="text-blue-500 hover:underline">V1モデル</a>
                                   {pet.model_url_v2 && <a href={pet.model_url_v2} target="_blank" rel="noreferrer" className="text-blue-500 hover:underline">V2モデル(Lv5)</a>}
                                   {pet.model_url_v3 && <a href={pet.model_url_v3} target="_blank" rel="noreferrer" className="text-blue-500 hover:underline">V3モデル(Lv10)</a>}
@@ -1356,7 +1369,7 @@ export default function AdminDashboard() {
                 </>
               )}
 
-              {/* 3.5 🎫 クーポン一覧 (新機能) */}
+              {/* 3.5 🎫 クーポン一覧 */}
               {activeTab === 'coupons' && (
                 <>
                   <h2 className="text-xl font-bold mb-4 border-b pb-2">🎫 登録済みクーポン一覧</h2>
@@ -1462,7 +1475,6 @@ export default function AdminDashboard() {
                   <h2 className="text-xl font-bold mb-4 border-b pb-2">👥 登録ユーザーとペットの状態</h2>
                   <div className="space-y-4">
                     {usersList.map(user => {
-                      // 該当ユーザーが所有するペットをフィルタリング
                       const userPets = userPetsList.filter(p => p.owner_id === user.id);
                       
                       return (
@@ -1481,7 +1493,6 @@ export default function AdminDashboard() {
                             </div>
                           </div>
 
-                          {/* ユーザー保有ペットの状態異常管理UI */}
                           <div className="pl-2 border-l-4 border-indigo-200 space-y-2">
                             {userPets.length > 0 ? (
                               userPets.map(pet => (
@@ -1535,71 +1546,122 @@ export default function AdminDashboard() {
           <div className="col-span-1 lg:col-span-2 bg-white p-6 rounded-2xl border border-gray-100">
             <h2 className="text-xl font-bold mb-4">⚙️ レアリティ / 属性 管理</h2>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              
+              {/* レアリティ管理エリア */}
               <div className="bg-gray-50 p-4 rounded-xl border">
                 <h3 className="font-bold mb-3">レアリティを追加</h3>
-                <form onSubmit={handleAddRarity} className="space-y-3">
-                  <div>
-                    <label className="text-sm font-bold">コード (例: N,R,SR)</label>
-                    <input value={newRarityCode} onChange={e => setNewRarityCode(e.target.value)} className="w-full border p-2 rounded" />
+                <form onSubmit={handleAddRarity} className="space-y-3 bg-white p-4 rounded-lg border shadow-sm">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-xs font-bold text-gray-600 block mb-1">コード (例: N, SR)</label>
+                      <input value={newRarityCode} onChange={e => setNewRarityCode(e.target.value)} className="w-full border p-2 rounded text-sm" required />
+                    </div>
+                    <div>
+                      <label className="text-xs font-bold text-gray-600 block mb-1">ラベル (例: ノーマル)</label>
+                      <input value={newRarityLabel} onChange={e => setNewRarityLabel(e.target.value)} className="w-full border p-2 rounded text-sm" required />
+                    </div>
                   </div>
-                  <div>
-                    <label className="text-sm font-bold">ラベル</label>
-                    <input value={newRarityLabel} onChange={e => setNewRarityLabel(e.target.value)} className="w-full border p-2 rounded" />
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-xs font-bold text-blue-700 block mb-1">基本排出ウェイト 🌟</label>
+                      <input type="number" value={newRarityWeight} onChange={e => setNewRarityWeight(e.target.value)} className="w-full border p-2 rounded text-sm bg-blue-50 focus:ring-blue-500" required />
+                    </div>
+                    <div>
+                      <label className="text-xs font-bold text-gray-600 block mb-1">カラー</label>
+                      <input type="color" value={newRarityColor} onChange={e => setNewRarityColor(e.target.value)} className="w-full h-9 p-1 border rounded cursor-pointer" />
+                    </div>
                   </div>
-                  <div>
-                    <label className="text-sm font-bold">カラー (任意)</label>
-                    <input type="color" value={newRarityColor} onChange={e => setNewRarityColor(e.target.value)} className="w-24 h-10 p-1" />
-                  </div>
-                  <button disabled={isSubmitting} className="bg-slate-900 text-white px-4 py-2 rounded mt-2 hover:bg-slate-800">追加</button>
+                  <button disabled={isSubmitting} className="w-full bg-slate-900 text-white font-bold py-2 rounded hover:bg-slate-800 shadow mt-2">
+                    追加する
+                  </button>
                 </form>
 
                 <div className="mt-6">
-                  <h4 className="font-bold mb-2">登録済みレアリティ</h4>
-                  <div className="space-y-2">
-                    {raritiesList.length === 0 && <div className="text-sm text-gray-500">まだ登録されていません</div>}
-                    {raritiesList.map(r => (
-                      <div key={r.id} className="flex items-center justify-between bg-white p-2 rounded border shadow-sm">
-                        <div className="flex items-center gap-3">
-                          <div style={{ width: 18, height: 18, background: r.color || '#ddd', borderRadius: 4 }} />
-                          <div className="text-sm">{r.code} {r.label ? `- ${r.label}` : ''}</div>
+                  <div className="flex justify-between items-end mb-2 border-b pb-2">
+                    <h4 className="font-bold text-gray-800">登録済みレアリティ</h4>
+                    <span className="text-xs font-bold text-gray-500 bg-gray-200 px-2 py-1 rounded">総ウェイト: {totalRarityWeight}</span>
+                  </div>
+                  
+                  <div className="space-y-3 mt-3">
+                    {raritiesList.length === 0 && <div className="text-sm text-gray-500 text-center py-4 bg-white rounded border">まだ登録されていません</div>}
+                    
+                    {/* ウェイトが大きい（出やすい）順に並び替えて表示 */}
+                    {[...raritiesList].sort((a, b) => (b.drop_weight || 0) - (a.drop_weight || 0)).map(r => {
+                      // 🌟 全体のウェイトに対する割合（％）を計算
+                      const dropPercentage = totalRarityWeight > 0 ? (((r.drop_weight || 0) / totalRarityWeight) * 100).toFixed(1) : '0.0';
+
+                      return (
+                        <div key={r.id} className="bg-white p-3 rounded-lg border shadow-sm group">
+                          <div className="flex items-center justify-between mb-2">
+                            <div className="flex items-center gap-2">
+                              <div style={{ width: 14, height: 14, background: r.color || '#ddd', borderRadius: '50%' }} />
+                              <span className="font-bold text-lg">{r.code}</span>
+                              <span className="text-xs text-gray-500">{r.label}</span>
+                            </div>
+                            <div className="flex gap-2">
+                              <button 
+                                onClick={() => handleUpdateRarityWeight(r.id, r.drop_weight || 0)} 
+                                className="text-xs font-bold text-blue-600 bg-blue-50 border border-blue-200 px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity hover:bg-blue-100"
+                              >
+                                ウェイト変更
+                              </button>
+                              <button 
+                                onClick={() => handleDeleteRarity(r.id)} 
+                                className="text-xs font-bold text-red-600 bg-red-50 border border-red-200 px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-100"
+                              >
+                                削除
+                              </button>
+                            </div>
+                          </div>
+                          <div className="flex items-center justify-between bg-gray-50 px-3 py-2 rounded text-sm">
+                            <span className="font-bold text-gray-700">ウェイト: <span className="text-blue-700 text-base">{r.drop_weight || 0}</span></span>
+                            <span className="font-bold text-orange-600 bg-orange-50 px-2 py-0.5 rounded border border-orange-100">
+                              排出率: {dropPercentage}%
+                            </span>
+                          </div>
                         </div>
-                        <button onClick={() => handleDeleteRarity(r.id)} className="text-red-600 text-sm hover:underline">削除</button>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </div>
               </div>
 
+              {/* 属性管理エリア */}
               <div className="bg-gray-50 p-4 rounded-xl border">
                 <h3 className="font-bold mb-3">属性を追加</h3>
-                <form onSubmit={handleAddAttribute} className="space-y-3">
+                <form onSubmit={handleAddAttribute} className="space-y-3 bg-white p-4 rounded-lg border shadow-sm">
                   <div>
-                    <label className="text-sm font-bold">属性名</label>
-                    <input value={newAttributeName} onChange={e => setNewAttributeName(e.target.value)} className="w-full border p-2 rounded" />
+                    <label className="text-xs font-bold text-gray-600 block mb-1">属性名</label>
+                    <input value={newAttributeName} onChange={e => setNewAttributeName(e.target.value)} className="w-full border p-2 rounded text-sm" required />
                   </div>
                   <div>
-                    <label className="text-sm font-bold">説明 (任意)</label>
-                    <input value={newAttributeDesc} onChange={e => setNewAttributeDesc(e.target.value)} className="w-full border p-2 rounded" />
+                    <label className="text-xs font-bold text-gray-600 block mb-1">説明 (任意)</label>
+                    <input value={newAttributeDesc} onChange={e => setNewAttributeDesc(e.target.value)} className="w-full border p-2 rounded text-sm" />
                   </div>
-                  <button disabled={isSubmitting} className="bg-slate-900 text-white px-4 py-2 rounded mt-2 hover:bg-slate-800">追加</button>
+                  <button disabled={isSubmitting} className="w-full bg-slate-900 text-white font-bold py-2 rounded hover:bg-slate-800 shadow mt-2">
+                    追加する
+                  </button>
                 </form>
 
                 <div className="mt-6">
-                  <h4 className="font-bold mb-2">登録済み属性</h4>
-                  <div className="space-y-2">
-                    {attributesList.length === 0 && <div className="text-sm text-gray-500">まだ登録されていません</div>}
+                  <h4 className="font-bold mb-2 border-b pb-2 text-gray-800">登録済み属性</h4>
+                  <div className="space-y-2 mt-3">
+                    {attributesList.length === 0 && <div className="text-sm text-gray-500 text-center py-4 bg-white rounded border">まだ登録されていません</div>}
                     {attributesList.map(a => (
-                      <div key={a.id} className="flex items-center justify-between bg-white p-2 rounded border shadow-sm">
+                      <div key={a.id} className="flex items-center justify-between bg-white p-3 rounded-lg border shadow-sm">
                         <div>
-                          <div className="text-sm font-bold">{a.name}</div>
-                          {a.description && <div className="text-xs text-gray-500">{a.description}</div>}
+                          <div className="text-sm font-bold text-gray-800">{a.name}</div>
+                          {a.description && <div className="text-xs text-gray-500 mt-0.5">{a.description}</div>}
                         </div>
-                        <button onClick={() => handleDeleteAttribute(a.id)} className="text-red-600 text-sm hover:underline">削除</button>
+                        <button onClick={() => handleDeleteAttribute(a.id)} className="text-red-600 text-xs font-bold bg-red-50 border border-red-200 px-2 py-1 rounded hover:bg-red-100">
+                          削除
+                        </button>
                       </div>
                     ))}
                   </div>
                 </div>
               </div>
+
             </div>
           </div>
         )}
