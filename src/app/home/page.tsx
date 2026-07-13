@@ -23,17 +23,6 @@ function getDistance(lat1: number, lon1: number, lat2: number, lon2: number) {
   return R * c;
 }
 
-// 💡 ペットIDから疑似ランダムに卵のグループを決定する関数（DB変更なしで永続化するため）
-const getEggGroupById = (id: string | null) => {
-  if (!id) return 'A';
-  // IDの最後の文字を使って4パターンの卵をランダムに固定で出し分ける
-  const char = id.charAt(id.length - 1).toLowerCase();
-  if (/[0-3]/.test(char)) return 'A';
-  if (/[4-7]/.test(char)) return 'B';
-  if (/[8-b]/.test(char)) return 'C';
-  return 'D'; // Dグループの卵モデル(egg_D.glb)も用意しておくとより多彩になります
-};
-
 export default function HomeAR() {
   const router = useRouter();
   const supabase = useMemo(() => createClient(), []);
@@ -67,7 +56,7 @@ export default function HomeAR() {
   // 💡 ターゲットマインド（マーカー）は全ユーザー・全モデル共通で1つに完全固定！
   const petMarkerUrl = '/markers/target.mind'; 
   
-  // 卵モデルはIDに応じて動的に変えるためのState
+  // 卵モデルはDBのegg_typeに応じて動的に変えるためのState
   const [eggModelUrl, setEggModelUrl] = useState<string>('/models/eggs/egg_A.glb');
 
   // 孵化後のペットモデル
@@ -227,10 +216,10 @@ export default function HomeAR() {
     }
   };
 
-  // --- データベースからのユーザーペット取得（パラメータ依存を廃止） ---
+  // --- データベースからのユーザーペット取得 ---
   useEffect(() => {
     const fetchGameData = async () => {
-      if (!sessionUserId) return; // セッション情報が取得できるまで待機
+      if (!sessionUserId) return;
 
       const { data: items } = await supabase.from('item_masters').select('*').order('id', { ascending: false });
       if (items) setShopItems(items);
@@ -242,16 +231,16 @@ export default function HomeAR() {
       setGameOverNotice(null);
       setGameOverHandled(false);
 
-      // 💡 ユーザーの最新のアクティブなペットをDBから取得
+      // 💡 ユーザーの最新のアクティブなペットをDBから取得 (egg_typeを追加で取得)
       const { data: pet } = await supabase
         .from('pets')
         .select(`
           id, owner_id, affection_level, sleeping_until, last_fed_at, 
           is_egg, walk_distance_m, level, exp, custom_name, birthday,
-          pet_masters(name, model_url, model_url_v2, model_url_v3, rarity)
+          pet_masters(name, model_url, model_url_v2, model_url_v3, rarity, egg_type)
         `)
         .eq('owner_id', sessionUserId)
-        .order('created_at', { ascending: false }) // 最新のものを取得
+        .order('created_at', { ascending: false })
         .limit(1)
         .maybeSingle();
 
@@ -261,12 +250,9 @@ export default function HomeAR() {
         setSleepingUntil(pet.sleeping_until); setLastFedAt(pet.last_fed_at); 
         setIsEgg(pet.is_egg); setWalkDistance(pet.walk_distance_m || 0); setLevel(pet.level || 1);
         setExp(pet.exp || 0); setCustomName(pet.custom_name); setBirthday(pet.birthday);
-        setIsEggUnregistered(false); // 登録済みの卵として扱う
+        setIsEggUnregistered(false); 
 
-        // 💡 ペットIDに基づいて卵のモデルを固定設定
-        const eggGroup = getEggGroupById(pet.id);
-        setEggModelUrl(`/models/eggs/egg_${eggGroup}.glb`);
-
+        // 💡 DBのペットマスターに設定された卵タイプ(egg_type)を参照してモデルを決定
         if (pet.pet_masters) { 
           const pm = (pet.pet_masters && pet.pet_masters[0] ? pet.pet_masters[0] : pet.pet_masters) || {};
           const rarityPm = (pm as any).rarity || '?';
@@ -277,6 +263,10 @@ export default function HomeAR() {
           setPetModelUrlV3((pm as any).model_url_v3 || `${fallbackBase}/v3.glb`);
           setPetMasterName((pm as any).name || '不明');
           setPetRarity(rarityPm);
+
+          // egg_typeが設定されていなければデフォルトで 'A' にする
+          const eggGroup = (pm as any).egg_type || 'A'; 
+          setEggModelUrl(`/models/eggs/egg_${eggGroup}.glb`);
         }
 
         const { data: inv } = await supabase.from('user_inventory').select('id, quantity, item_masters(*)').eq('user_id', sessionUserId).gt('quantity', 0);
@@ -290,7 +280,7 @@ export default function HomeAR() {
         if (landmarkCount !== null) setLandmarkVisitCount(landmarkCount);
 
       } else {
-        // 💡 ペットをまだ持っていない（未登録状態）
+        // ペットをまだ持っていない（未登録状態）
         setIsEggUnregistered(true); 
         setIsEgg(true); 
         setEggModelUrl('/models/eggs/egg_A.glb'); // 初期デフォルトの卵
@@ -300,7 +290,6 @@ export default function HomeAR() {
   }, [sessionUserId, supabase]);
 
   const getCurrentModelUrl = () => {
-    // 💡 卵の間はIDに紐づいた卵モデルを返す
     if (isEgg || isEggUnregistered) return eggModelUrl;
     if (level >= 10 && petModelUrlV3) return petModelUrlV3;
     if (level >= 5 && petModelUrlV2) return petModelUrlV2;
@@ -523,7 +512,7 @@ export default function HomeAR() {
     }
   }, [viewMode, isClient, petId, supabase, isEgg, isSleeping, sceneKey]);
 
-  // 💡 ランダムな卵・ペットを生成（タグコード依存を廃止）
+  // 💡 ランダムな卵・ペットを生成
   const handleCreateEgg = async () => {
     if (!sessionUserId) return;
     try {
@@ -534,12 +523,12 @@ export default function HomeAR() {
         setIsEgg(true); setIsEggUnregistered(false); setWalkDistance(0); setFeedCount(0); setLandmarkVisitCount(0); setEventCount(0);
         setGameOverNotice(null); setGameOverHandled(false); setLastFedAt(null); setSleepingUntil(null); setHungerPercent(100); setMotivationPercent(100); setLevel(1); setExp(0); setAffection(0);
         
-        // 💡 割り当てられたペットIDから卵のモデルを決定
-        const eggGroup = getEggGroupById(result.pet.id);
-        setEggModelUrl(`/models/eggs/egg_${eggGroup}.glb`);
-
+        // 💡 生成されたペットのマスターデータ(egg_type)から卵モデルを決定
         if (result.pet.pet_masters) {
           const pm = result.pet.pet_masters;
+          const eggGroup = (pm as any).egg_type || 'A';
+          setEggModelUrl(`/models/eggs/egg_${eggGroup}.glb`);
+
           const rarityRes = pm.rarity || '?';
           const fallbackBase = `/models/pet/${rarityRes}`;
           setPetModelUrlV1(pm.model_url || `${fallbackBase}/v1.glb`);
@@ -547,7 +536,10 @@ export default function HomeAR() {
           setPetModelUrlV3(pm.model_url_v3 || `${fallbackBase}/v3.glb`);
           setPetMasterName(pm.name || '不明');
           setPetRarity(rarityRes);
+        } else {
+          setEggModelUrl(`/models/eggs/egg_A.glb`);
         }
+        
         playSound('item');
         alert(`不思議な卵を拾った！\nさんぽ、給餌、ランドマーク、イベントの全てをこなして孵化させよう！`);
       }
