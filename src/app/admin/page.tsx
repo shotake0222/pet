@@ -35,7 +35,7 @@ const generateRandomSpots = (master: any, count: number, startTime: string, endT
 
 export default function AdminDashboard() {
   const supabase = createClient();
-  const [activeTab, setActiveTab] = useState<'pets' | 'landmarks' | 'items' | 'news' | 'users' | 'settings'>('pets');
+  const [activeTab, setActiveTab] = useState<'pets' | 'landmarks' | 'items' | 'drops' | 'news' | 'users' | 'settings'>('pets');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // --- 登録済みデータ一覧用のState ---
@@ -45,17 +45,19 @@ export default function AdminDashboard() {
   const [itemsList, setItemsList] = useState<any[]>([]);
   const [newsList, setNewsList] = useState<any[]>([]);
   const [usersList, setUsersList] = useState<any[]>([]);
+  const [userPetsList, setUserPetsList] = useState<any[]>([]);               // ユーザーが保有するペット(状態異常管理用)
+  const [facilityDropsList, setFacilityDropsList] = useState<any[]>([]);     // 施設別ドロップ報酬リスト
   const [raritiesList, setRaritiesList] = useState<any[]>([]);
   const [attributesList, setAttributesList] = useState<any[]>([]);
 
   // --- ペット用State ---
   const [petName, setPetName] = useState('');
-  const [petEggType, setPetEggType] = useState('A'); // 💡 卵タイプのState追加
+  const [petEggType, setPetEggType] = useState('A'); 
   const [petRarity, setPetRarity] = useState('N');
   const [petWeight, setPetWeight] = useState('100');
-  const [petModelFile, setPetModelFile] = useState<File | null>(null);         // 第1形態
-  const [petModelV2File, setPetModelV2File] = useState<File | null>(null);     // 第2形態(Lv5)
-  const [petModelV3File, setPetModelV3File] = useState<File | null>(null);     // 第3形態(Lv10)
+  const [petModelFile, setPetModelFile] = useState<File | null>(null);         
+  const [petModelV2File, setPetModelV2File] = useState<File | null>(null);     
+  const [petModelV3File, setPetModelV3File] = useState<File | null>(null);     
   const [petMarkerFile, setPetMarkerFile] = useState<File | null>(null);
   const [selectedAttributeIds, setSelectedAttributeIds] = useState<number[]>([]);
   const [editingPetId, setEditingPetId] = useState<number | null>(null);
@@ -73,19 +75,20 @@ export default function AdminDashboard() {
   // 1. スポットマスター（リスト）作成用
   const [lmMasterName, setLmMasterName] = useState('');
   const [lmMasterDesc, setLmMasterDesc] = useState('');
+  const [lmMasterFacilityType, setLmMasterFacilityType] = useState('normal'); // 🌟 施設タイプ
   const [lmMasterRadius, setLmMasterRadius] = useState('50');
   const [lmMasterPoints, setLmMasterPoints] = useState('100');
   const [lmMasterIsPublic, setLmMasterIsPublic] = useState(false);
   const [lmMasterModelFile, setLmMasterModelFile] = useState<File | null>(null);
   
-  // 大量発生設定用 (マスター作成時＆既存マスターからの起動用)
+  // 大量発生設定用
   const [lmAutoGenerate, setLmAutoGenerate] = useState(false);
   const [lmGenCount, setLmGenCount] = useState('100');
   const [lmGenStartTime, setLmGenStartTime] = useState('');
   const [lmGenEndTime, setLmGenEndTime] = useState('');
   const [activeMassGenMaster, setActiveMassGenMaster] = useState<any | null>(null);
 
-  // 2. 個別配置用 (従来機能)
+  // 2. 個別配置用
   const [landmarkName, setLandmarkName] = useState('');
   const [landmarkDesc, setLandmarkDesc] = useState('');
   const [landmarkLat, setLandmarkLat] = useState('');
@@ -102,6 +105,12 @@ export default function AdminDashboard() {
   const [itemEffect, setItemEffect] = useState('10');
   const [itemImageFile, setItemImageFile] = useState<File | null>(null);
 
+  // --- 施設別ドロップ報酬用State (新機能) ---
+  const [dropFacilityType, setDropFacilityType] = useState('restaurant');
+  const [dropItemId, setDropItemId] = useState('');
+  const [dropAmount, setDropAmount] = useState('1');
+  const [dropRate, setDropRate] = useState('100');
+
   // --- お知らせ用State ---
   const [newsTitle, setNewsTitle] = useState('');
   const [newsContent, setNewsContent] = useState('');
@@ -117,7 +126,9 @@ export default function AdminDashboard() {
       usersRes, 
       raritiesRes, 
       attributesRes, 
-      petAttrsRes
+      petAttrsRes,
+      userPetsRes,
+      facilityDropsRes
     ] = await Promise.all([
       supabase.from('pet_masters').select('*').order('id', { ascending: false }),
       supabase.from('landmark_masters').select('*').order('id', { ascending: false }),
@@ -127,7 +138,9 @@ export default function AdminDashboard() {
       supabase.from('user_profiles').select('*').order('created_at', { ascending: false }),
       supabase.from('rarities').select('*').order('id', { ascending: true }),
       supabase.from('attributes').select('*').order('id', { ascending: true }),
-      supabase.from('pet_master_attributes').select('*')
+      supabase.from('pet_master_attributes').select('*'),
+      supabase.from('pets').select('*, pet_masters(name)').order('created_at', { ascending: false }), // ユーザーのペット情報
+      supabase.from('facility_drop_masters').select('*, item_masters(name, image_url)').order('id', { ascending: false }) // ドロップ報酬
     ]);
     
     if (petsRes.data) {
@@ -149,6 +162,8 @@ export default function AdminDashboard() {
     if (usersRes.data) setUsersList(usersRes.data);
     if (raritiesRes && raritiesRes.data) setRaritiesList(raritiesRes.data);
     if (attributesRes && attributesRes.data) setAttributesList(attributesRes.data);
+    if (userPetsRes.data) setUserPetsList(userPetsRes.data);
+    if (facilityDropsRes.data) setFacilityDropsList(facilityDropsRes.data);
   };
 
   useEffect(() => {
@@ -255,7 +270,7 @@ export default function AdminDashboard() {
         const updatePayload: any = {
           name: petName,
           rarity: petRarity,
-          egg_type: petEggType, // 💡 卵タイプを保存
+          egg_type: petEggType, 
           drop_weight: parseInt(petWeight, 10)
         };
         if (modelUrl) updatePayload.model_url = modelUrl;
@@ -284,7 +299,7 @@ export default function AdminDashboard() {
           model_url_v3: modelV3Url,
           marker_url: markerUrl,
           rarity: petRarity,
-          egg_type: petEggType, // 💡 卵タイプを保存
+          egg_type: petEggType,
           drop_weight: parseInt(petWeight, 10)
         }).select('id').single();
         if (insertError) throw insertError;
@@ -321,6 +336,7 @@ export default function AdminDashboard() {
       const { data: master, error } = await supabase.from('landmark_masters').insert({
         name: lmMasterName,
         description: lmMasterDesc,
+        facility_type: lmMasterFacilityType, // 🌟 施設タイプの保存
         radius_meters: parseInt(lmMasterRadius, 10),
         bonus_points: parseInt(lmMasterPoints, 10),
         model_url: modelUrl,
@@ -338,7 +354,7 @@ export default function AdminDashboard() {
         alert(`スポット「${master.name}」をリストに登録しました！`);
       }
 
-      setLmMasterName(''); setLmMasterDesc(''); setLmMasterModelFile(null); setLmAutoGenerate(false);
+      setLmMasterName(''); setLmMasterDesc(''); setLmMasterFacilityType('normal'); setLmMasterModelFile(null); setLmAutoGenerate(false);
       setLmGenStartTime(''); setLmGenEndTime(''); setLmGenCount('100');
       fetchData();
     } catch (e: any) {
@@ -428,6 +444,29 @@ export default function AdminDashboard() {
     }
   };
 
+  // --- 🌟 施設ドロップ報酬の追加 (新機能) ---
+  const handleAddFacilityDrop = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!dropItemId) return alert('アイテムを選択してください');
+    setIsSubmitting(true);
+    try {
+      const { error } = await supabase.from('facility_drop_masters').insert({
+        facility_type: dropFacilityType,
+        item_id: parseInt(dropItemId, 10),
+        drop_amount: parseInt(dropAmount, 10),
+        drop_rate_percent: parseInt(dropRate, 10)
+      });
+      if (error) throw error;
+      alert('ドロップ報酬を設定しました！');
+      setDropItemId(''); setDropAmount('1'); setDropRate('100');
+      fetchData();
+    } catch (e: any) {
+      alert(`エラー: ${e.message}`);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   const handleAddNews = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newsTitle || !newsContent) return alert('タイトルと本文が必要です');
@@ -446,6 +485,19 @@ export default function AdminDashboard() {
       alert(`エラー: ${e.message}`);
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  // --- 🌟 ユーザーペットの状態異常更新ハンドラ ---
+  const handleUpdatePetCondition = async (petId: string, newCondition: string) => {
+    if (!window.confirm(`このペットのステータスを「${newCondition === 'healthy' ? '健康' : newCondition === 'sick' ? '病気' : '飢餓'}」に変更しますか？`)) return;
+    try {
+      const { error } = await supabase.from('pets').update({ condition_status: newCondition }).eq('id', petId);
+      if (error) throw error;
+      alert('ステータスを更新しました。');
+      fetchData();
+    } catch (e: any) {
+      alert(`エラー: ${e.message}`);
     }
   };
 
@@ -530,6 +582,18 @@ export default function AdminDashboard() {
     }
   };
 
+  const handleDeleteFacilityDrop = async (id: number) => {
+    if (!window.confirm('この報酬設定を削除しますか？')) return;
+    try {
+      const { error } = await supabase.from('facility_drop_masters').delete().eq('id', id);
+      if (error) throw error;
+      alert('削除しました。');
+      fetchData();
+    } catch (e: any) {
+      alert(`削除に失敗しました: ${e.message}`);
+    }
+  };
+
   const toggleNews = async (id: number, currentStatus: boolean) => {
     try {
       const { error } = await supabase.from('announcements').update({ is_active: !currentStatus }).eq('id', id);
@@ -540,7 +604,7 @@ export default function AdminDashboard() {
     }
   };
 
-  // 💡 ペットリストを卵タイプごとにグループ化
+  // ペットリストを卵タイプごとにグループ化
   const groupedPets = petsList.reduce((acc, pet) => {
     const type = pet.egg_type || 'A';
     if (!acc[type]) acc[type] = [];
@@ -555,7 +619,7 @@ export default function AdminDashboard() {
       
       {/* タブ切り替え */}
       <div className="flex gap-2 mb-8 overflow-x-auto pb-2">
-        {(['pets', 'landmarks', 'items', 'news', 'users', 'settings'] as const).map(tab => (
+        {(['pets', 'landmarks', 'items', 'drops', 'news', 'users', 'settings'] as const).map(tab => (
           <button 
             key={tab} 
             onClick={() => setActiveTab(tab)} 
@@ -564,8 +628,9 @@ export default function AdminDashboard() {
             {tab === 'pets' && '🐶 ペット管理'}
             {tab === 'landmarks' && '📍 スポット管理'}
             {tab === 'items' && '🛒 アイテム管理'}
+            {tab === 'drops' && '🎁 報酬設定'}
             {tab === 'news' && '📢 お知らせ管理'}
-            {tab === 'users' && '👥 ユーザー属性'}
+            {tab === 'users' && '👥 ユーザー/状態管理'}
             {tab === 'settings' && '⚙️ 設定 (レアリティ/属性)'}
           </button>
         ))}
@@ -691,9 +756,18 @@ export default function AdminDashboard() {
                     <form onSubmit={handleAddLandmarkMaster} className="space-y-5 bg-gray-50 p-6 rounded-2xl border border-gray-100">
                       <h2 className="text-xl font-bold">スポットリストの作成</h2>
                       <div className="flex gap-4">
-                        <div className="flex-1">
+                        <div className="flex-[2]">
                           <label className="block text-sm font-bold mb-1">スポット名 (例: お菓子屋さん)</label>
                           <input type="text" value={lmMasterName} onChange={e => setLmMasterName(e.target.value)} className="w-full border p-3 rounded-lg focus:ring-2 focus:ring-green-500" required />
+                        </div>
+                        <div className="flex-[1]">
+                          <label className="block text-sm font-bold mb-1 text-teal-700">施設タイプ 🌟</label>
+                          <select value={lmMasterFacilityType} onChange={e => setLmMasterFacilityType(e.target.value)} className="w-full border p-3 rounded-lg focus:ring-2 focus:ring-teal-500 font-bold bg-teal-50 text-teal-900 border-teal-200">
+                            <option value="normal">📍 通常スポット</option>
+                            <option value="restaurant">🍽️ ご飯屋さん</option>
+                            <option value="hospital">🏥 病院 (ドクター)</option>
+                            <option value="hotel">🏨 ホテル (休憩所)</option>
+                          </select>
                         </div>
                       </div>
                       <div>
@@ -812,6 +886,7 @@ export default function AdminDashboard() {
                       <select value={itemType} onChange={e => setItemType(e.target.value)} className="w-full border p-3 rounded-lg focus:ring-2 focus:ring-yellow-500">
                         <option value="food">食べ物 (親密度回復)</option>
                         <option value="sleep">睡眠薬 (お世話停止)</option>
+                        <option value="medicine">薬 (状態異常の回復)</option>
                       </select>
                     </div>
                   </div>
@@ -840,7 +915,52 @@ export default function AdminDashboard() {
                 </form>
               )}
 
-              {/* 4. お知らせ追加フォーム */}
+              {/* 🌟 4. 新規: 施設別ドロップ報酬設定フォーム */}
+              {activeTab === 'drops' && (
+                <form onSubmit={handleAddFacilityDrop} className="space-y-5 bg-pink-50 p-6 rounded-2xl border border-pink-100">
+                  <h2 className="text-xl font-bold text-pink-900">🎁 施設ドロップ報酬の設定</h2>
+                  <p className="text-xs text-pink-700 mb-4">特定の施設タイプに訪問した際、どのアイテムをドロップさせるかを設定します。</p>
+                  
+                  <div className="space-y-4">
+                    <div>
+                      <label className="block text-sm font-bold mb-1 text-pink-900">対象の施設タイプ</label>
+                      <select value={dropFacilityType} onChange={e => setDropFacilityType(e.target.value)} className="w-full border p-3 rounded-lg focus:ring-2 focus:ring-pink-500">
+                        <option value="normal">📍 通常スポット</option>
+                        <option value="restaurant">🍽️ ご飯屋さん</option>
+                        <option value="hospital">🏥 病院 (ドクター)</option>
+                        <option value="hotel">🏨 ホテル (休憩所)</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-bold mb-1 text-pink-900">ドロップさせるアイテム</label>
+                      <select value={dropItemId} onChange={e => setDropItemId(e.target.value)} className="w-full border p-3 rounded-lg focus:ring-2 focus:ring-pink-500" required>
+                        <option value="">アイテムを選択してください</option>
+                        {itemsList.map(item => (
+                          <option key={item.id} value={item.id}>{item.name} ({item.item_type})</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div className="flex gap-4">
+                      <div className="flex-1">
+                        <label className="block text-sm font-bold mb-1 text-pink-900">ドロップ個数</label>
+                        <input type="number" value={dropAmount} onChange={e => setDropAmount(e.target.value)} min="1" className="w-full border p-3 rounded-lg focus:ring-2 focus:ring-pink-500" required />
+                      </div>
+                      <div className="flex-1">
+                        <label className="block text-sm font-bold mb-1 text-pink-900">ドロップ確率 (%)</label>
+                        <input type="number" value={dropRate} onChange={e => setDropRate(e.target.value)} min="1" max="100" className="w-full border p-3 rounded-lg focus:ring-2 focus:ring-pink-500" required />
+                      </div>
+                    </div>
+                  </div>
+
+                  <button disabled={isSubmitting} className="w-full bg-pink-600 text-white font-bold py-4 rounded-xl shadow-lg hover:bg-pink-700 disabled:bg-gray-400">
+                    {isSubmitting ? '処理中...' : '報酬ルールを追加'}
+                  </button>
+                </form>
+              )}
+
+              {/* 5. お知らせ追加フォーム */}
               {activeTab === 'news' && (
                 <form onSubmit={handleAddNews} className="space-y-5 bg-blue-50 p-6 rounded-2xl border border-blue-100">
                   <h2 className="text-xl font-bold text-blue-900">新規お知らせ配信</h2>
@@ -858,7 +978,7 @@ export default function AdminDashboard() {
                 </form>
               )}
 
-              {/* 5. ユーザー属性サマリー */}
+              {/* 6. ユーザー属性サマリー */}
               {activeTab === 'users' && (
                 <div className="bg-indigo-50 p-6 rounded-2xl border border-indigo-100 space-y-5">
                   <h2 className="text-xl font-bold text-indigo-900">ユーザー属性サマリー</h2>
@@ -872,6 +992,9 @@ export default function AdminDashboard() {
                       <div className="text-3xl font-bold text-indigo-600">{usersList.filter(u => u.birth_year).length}</div>
                     </div>
                   </div>
+                  <div className="bg-white p-4 rounded-xl shadow-sm mt-4">
+                    <p className="text-xs text-indigo-700 font-bold">💡 右側のリストから、各ユーザーの保有するペットの状態異常（病気・飢餓）を強制的に健康状態へ回復させるなどの救済操作が行えます。</p>
+                  </div>
                 </div>
               )}
             </div>
@@ -879,7 +1002,7 @@ export default function AdminDashboard() {
             {/* --- 右カラム: 登録済みデータ一覧 --- */}
             <div className="bg-gray-50 border rounded-2xl p-6 h-[800px] overflow-y-auto shadow-inner">
               
-              {/* 1. ペット一覧 (💡 卵タイプごとにグルーピング表示) */}
+              {/* 1. ペット一覧 (卵タイプごとにグルーピング表示) */}
               {activeTab === 'pets' && (
                 <>
                   <h2 className="text-xl font-bold mb-6 border-b-2 border-gray-300 pb-2 flex items-center justify-between">
@@ -933,9 +1056,8 @@ export default function AdminDashboard() {
                         )}
 
                         <div className="space-y-3">
-                          {/* 卵の中のペットをレアリティやウェイト順に並べる */}
                           {petsInEgg
-                            .sort((a, b) => (b.drop_weight || 0) - (a.drop_weight || 0)) // ウェイト順にソート
+                            .sort((a, b) => (b.drop_weight || 0) - (a.drop_weight || 0)) 
                             .map(pet => (
                             <div key={pet.id} className="p-4 border rounded-xl hover:bg-gray-50 flex items-center justify-between transition-colors group">
                               <div>
@@ -970,7 +1092,7 @@ export default function AdminDashboard() {
                                   setActiveTab('pets');
                                   setEditingPetId(pet.id);
                                   setPetName(pet.name || '');
-                                  setPetEggType(pet.egg_type || 'A'); // 💡 編集時に卵タイプをセット
+                                  setPetEggType(pet.egg_type || 'A'); 
                                   setPetRarity(pet.rarity || 'N');
                                   setPetWeight(String(pet.drop_weight || 100));
                                   setSelectedAttributeIds((pet.attributes || []).map((a: any) => a.id));
@@ -1005,6 +1127,9 @@ export default function AdminDashboard() {
                             <div>
                               <div className="font-bold text-lg flex items-center gap-2">
                                 {master.name}
+                                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full border bg-teal-50 text-teal-800 border-teal-200">
+                                  {master.facility_type === 'restaurant' ? '🍽️ ご飯' : master.facility_type === 'hospital' ? '🏥 病院' : master.facility_type === 'hotel' ? '🏨 ホテル' : '📍 通常'}
+                                </span>
                                 <button onClick={() => toggleLandmarkMasterPublic(master.id, master.is_public)} className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${master.is_public ? 'bg-green-100 text-green-800 border-green-300' : 'bg-gray-200 text-gray-600 border-gray-300'}`}>
                                   {master.is_public ? '公開中' : '非公開'}
                                 </button>
@@ -1118,7 +1243,40 @@ export default function AdminDashboard() {
                 </>
               )}
 
-              {/* 4. お知らせ一覧 */}
+              {/* 🌟 4. 新規: 施設別ドロップ報酬一覧 */}
+              {activeTab === 'drops' && (
+                <>
+                  <h2 className="text-xl font-bold mb-4 border-b pb-2 text-pink-900">🎁 登録済みのドロップルール</h2>
+                  <div className="space-y-3">
+                    {facilityDropsList.map(drop => (
+                      <div key={drop.id} className="p-4 border rounded-xl bg-white hover:bg-gray-50 flex items-center gap-4 transition-colors group shadow-sm">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-3">
+                            <span className="text-lg font-bold text-gray-800">
+                              {drop.facility_type === 'restaurant' ? '🍽️ ご飯屋さん' : drop.facility_type === 'hospital' ? '🏥 病院' : drop.facility_type === 'hotel' ? '🏨 ホテル' : '📍 通常スポット'}
+                            </span>
+                            <span className="text-gray-400 font-bold">→</span>
+                            <span className="font-bold text-blue-700">{drop.item_masters?.name || '不明なアイテム'}</span>
+                          </div>
+                          <div className="text-sm text-gray-600 mt-2 flex gap-4">
+                            <span className="bg-gray-100 px-2 py-1 rounded">ドロップ数: <span className="font-bold">{drop.drop_amount}個</span></span>
+                            <span className="bg-gray-100 px-2 py-1 rounded">確率: <span className="font-bold">{drop.drop_rate_percent}%</span></span>
+                          </div>
+                        </div>
+                        <button 
+                          onClick={() => handleDeleteFacilityDrop(drop.id)}
+                          className="bg-red-50 text-red-600 font-bold px-4 py-2 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-100 border border-red-200"
+                        >
+                          削除
+                        </button>
+                      </div>
+                    ))}
+                    {facilityDropsList.length === 0 && <p className="text-center text-gray-400 py-10">ドロップ報酬はまだ設定されていません</p>}
+                  </div>
+                </>
+              )}
+
+              {/* 5. お知らせ一覧 */}
               {activeTab === 'news' && (
                 <>
                   <h2 className="text-xl font-bold mb-4 border-b pb-2">📢 配信済みお知らせ一覧</h2>
@@ -1145,26 +1303,72 @@ export default function AdminDashboard() {
                 </>
               )}
 
-              {/* 5. ユーザー属性一覧 */}
+              {/* 🌟 6. ユーザー・状態管理 (ユーザー＋ペット表示) */}
               {activeTab === 'users' && (
                 <>
-                  <h2 className="text-xl font-bold mb-4 border-b pb-2">👥 登録ユーザー一覧</h2>
-                  <div className="space-y-3">
-                    {usersList.map(user => (
-                      <div key={user.id} className="p-4 border rounded-xl flex justify-between items-center bg-white shadow-sm">
-                        <div>
-                          <div className="font-bold text-gray-800">
-                            ユーザーID: <span className="text-xs font-normal">{user.id.substring(0, 8)}...</span>
+                  <h2 className="text-xl font-bold mb-4 border-b pb-2">👥 登録ユーザーとペットの状態</h2>
+                  <div className="space-y-4">
+                    {usersList.map(user => {
+                      // 該当ユーザーが所有するペットをフィルタリング
+                      const userPets = userPetsList.filter(p => p.owner_id === user.id);
+                      
+                      return (
+                        <div key={user.id} className="p-4 border rounded-xl bg-white shadow-sm flex flex-col gap-3">
+                          <div className="flex justify-between items-start border-b pb-2 border-gray-100">
+                            <div>
+                              <div className="font-bold text-gray-800">
+                                ユーザーID: <span className="text-xs font-normal text-gray-500">{user.id}</span>
+                              </div>
+                              <div className="text-sm text-gray-600 mt-1">
+                                {user.birth_year ? `${user.birth_year}年生まれ` : '未設定'} / {user.gender === 'male' ? '男性' : user.gender === 'female' ? '女性' : user.gender === 'other' ? 'その他' : '未設定'}
+                              </div>
+                            </div>
+                            <div className="text-xs font-bold px-3 py-1 bg-gray-50 border rounded text-gray-600">
+                              通知: {user.email_notify_news ? 'ON' : 'OFF'}
+                            </div>
                           </div>
-                          <div className="text-sm text-gray-600 mt-1">
-                            {user.birth_year ? `${user.birth_year}年生まれ` : '未設定'} / {user.gender === 'male' ? '男性' : user.gender === 'female' ? '女性' : user.gender === 'other' ? 'その他' : '未設定'}
+
+                          {/* ユーザー保有ペットの状態異常管理UI */}
+                          <div className="pl-2 border-l-4 border-indigo-200 space-y-2">
+                            {userPets.length > 0 ? (
+                              userPets.map(pet => (
+                                <div key={pet.id} className="flex justify-between items-center bg-gray-50 p-2 rounded border">
+                                  <div>
+                                    <div className="text-sm font-bold flex items-center gap-2">
+                                      {pet.custom_name || pet.pet_masters?.name || '名無し'}
+                                      <span className={`text-[10px] px-2 py-0.5 rounded-full border ${
+                                        pet.condition_status === 'sick' ? 'bg-purple-100 text-purple-700 border-purple-300' :
+                                        pet.condition_status === 'starving' ? 'bg-red-100 text-red-700 border-red-300' :
+                                        'bg-green-100 text-green-700 border-green-300'
+                                      }`}>
+                                        {pet.condition_status === 'sick' ? '🏥 病気' : pet.condition_status === 'starving' ? '🍽️ 飢餓' : '✨ 健康'}
+                                      </span>
+                                    </div>
+                                    <div className="text-xs text-gray-500 mt-1">
+                                      Lv.{pet.level} | 経験値: {pet.exp} | 種類: {pet.pet_masters?.name}
+                                    </div>
+                                  </div>
+                                  <div className="flex items-center gap-2">
+                                    <select 
+                                      value={pet.condition_status || 'healthy'} 
+                                      onChange={(e) => handleUpdatePetCondition(pet.id, e.target.value)}
+                                      className="text-xs border p-1 rounded font-bold"
+                                    >
+                                      <option value="healthy">健康にする (強制回復)</option>
+                                      <option value="sick">病気にする (テスト)</option>
+                                      <option value="starving">飢餓にする (テスト)</option>
+                                    </select>
+                                  </div>
+                                </div>
+                              ))
+                            ) : (
+                              <div className="text-xs text-gray-400 py-1">ペットを保有していません（まだ卵を拾っていない等）</div>
+                            )}
                           </div>
+
                         </div>
-                        <div className="text-xs font-bold px-3 py-1 bg-gray-50 border rounded text-gray-600">
-                          通知: {user.email_notify_news ? 'ON' : 'OFF'}
-                        </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                     {usersList.length === 0 && <p className="text-center text-gray-400 py-10">データがありません</p>}
                   </div>
                 </>
