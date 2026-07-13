@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, type FormEvent } from 'react';
+import { useState, useEffect } from 'react';
 import { createClient } from '@/utils/supabase/client';
 
 // Supabaseの公開URLから、Storageのファイルパス（バケット名以降）を抽出するヘルパー関数
@@ -35,7 +35,7 @@ const generateRandomSpots = (master: any, count: number, startTime: string, endT
 
 export default function AdminDashboard() {
   const supabase = createClient();
-  const [activeTab, setActiveTab] = useState<'pets' | 'landmarks' | 'items' | 'drops' | 'news' | 'users' | 'settings'>('pets');
+  const [activeTab, setActiveTab] = useState<'pets' | 'landmarks' | 'items' | 'coupons' | 'drops' | 'news' | 'users' | 'settings'>('pets');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // --- 登録済みデータ一覧用のState ---
@@ -43,6 +43,7 @@ export default function AdminDashboard() {
   const [landmarkMastersList, setLandmarkMastersList] = useState<any[]>([]); // スポットリスト用
   const [landmarksList, setLandmarksList] = useState<any[]>([]);             // 実体のスポット用
   const [itemsList, setItemsList] = useState<any[]>([]);
+  const [couponsList, setCouponsList] = useState<any[]>([]);                 // クーポン用
   const [newsList, setNewsList] = useState<any[]>([]);
   const [usersList, setUsersList] = useState<any[]>([]);
   const [userPetsList, setUserPetsList] = useState<any[]>([]);               // ユーザーが保有するペット(状態異常管理用)
@@ -105,9 +106,17 @@ export default function AdminDashboard() {
   const [itemEffect, setItemEffect] = useState('10');
   const [itemImageFile, setItemImageFile] = useState<File | null>(null);
 
-  // --- 施設別ドロップ報酬用State (新機能) ---
+  // --- クーポン用State (新機能) ---
+  const [couponName, setCouponName] = useState('');
+  const [couponDesc, setCouponDesc] = useState('');
+  const [couponCode, setCouponCode] = useState('');
+  const [couponQrFile, setCouponQrFile] = useState<File | null>(null);
+
+  // --- 施設別ドロップ報酬用State ---
   const [dropFacilityType, setDropFacilityType] = useState('restaurant');
+  const [dropRewardType, setDropRewardType] = useState('item'); // 'item' or 'coupon'
   const [dropItemId, setDropItemId] = useState('');
+  const [dropCouponId, setDropCouponId] = useState('');
   const [dropAmount, setDropAmount] = useState('1');
   const [dropRate, setDropRate] = useState('100');
 
@@ -122,6 +131,7 @@ export default function AdminDashboard() {
       landmarkMastersRes,
       landmarksRes, 
       itemsRes, 
+      couponsRes,
       newsRes, 
       usersRes, 
       raritiesRes, 
@@ -134,13 +144,14 @@ export default function AdminDashboard() {
       supabase.from('landmark_masters').select('*').order('id', { ascending: false }),
       supabase.from('landmarks').select('*').order('id', { ascending: false }),
       supabase.from('item_masters').select('*').order('id', { ascending: false }),
+      supabase.from('coupon_masters').select('*').order('id', { ascending: false }).catch(() => ({ data: [] })), // テーブルが無い場合のエラー回避
       supabase.from('announcements').select('*').order('published_at', { ascending: false }),
       supabase.from('user_profiles').select('*').order('created_at', { ascending: false }),
       supabase.from('rarities').select('*').order('id', { ascending: true }),
       supabase.from('attributes').select('*').order('id', { ascending: true }),
       supabase.from('pet_master_attributes').select('*'),
       supabase.from('pets').select('*, pet_masters(name)').order('created_at', { ascending: false }), // ユーザーのペット情報
-      supabase.from('facility_drop_masters').select('*, item_masters(name, image_url)').order('id', { ascending: false }) // ドロップ報酬
+      supabase.from('facility_drop_masters').select('*, item_masters(name, image_url), coupon_masters(name, qr_image_url)').order('id', { ascending: false }).catch(() => ({ data: [] })) // ドロップ報酬
     ]);
     
     if (petsRes.data) {
@@ -158,6 +169,7 @@ export default function AdminDashboard() {
     if (landmarkMastersRes.data) setLandmarkMastersList(landmarkMastersRes.data);
     if (landmarksRes.data) setLandmarksList(landmarksRes.data);
     if (itemsRes.data) setItemsList(itemsRes.data);
+    if (couponsRes.data) setCouponsList(couponsRes.data);
     if (newsRes.data) setNewsList(newsRes.data);
     if (usersRes.data) setUsersList(usersRes.data);
     if (raritiesRes && raritiesRes.data) setRaritiesList(raritiesRes.data);
@@ -171,7 +183,7 @@ export default function AdminDashboard() {
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // --- レアリティ / 属性: CRUD ハンドラ ---
-  const handleAddRarity = async (e: FormEvent) => {
+  const handleAddRarity = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newRarityCode || !newRarityLabel) return alert('コードとラベルを入力してください');
     setIsSubmitting(true);
@@ -200,7 +212,7 @@ export default function AdminDashboard() {
     }
   };
 
-  const handleAddAttribute = async (e: FormEvent) => {
+  const handleAddAttribute = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newAttributeName) return alert('属性名を入力してください');
     setIsSubmitting(true);
@@ -243,7 +255,7 @@ export default function AdminDashboard() {
   //  追加 (Create) アクション
   // ==========================================
 
-  const handleSavePet = async (e: FormEvent) => {
+  const handleSavePet = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!petModelFile || !petMarkerFile || !petName) return alert('必須項目が不足しています（名前、第1形態モデル、マーカー）');
     setIsSubmitting(true);
@@ -327,7 +339,7 @@ export default function AdminDashboard() {
   };
 
   // --- スポットマスター登録 ＆ 大量発生 ---
-  const handleAddLandmarkMaster = async (e: FormEvent) => {
+  const handleAddLandmarkMaster = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!lmMasterModelFile || !lmMasterName) return alert('スポット名とモデルが必要です');
     setIsSubmitting(true);
@@ -365,7 +377,7 @@ export default function AdminDashboard() {
   };
 
   // --- 個別手動スポット配置 ---
-  const handleAddLandmarkManual = async (e: FormEvent) => {
+  const handleAddLandmarkManual = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!landmarkModelFile || !landmarkName || !landmarkLat || !landmarkLng) return alert('必須項目が不足しています');
     setIsSubmitting(true);
@@ -393,7 +405,7 @@ export default function AdminDashboard() {
   };
 
   // --- 既存のスポットマスターから大量発生を実行 ---
-  const handleExecuteMassGen = async (e: FormEvent) => {
+  const handleExecuteMassGen = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!activeMassGenMaster) return;
     setIsSubmitting(true);
@@ -414,7 +426,8 @@ export default function AdminDashboard() {
     }
   };
 
-  const handleAddItem = async (e: FormEvent) => {
+  // --- アイテム追加 ---
+  const handleAddItem = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!itemName) return alert('アイテム名が必要です');
     setIsSubmitting(true);
@@ -444,21 +457,27 @@ export default function AdminDashboard() {
     }
   };
 
-  // --- 🌟 施設ドロップ報酬の追加 (新機能) ---
-  const handleAddFacilityDrop = async (e: FormEvent) => {
+  // --- 🎫 クーポン追加 (新機能) ---
+  const handleAddCoupon = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!dropItemId) return alert('アイテムを選択してください');
+    if (!couponName) return alert('クーポン名が必要です');
     setIsSubmitting(true);
     try {
-      const { error } = await supabase.from('facility_drop_masters').insert({
-        facility_type: dropFacilityType,
-        item_id: parseInt(dropItemId, 10),
-        drop_amount: parseInt(dropAmount, 10),
-        drop_rate_percent: parseInt(dropRate, 10)
+      let qrUrl = null;
+      if (couponQrFile) {
+        qrUrl = await uploadFile(couponQrFile, 'coupons');
+      }
+
+      const { error } = await supabase.from('coupon_masters').insert({
+        name: couponName,
+        description: couponDesc,
+        coupon_code: couponCode,
+        qr_image_url: qrUrl
       });
       if (error) throw error;
-      alert('ドロップ報酬を設定しました！');
-      setDropItemId(''); setDropAmount('1'); setDropRate('100');
+
+      alert(`クーポン「${couponName}」を登録しました！`);
+      setCouponName(''); setCouponDesc(''); setCouponCode(''); setCouponQrFile(null);
       fetchData();
     } catch (e: any) {
       alert(`エラー: ${e.message}`);
@@ -467,7 +486,33 @@ export default function AdminDashboard() {
     }
   };
 
-  const handleAddNews = async (e: FormEvent) => {
+  // --- 🌟 施設ドロップ報酬の追加 ---
+  const handleAddFacilityDrop = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (dropRewardType === 'item' && !dropItemId) return alert('アイテムを選択してください');
+    if (dropRewardType === 'coupon' && !dropCouponId) return alert('クーポンを選択してください');
+    setIsSubmitting(true);
+    try {
+      const { error } = await supabase.from('facility_drop_masters').insert({
+        facility_type: dropFacilityType,
+        reward_type: dropRewardType,
+        item_id: dropRewardType === 'item' ? parseInt(dropItemId, 10) : null,
+        coupon_id: dropRewardType === 'coupon' ? parseInt(dropCouponId, 10) : null,
+        drop_amount: parseInt(dropAmount, 10),
+        drop_rate_percent: parseInt(dropRate, 10)
+      });
+      if (error) throw error;
+      alert('ドロップ報酬を設定しました！');
+      setDropItemId(''); setDropCouponId(''); setDropAmount('1'); setDropRate('100');
+      fetchData();
+    } catch (e: any) {
+      alert(`エラー: ${e.message}`);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleAddNews = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newsTitle || !newsContent) return alert('タイトルと本文が必要です');
     setIsSubmitting(true);
@@ -582,6 +627,22 @@ export default function AdminDashboard() {
     }
   };
 
+  const handleDeleteCoupon = async (id: number, qrUrl: string | null) => {
+    if (!window.confirm('本当に削除しますか？')) return;
+    try {
+      const qrPath = extractFilePath(qrUrl);
+      if (qrPath) {
+        await supabase.storage.from('ar_assets').remove([qrPath]);
+      }
+      const { error } = await supabase.from('coupon_masters').delete().eq('id', id);
+      if (error) throw error;
+      alert('削除しました。');
+      fetchData();
+    } catch (e: any) {
+      alert(`削除に失敗しました: ${e.message}`);
+    }
+  };
+
   const handleDeleteFacilityDrop = async (id: number) => {
     if (!window.confirm('この報酬設定を削除しますか？')) return;
     try {
@@ -619,7 +680,7 @@ export default function AdminDashboard() {
       
       {/* タブ切り替え */}
       <div className="flex gap-2 mb-8 overflow-x-auto pb-2">
-        {(['pets', 'landmarks', 'items', 'drops', 'news', 'users', 'settings'] as const).map(tab => (
+        {(['pets', 'landmarks', 'items', 'coupons', 'drops', 'news', 'users', 'settings'] as const).map(tab => (
           <button 
             key={tab} 
             onClick={() => setActiveTab(tab)} 
@@ -628,6 +689,7 @@ export default function AdminDashboard() {
             {tab === 'pets' && '🐶 ペット管理'}
             {tab === 'landmarks' && '📍 スポット管理'}
             {tab === 'items' && '🛒 アイテム管理'}
+            {tab === 'coupons' && '🎫 クーポン管理'}
             {tab === 'drops' && '🎁 報酬設定'}
             {tab === 'news' && '📢 お知らせ管理'}
             {tab === 'users' && '👥 ユーザー/状態管理'}
@@ -915,11 +977,40 @@ export default function AdminDashboard() {
                 </form>
               )}
 
+              {/* 3.5. 🎫 クーポン追加フォーム (新機能) */}
+              {activeTab === 'coupons' && (
+                <form onSubmit={handleAddCoupon} className="space-y-5 bg-teal-50 p-6 rounded-2xl border border-teal-100">
+                  <h2 className="text-xl font-bold text-teal-900">🎫 新規クーポン追加</h2>
+                  <p className="text-xs text-teal-700 mb-4">オフライン（実店舗）で利用できるクーポンを登録します。<br/>※Supabaseに `coupon_masters` テーブルが必要です。</p>
+                  <div className="space-y-4">
+                    <div>
+                      <label className="block text-sm font-bold mb-1 text-teal-900">クーポン名</label>
+                      <input type="text" value={couponName} onChange={e => setCouponName(e.target.value)} placeholder="例: ドリンク1杯無料クーポン" className="w-full border p-3 rounded-lg focus:ring-2 focus:ring-teal-500" required />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-bold mb-1 text-teal-900">クーポンの説明</label>
+                      <textarea value={couponDesc} onChange={e => setCouponDesc(e.target.value)} placeholder="利用条件などを入力..." className="w-full border p-3 rounded-lg focus:ring-2 focus:ring-teal-500" rows={2} required />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-bold mb-1 text-teal-900">クーポンコード (テキスト)</label>
+                      <input type="text" value={couponCode} onChange={e => setCouponCode(e.target.value)} placeholder="例: SUMMER2026 (任意)" className="w-full border p-3 rounded-lg focus:ring-2 focus:ring-teal-500" />
+                    </div>
+                    <div className="bg-white p-4 rounded-xl border border-teal-200 shadow-sm">
+                      <label className="block text-sm font-bold text-teal-900 mb-2">QRコード画像アップロード (任意)</label>
+                      <input type="file" accept="image/*" onChange={e => setCouponQrFile(e.target.files?.[0] || null)} className="w-full text-sm" />
+                    </div>
+                  </div>
+                  <button disabled={isSubmitting} className="w-full bg-teal-600 text-white font-bold py-4 rounded-xl shadow-lg hover:bg-teal-700 disabled:bg-gray-400">
+                    {isSubmitting ? '処理中...' : 'クーポンを登録'}
+                  </button>
+                </form>
+              )}
+
               {/* 🌟 4. 新規: 施設別ドロップ報酬設定フォーム */}
               {activeTab === 'drops' && (
                 <form onSubmit={handleAddFacilityDrop} className="space-y-5 bg-pink-50 p-6 rounded-2xl border border-pink-100">
                   <h2 className="text-xl font-bold text-pink-900">🎁 施設ドロップ報酬の設定</h2>
-                  <p className="text-xs text-pink-700 mb-4">特定の施設タイプに訪問した際、どのアイテムをドロップさせるかを設定します。</p>
+                  <p className="text-xs text-pink-700 mb-4">特定の施設タイプに訪問した際、どのアイテムやクーポンをドロップさせるかを設定します。</p>
                   
                   <div className="space-y-4">
                     <div>
@@ -933,14 +1024,34 @@ export default function AdminDashboard() {
                     </div>
 
                     <div>
-                      <label className="block text-sm font-bold mb-1 text-pink-900">ドロップさせるアイテム</label>
-                      <select value={dropItemId} onChange={e => setDropItemId(e.target.value)} className="w-full border p-3 rounded-lg focus:ring-2 focus:ring-pink-500" required>
-                        <option value="">アイテムを選択してください</option>
-                        {itemsList.map(item => (
-                          <option key={item.id} value={item.id}>{item.name} ({item.item_type})</option>
-                        ))}
-                      </select>
+                      <label className="block text-sm font-bold mb-1 text-pink-900">報酬タイプ</label>
+                      <div className="flex gap-2 p-1 bg-pink-100 rounded-xl mb-3">
+                        <button type="button" onClick={() => setDropRewardType('item')} className={`flex-1 font-bold text-sm py-2 rounded-lg transition-colors ${dropRewardType === 'item' ? 'bg-white shadow text-pink-700' : 'text-pink-600 hover:bg-pink-200'}`}>📦 アイテム</button>
+                        <button type="button" onClick={() => setDropRewardType('coupon')} className={`flex-1 font-bold text-sm py-2 rounded-lg transition-colors ${dropRewardType === 'coupon' ? 'bg-white shadow text-pink-700' : 'text-pink-600 hover:bg-pink-200'}`}>🎫 クーポン</button>
+                      </div>
                     </div>
+
+                    {dropRewardType === 'item' ? (
+                      <div>
+                        <label className="block text-sm font-bold mb-1 text-pink-900">ドロップさせるアイテム</label>
+                        <select value={dropItemId} onChange={e => setDropItemId(e.target.value)} className="w-full border p-3 rounded-lg focus:ring-2 focus:ring-pink-500" required>
+                          <option value="">アイテムを選択してください</option>
+                          {itemsList.map(item => (
+                            <option key={item.id} value={item.id}>{item.name} ({item.item_type})</option>
+                          ))}
+                        </select>
+                      </div>
+                    ) : (
+                      <div>
+                        <label className="block text-sm font-bold mb-1 text-pink-900">ドロップさせるクーポン</label>
+                        <select value={dropCouponId} onChange={e => setDropCouponId(e.target.value)} className="w-full border p-3 rounded-lg focus:ring-2 focus:ring-pink-500" required>
+                          <option value="">クーポンを選択してください</option>
+                          {couponsList.map(coupon => (
+                            <option key={coupon.id} value={coupon.id}>{coupon.name}</option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
 
                     <div className="flex gap-4">
                       <div className="flex-1">
@@ -1013,24 +1124,17 @@ export default function AdminDashboard() {
                   {eggTypes.length === 0 && <p className="text-center text-gray-400 py-10 bg-white rounded-xl">データがありません</p>}
                   
                   {eggTypes.map(type => {
-                    const petsInEgg = groupedPets[type];
-
+                    // ここで型を明示的に any[] に指定して後続の型エラーを防ぎます
+                    const petsInEgg: any[] = groupedPets[type];
                     // 総ウェイトの計算
-                    const totalWeight = petsInEgg.reduce(
-                      (sum: number, p: (typeof petsInEgg)[number]) =>
-                        sum + (Number(p.drop_weight) || 0),
-                      0
-                    );
-
-                    // レアリティごとのウェイト集計（型を明示）
-                    const weightsByRarity = petsInEgg.reduce<Record<string, number>>(
-                      (acc, p: (typeof petsInEgg)[number]) => {
-                        const r = p.rarity || "N";
-                        acc[r] = (acc[r] || 0) + (Number(p.drop_weight) || 0);
-                        return acc;
-                      },
-                      {}
-                    );
+                    const totalWeight = petsInEgg.reduce((sum, p) => sum + (Number(p.drop_weight) || 0), 0);
+                    
+                    // レアリティごとのウェイト集計（型エラー修正済: 型引数ではなく引数と初期値に型を明示）
+                    const weightsByRarity = petsInEgg.reduce((acc: Record<string, number>, p: any) => {
+                      const r = p.rarity || 'N';
+                      acc[r] = (acc[r] || 0) + (Number(p.drop_weight) || 0);
+                      return acc;
+                    }, {} as Record<string, number>);
 
                     return (
                       <div key={type} className="mb-8 bg-white p-5 rounded-2xl shadow-sm border border-orange-100 relative">
@@ -1049,7 +1153,7 @@ export default function AdminDashboard() {
                               <span className="text-xs text-orange-700 ml-auto">総ウェイト: {totalWeight}</span>
                             </div>
                             <div className="flex flex-wrap gap-2 text-xs font-bold">
-                              {Object.entries(weightsByRarity).map(([r, w]: [string, number]) => {
+                              {Object.entries(weightsByRarity).map(([r, w]) => {
                                 const percentage = ((w / totalWeight) * 100).toFixed(1);
                                 return (
                                   <div key={r} className="flex items-center bg-white px-2 py-1 rounded border shadow-sm">
@@ -1068,54 +1172,54 @@ export default function AdminDashboard() {
                           {petsInEgg
                             .sort((a, b) => (b.drop_weight || 0) - (a.drop_weight || 0)) 
                             .map(pet => (
-                              <div key={pet.id} className="p-4 border rounded-xl hover:bg-gray-50 flex items-center justify-between transition-colors group">
-                                <div>
-                                  <div className="font-bold text-lg flex items-center">
-                                    {pet.name} 
-                                    <span className={`text-xs font-bold px-2 py-0.5 rounded ml-2 border ${
-                                      pet.rarity === 'UR' ? 'bg-purple-100 text-purple-700 border-purple-200' : 
-                                      pet.rarity === 'SR' ? 'bg-red-100 text-red-700 border-red-200' :
-                                      pet.rarity === 'R' ? 'bg-blue-100 text-blue-700 border-blue-200' :
-                                      'bg-gray-100 text-gray-700 border-gray-200'
-                                    }`}>
-                                      {pet.rarity}
-                                    </span>
-                                  </div>
-                                  <div className="text-sm text-gray-500 mt-1 flex flex-wrap gap-x-3 gap-y-1">
-                                    <span className="font-bold text-blue-600 bg-blue-50 px-1.5 rounded">ウェイト: {pet.drop_weight}</span>
-                                    <a href={pet.model_url} target="_blank" rel="noreferrer" className="text-blue-500 hover:underline">V1モデル</a>
-                                    {pet.model_url_v2 && <a href={pet.model_url_v2} target="_blank" rel="noreferrer" className="text-blue-500 hover:underline">V2モデル(Lv5)</a>}
-                                    {pet.model_url_v3 && <a href={pet.model_url_v3} target="_blank" rel="noreferrer" className="text-blue-500 hover:underline">V3モデル(Lv10)</a>}
-                                    <a href={pet.marker_url} target="_blank" rel="noreferrer" className="text-blue-500 hover:underline">マーカー</a>
-                                  </div>
-                                  {pet.attributes && pet.attributes.length > 0 && (
-                                    <div className="mt-2 flex flex-wrap gap-2">
-                                      {pet.attributes.map((a: any) => (
-                                        <span key={a.id} className="text-xs px-2 py-1 rounded-full bg-gray-100 border text-gray-700" style={{ background: a.color || undefined }}>{a.name}</span>
-                                      ))}
-                                    </div>
-                                  )}
+                            <div key={pet.id} className="p-4 border rounded-xl hover:bg-gray-50 flex items-center justify-between transition-colors group">
+                              <div>
+                                <div className="font-bold text-lg flex items-center">
+                                  {pet.name} 
+                                  <span className={`text-xs font-bold px-2 py-0.5 rounded ml-2 border ${
+                                    pet.rarity === 'UR' ? 'bg-purple-100 text-purple-700 border-purple-200' : 
+                                    pet.rarity === 'SR' ? 'bg-red-100 text-red-700 border-red-200' :
+                                    pet.rarity === 'R' ? 'bg-blue-100 text-blue-700 border-blue-200' :
+                                    'bg-gray-100 text-gray-700 border-gray-200'
+                                  }`}>
+                                    {pet.rarity}
+                                  </span>
                                 </div>
-                                <div className="flex gap-2">
-                                  <button onClick={() => {
-                                    setActiveTab('pets');
-                                    setEditingPetId(pet.id);
-                                    setPetName(pet.name || '');
-                                    setPetEggType(pet.egg_type || 'A'); 
-                                    setPetRarity(pet.rarity || 'N');
-                                    setPetWeight(String(pet.drop_weight || 100));
-                                    setSelectedAttributeIds((pet.attributes || []).map((a: any) => a.id));
-                                    setPetModelFile(null); setPetModelV2File(null); setPetModelV3File(null); setPetMarkerFile(null);
-                                  }} className="bg-blue-50 text-blue-600 font-bold px-4 py-2 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity hover:bg-blue-100 shadow-sm border border-blue-200">編集</button>
-                                  <button 
-                                    onClick={() => handleDeletePet(pet.id, pet.model_url, pet.marker_url, pet.model_url_v2, pet.model_url_v3)}
-                                    className="bg-red-50 text-red-600 font-bold px-4 py-2 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-100 shadow-sm border border-red-200"
-                                  >
-                                    削除
-                                  </button>
+                                <div className="text-sm text-gray-500 mt-1 flex flex-wrap gap-x-3 gap-y-1">
+                                  <span className="font-bold text-blue-600 bg-blue-50 px-1.5 rounded">ウェイト: {pet.drop_weight}</span>
+                                  <a href={pet.model_url} target="_blank" rel="noreferrer" className="text-blue-500 hover:underline">V1モデル</a>
+                                  {pet.model_url_v2 && <a href={pet.model_url_v2} target="_blank" rel="noreferrer" className="text-blue-500 hover:underline">V2モデル(Lv5)</a>}
+                                  {pet.model_url_v3 && <a href={pet.model_url_v3} target="_blank" rel="noreferrer" className="text-blue-500 hover:underline">V3モデル(Lv10)</a>}
+                                  <a href={pet.marker_url} target="_blank" rel="noreferrer" className="text-blue-500 hover:underline">マーカー</a>
                                 </div>
+                                {pet.attributes && pet.attributes.length > 0 && (
+                                  <div className="mt-2 flex flex-wrap gap-2">
+                                    {pet.attributes.map((a: any) => (
+                                      <span key={a.id} className="text-xs px-2 py-1 rounded-full bg-gray-100 border text-gray-700" style={{ background: a.color || undefined }}>{a.name}</span>
+                                    ))}
+                                  </div>
+                                )}
                               </div>
-                            ))}
+                              <div className="flex gap-2">
+                                <button onClick={() => {
+                                  setActiveTab('pets');
+                                  setEditingPetId(pet.id);
+                                  setPetName(pet.name || '');
+                                  setPetEggType(pet.egg_type || 'A'); 
+                                  setPetRarity(pet.rarity || 'N');
+                                  setPetWeight(String(pet.drop_weight || 100));
+                                  setSelectedAttributeIds((pet.attributes || []).map((a: any) => a.id));
+                                  setPetModelFile(null); setPetModelV2File(null); setPetModelV3File(null); setPetMarkerFile(null);
+                                }} className="bg-blue-50 text-blue-600 font-bold px-4 py-2 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity hover:bg-blue-100 shadow-sm border border-blue-200">編集</button>
+                                <button 
+                                  onClick={() => handleDeletePet(pet.id, pet.model_url, pet.marker_url, pet.model_url_v2, pet.model_url_v3)}
+                                  className="bg-red-50 text-red-600 font-bold px-4 py-2 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-100 shadow-sm border border-red-200"
+                                >
+                                  削除
+                                </button>
+                              </div>
+                            </div>
+                          ))}
                         </div>
                       </div>
                     );
@@ -1252,6 +1356,41 @@ export default function AdminDashboard() {
                 </>
               )}
 
+              {/* 3.5 🎫 クーポン一覧 (新機能) */}
+              {activeTab === 'coupons' && (
+                <>
+                  <h2 className="text-xl font-bold mb-4 border-b pb-2">🎫 登録済みクーポン一覧</h2>
+                  <div className="space-y-3">
+                    {couponsList.map(coupon => (
+                      <div key={coupon.id} className="p-4 border rounded-xl bg-white hover:bg-gray-50 flex items-center gap-4 transition-colors group shadow-sm border-teal-100">
+                        {coupon.qr_image_url ? (
+                          <img src={coupon.qr_image_url} alt={coupon.name} className="w-16 h-16 object-cover rounded-lg shadow-sm border" />
+                        ) : (
+                          <div className="w-16 h-16 bg-teal-50 rounded-lg flex items-center justify-center text-2xl border border-teal-200">🎫</div>
+                        )}
+                        
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2">
+                            <span className="font-bold text-lg text-teal-900">{coupon.name}</span>
+                            {coupon.coupon_code && (
+                              <span className="text-xs font-bold bg-teal-100 text-teal-800 px-2 py-1 rounded border border-teal-200">Code: {coupon.coupon_code}</span>
+                            )}
+                          </div>
+                          <div className="text-sm text-gray-600 mt-1">{coupon.description}</div>
+                        </div>
+                        <button 
+                          onClick={() => handleDeleteCoupon(coupon.id, coupon.qr_image_url)}
+                          className="bg-red-50 text-red-600 font-bold px-4 py-2 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-100 border border-red-200"
+                        >
+                          削除
+                        </button>
+                      </div>
+                    ))}
+                    {couponsList.length === 0 && <p className="text-center text-gray-400 py-10">クーポンはまだ登録されていません</p>}
+                  </div>
+                </>
+              )}
+
               {/* 🌟 4. 新規: 施設別ドロップ報酬一覧 */}
               {activeTab === 'drops' && (
                 <>
@@ -1265,7 +1404,12 @@ export default function AdminDashboard() {
                               {drop.facility_type === 'restaurant' ? '🍽️ ご飯屋さん' : drop.facility_type === 'hospital' ? '🏥 病院' : drop.facility_type === 'hotel' ? '🏨 ホテル' : '📍 通常スポット'}
                             </span>
                             <span className="text-gray-400 font-bold">→</span>
-                            <span className="font-bold text-blue-700">{drop.item_masters?.name || '不明なアイテム'}</span>
+                            <span className="font-bold text-blue-700">
+                              {drop.reward_type === 'coupon' 
+                                ? `🎫 ${drop.coupon_masters?.name || '不明なクーポン'}` 
+                                : `📦 ${drop.item_masters?.name || '不明なアイテム'}`
+                              }
+                            </span>
                           </div>
                           <div className="text-sm text-gray-600 mt-2 flex gap-4">
                             <span className="bg-gray-100 px-2 py-1 rounded">ドロップ数: <span className="font-bold">{drop.drop_amount}個</span></span>
