@@ -23,23 +23,20 @@ function getDistance(lat1: number, lon1: number, lat2: number, lon2: number) {
   return R * c;
 }
 
-// 💡 タグコードからグループ(A, Bなど)を判定し、卵のモデルを変えるための関数
-const getTagGroup = (code: string | null) => {
-  if (!code) return 'A';
-  if (code.includes('-')) {
-    return code.split('-')[0];
-  }
-  return code.charAt(0).toUpperCase(); 
+// 💡 ペットIDから疑似ランダムに卵のグループを決定する関数（DB変更なしで永続化するため）
+const getEggGroupById = (id: string | null) => {
+  if (!id) return 'A';
+  // IDの最後の文字を使って4パターンの卵をランダムに固定で出し分ける
+  const char = id.charAt(id.length - 1).toLowerCase();
+  if (/[0-3]/.test(char)) return 'A';
+  if (/[4-7]/.test(char)) return 'B';
+  if (/[8-b]/.test(char)) return 'C';
+  return 'D'; // Dグループの卵モデル(egg_D.glb)も用意しておくとより多彩になります
 };
 
 export default function HomeAR() {
-  const [tagCode, setTagCode] = useState<string | null>(null);
   const router = useRouter();
   const supabase = useMemo(() => createClient(), []);
-
-  useEffect(() => {
-    setTagCode(new URLSearchParams(window.location.search).get('tag'));
-  }, []);
   
   const [viewMode, setViewMode] = useState<'mindar' | 'gps' | 'report'>('mindar');
   const [isClient, setIsClient] = useState(false);
@@ -70,7 +67,7 @@ export default function HomeAR() {
   // 💡 ターゲットマインド（マーカー）は全ユーザー・全モデル共通で1つに完全固定！
   const petMarkerUrl = '/markers/target.mind'; 
   
-  // 卵モデルはタグに応じて動的に変えるためのState
+  // 卵モデルはIDに応じて動的に変えるためのState
   const [eggModelUrl, setEggModelUrl] = useState<string>('/models/eggs/egg_A.glb');
 
   // 孵化後のペットモデル
@@ -230,9 +227,11 @@ export default function HomeAR() {
     }
   };
 
-  // --- NFCタグや一般データの取得 ---
+  // --- データベースからのユーザーペット取得（パラメータ依存を廃止） ---
   useEffect(() => {
     const fetchGameData = async () => {
+      if (!sessionUserId) return; // セッション情報が取得できるまで待機
+
       const { data: items } = await supabase.from('item_masters').select('*').order('id', { ascending: false });
       if (items) setShopItems(items);
       const { data: spots } = await supabase.from('landmarks').select('*');
@@ -243,60 +242,65 @@ export default function HomeAR() {
       setGameOverNotice(null);
       setGameOverHandled(false);
 
-      if (tagCode) {
-        // 💡 タグからグループを判定し、卵モデルだけを動的にセット
-        const group = getTagGroup(tagCode);
-        setEggModelUrl(`/models/eggs/egg_${group}.glb`);
+      // 💡 ユーザーの最新のアクティブなペットをDBから取得
+      const { data: pet } = await supabase
+        .from('pets')
+        .select(`
+          id, owner_id, affection_level, sleeping_until, last_fed_at, 
+          is_egg, walk_distance_m, level, exp, custom_name, birthday,
+          pet_masters(name, model_url, model_url_v2, model_url_v3, rarity)
+        `)
+        .eq('owner_id', sessionUserId)
+        .order('created_at', { ascending: false }) // 最新のものを取得
+        .limit(1)
+        .maybeSingle();
 
-        const { data: pet } = await supabase
-          .from('pets')
-          .select(`
-            id, owner_id, affection_level, sleeping_until, last_fed_at, 
-            is_egg, walk_distance_m, level, exp, custom_name, birthday,
-            pet_masters(name, model_url, model_url_v2, model_url_v3, rarity), 
-            nfc_tags!inner(tag_code)
-          `)
-          .eq('nfc_tags.tag_code', tagCode)
-          .maybeSingle();
+      if (pet) {
+        // すでにペット（または卵）を持っている場合
+        setPetId(pet.id); setOwnerId(pet.owner_id); setAffection(pet.affection_level || 0); 
+        setSleepingUntil(pet.sleeping_until); setLastFedAt(pet.last_fed_at); 
+        setIsEgg(pet.is_egg); setWalkDistance(pet.walk_distance_m || 0); setLevel(pet.level || 1);
+        setExp(pet.exp || 0); setCustomName(pet.custom_name); setBirthday(pet.birthday);
+        setIsEggUnregistered(false); // 登録済みの卵として扱う
 
-        if (pet) {
-          setPetId(pet.id); setOwnerId(pet.owner_id); setAffection(pet.affection_level || 0); 
-          setSleepingUntil(pet.sleeping_until); setLastFedAt(pet.last_fed_at); 
-          setIsEgg(pet.is_egg); setWalkDistance(pet.walk_distance_m || 0); setLevel(pet.level || 1);
-          setExp(pet.exp || 0); setCustomName(pet.custom_name); setBirthday(pet.birthday);
+        // 💡 ペットIDに基づいて卵のモデルを固定設定
+        const eggGroup = getEggGroupById(pet.id);
+        setEggModelUrl(`/models/eggs/egg_${eggGroup}.glb`);
 
-          if (pet.pet_masters) { 
-            const pm = (pet.pet_masters && pet.pet_masters[0]) || {};
-            const rarityPm = (pm as any).rarity || '?';
-            const fallbackBase = `/models/pet/${rarityPm}`;
-            
-            setPetModelUrlV1(pm.model_url || `${fallbackBase}/v1.glb`);
-            setPetModelUrlV2(pm.model_url_v2 || `${fallbackBase}/v2.glb`);
-            setPetModelUrlV3(pm.model_url_v3 || `${fallbackBase}/v3.glb`);
-            setPetMasterName(pm.name || '不明');
-            setPetRarity(rarityPm);
-          }
-
-          const { data: inv } = await supabase.from('user_inventory').select('id, quantity, item_masters(*)').eq('user_id', pet.owner_id).gt('quantity', 0);
-          if (inv) setInventory(inv);
-
-          const { count: feedLogCount } = await supabase.from('activity_logs').select('id', { count: 'exact', head: true }).eq('pet_id', pet.id).eq('action_type', 'feed');
-          if (feedLogCount !== null) setFeedCount(feedLogCount);
-          const { count: eventLogCount } = await supabase.from('activity_logs').select('id', { count: 'exact', head: true }).eq('pet_id', pet.id).eq('action_type', 'event');
-          if (eventLogCount !== null) setEventCount(eventLogCount);
-          const { count: landmarkCount } = await supabase.from('landmark_visits').select('id', { count: 'exact', head: true }).eq('user_id', pet.owner_id);
-          if (landmarkCount !== null) setLandmarkVisitCount(landmarkCount);
-
-        } else {
-          setIsEggUnregistered(true); setIsEgg(true); 
+        if (pet.pet_masters) { 
+          const pm = (pet.pet_masters && pet.pet_masters[0] ? pet.pet_masters[0] : pet.pet_masters) || {};
+          const rarityPm = (pm as any).rarity || '?';
+          const fallbackBase = `/models/pet/${rarityPm}`;
+          
+          setPetModelUrlV1((pm as any).model_url || `${fallbackBase}/v1.glb`);
+          setPetModelUrlV2((pm as any).model_url_v2 || `${fallbackBase}/v2.glb`);
+          setPetModelUrlV3((pm as any).model_url_v3 || `${fallbackBase}/v3.glb`);
+          setPetMasterName((pm as any).name || '不明');
+          setPetRarity(rarityPm);
         }
+
+        const { data: inv } = await supabase.from('user_inventory').select('id, quantity, item_masters(*)').eq('user_id', sessionUserId).gt('quantity', 0);
+        if (inv) setInventory(inv);
+
+        const { count: feedLogCount } = await supabase.from('activity_logs').select('id', { count: 'exact', head: true }).eq('pet_id', pet.id).eq('action_type', 'feed');
+        if (feedLogCount !== null) setFeedCount(feedLogCount);
+        const { count: eventLogCount } = await supabase.from('activity_logs').select('id', { count: 'exact', head: true }).eq('pet_id', pet.id).eq('action_type', 'event');
+        if (eventLogCount !== null) setEventCount(eventLogCount);
+        const { count: landmarkCount } = await supabase.from('landmark_visits').select('id', { count: 'exact', head: true }).eq('user_id', sessionUserId);
+        if (landmarkCount !== null) setLandmarkVisitCount(landmarkCount);
+
+      } else {
+        // 💡 ペットをまだ持っていない（未登録状態）
+        setIsEggUnregistered(true); 
+        setIsEgg(true); 
+        setEggModelUrl('/models/eggs/egg_A.glb'); // 初期デフォルトの卵
       }
     };
     fetchGameData();
-  }, [tagCode, supabase]);
+  }, [sessionUserId, supabase]);
 
   const getCurrentModelUrl = () => {
-    // 💡 卵の間はグループごとの卵モデルを返す
+    // 💡 卵の間はIDに紐づいた卵モデルを返す
     if (isEgg || isEggUnregistered) return eggModelUrl;
     if (level >= 10 && petModelUrlV3) return petModelUrlV3;
     if (level >= 5 && petModelUrlV2) return petModelUrlV2;
@@ -519,15 +523,21 @@ export default function HomeAR() {
     }
   }, [viewMode, isClient, petId, supabase, isEgg, isSleeping, sceneKey]);
 
+  // 💡 ランダムな卵・ペットを生成（タグコード依存を廃止）
   const handleCreateEgg = async () => {
-    if (!tagCode) return;
+    if (!sessionUserId) return;
     try {
-      const result = await hatchPet(tagCode);
+      // サーバー側でランダムにペットを生成
+      const result = await hatchPet('random_encounter'); 
       if (result.success) {
         setPetId(result.pet.id); setOwnerId(result.pet.owner_id); 
         setIsEgg(true); setIsEggUnregistered(false); setWalkDistance(0); setFeedCount(0); setLandmarkVisitCount(0); setEventCount(0);
         setGameOverNotice(null); setGameOverHandled(false); setLastFedAt(null); setSleepingUntil(null); setHungerPercent(100); setMotivationPercent(100); setLevel(1); setExp(0); setAffection(0);
         
+        // 💡 割り当てられたペットIDから卵のモデルを決定
+        const eggGroup = getEggGroupById(result.pet.id);
+        setEggModelUrl(`/models/eggs/egg_${eggGroup}.glb`);
+
         if (result.pet.pet_masters) {
           const pm = result.pet.pet_masters;
           const rarityRes = pm.rarity || '?';
@@ -919,7 +929,7 @@ export default function HomeAR() {
       )}
 
       {/* --- UIレイヤー (ヘッダー) --- */}
-      {tagCode && (
+      {sessionUserId && (
         <div className="absolute top-4 left-4 right-4 z-20 flex flex-col gap-3 pointer-events-none">
           <div className="flex justify-between items-end">
             <span className="text-white font-bold text-2xl drop-shadow-lg">{isEggUnregistered ? '謎のNFCタグ' : displayName}</span>
@@ -980,20 +990,13 @@ export default function HomeAR() {
         </div>
       )}
 
-      {/* タグがない時の空ヘッダー案内 */}
-      {!tagCode && (
-        <div className="absolute top-10 w-full text-center z-20 pointer-events-none">
-          <p className="bg-black/70 text-white inline-block px-4 py-2 rounded-full font-bold">NFCタグをかざしてペットを呼び出そう！</p>
-        </div>
-      )}
-
       {/* --- 右上ボタン群 --- */}
       <div className="absolute top-48 right-4 z-40 flex flex-col gap-4 pointer-events-auto">
         <button onClick={() => { setIsNewsOpen(true); playSound('tap'); }} className="bg-white/90 p-3 rounded-full shadow-2xl border border-gray-200 active:scale-90 flex items-center justify-center w-14 h-14 relative" aria-label="お知らせ">
           <span className="text-2xl">📢</span>{newsList.length > 0 && <span className="absolute top-0 right-0 w-4 h-4 bg-red-500 rounded-full border-2 border-white"></span>}
         </button>
 
-        {/* スポットが表示されている時だけ、専用の「カメラ切替」「撮影」ボタンを表示 */}
+        {/* 💡 スポットが表示されている時だけ、専用の「カメラ切替」「撮影」ボタンを表示 */}
         {viewMode === 'gps' && activeLandmark ? (
           <>
             <button 
@@ -1066,7 +1069,7 @@ export default function HomeAR() {
           </div>
         )}
 
-        {viewMode === 'mindar' && isEggUnregistered && (
+        {viewMode === 'mindar' && isEggUnregistered && sessionUserId && (
           <button onClick={handleCreateEgg} className="bg-gradient-to-r from-yellow-400 to-orange-500 text-white p-4 rounded-2xl font-bold shadow-lg w-full animate-pulse text-lg border-4 border-yellow-200">🥚 不思議な卵を発見！<br/><span className="text-sm">タップして拾い上げる</span></button>
         )}
 
@@ -1111,7 +1114,7 @@ export default function HomeAR() {
       {/* --- 背面：ARレイヤー (embedded指定でコンテナに収める) --- */}
       <div className="absolute top-0 left-0 w-full h-full z-0">
         
-        {viewMode === 'mindar' && tagCode && (
+        {viewMode === 'mindar' && sessionUserId && (
           /* @ts-ignore */
           <a-scene embedded key={`mindar-${sceneKey}-${petMarkerUrl}`} style={{ height: '100%', width: '100%' }} mindar-image={`imageTargetSrc: ${petMarkerUrl}; autoStart: true; uiLoading: no; uiError: no;`} renderer="preserveDrawingBuffer: true; colorManagement: true; physicallyCorrectLights: true;" color-space="sRGB" vr-mode-ui="enabled: false" device-orientation-permission-ui="enabled: false">
             {/* @ts-ignore */}
