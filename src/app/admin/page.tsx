@@ -1015,7 +1015,10 @@ export default function AdminDashboard() {
                   {eggTypes.map(type => {
                     const petsInEgg = groupedPets[type];
                     // 総ウェイトの計算
-                    const totalWeight = petsInEgg.reduce((sum, p) => sum + (p.drop_weight || 0), 0);
+                    const totalWeight = petsInEgg.reduce(
+  (sum: number, p: Pet) => sum + (p.drop_weight || 0),
+  0
+);
                     // レアリティごとのウェイト集計
                     const weightsByRarity = petsInEgg.reduce((acc, p) => {
                       const r = p.rarity || 'N';
