@@ -1018,18 +1018,15 @@ export default function AdminDashboard() {
                     // 総ウェイトの計算
                     const totalWeight = petsInEgg.reduce(
                       (sum: number, p: (typeof petsInEgg)[number]) =>
-                        sum + (p.drop_weight || 0),
+                        sum + (Number(p.drop_weight) || 0),
                       0
                     );
 
-                    // レアリティごとのウェイト集計
-                    const weightsByRarity = petsInEgg.reduce(
-                      (
-                        acc: Record<string, number>,
-                        p: (typeof petsInEgg)[number]
-                      ) => {
+                    // レアリティごとのウェイト集計（型を明示）
+                    const weightsByRarity = petsInEgg.reduce<Record<string, number>>(
+                      (acc, p: (typeof petsInEgg)[number]) => {
                         const r = p.rarity || "N";
-                        acc[r] = (acc[r] || 0) + (p.drop_weight || 0);
+                        acc[r] = (acc[r] || 0) + (Number(p.drop_weight) || 0);
                         return acc;
                       },
                       {}
@@ -1052,7 +1049,7 @@ export default function AdminDashboard() {
                               <span className="text-xs text-orange-700 ml-auto">総ウェイト: {totalWeight}</span>
                             </div>
                             <div className="flex flex-wrap gap-2 text-xs font-bold">
-                              {Object.entries(weightsByRarity).map(([r, w]) => {
+                              {Object.entries(weightsByRarity).map(([r, w]: [string, number]) => {
                                 const percentage = ((w / totalWeight) * 100).toFixed(1);
                                 return (
                                   <div key={r} className="flex items-center bg-white px-2 py-1 rounded border shadow-sm">
