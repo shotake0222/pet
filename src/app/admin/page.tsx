@@ -842,6 +842,7 @@ export default function AdminDashboard() {
                           <label className="block text-sm font-bold mb-1 text-teal-700">施設タイプ 🌟</label>
                           <select value={lmMasterFacilityType} onChange={e => setLmMasterFacilityType(e.target.value)} className="w-full border p-3 rounded-lg focus:ring-2 focus:ring-teal-500 font-bold bg-teal-50 text-teal-900 border-teal-200">
                             <option value="normal">📍 通常スポット</option>
+                            <option value="special">🌟 特別スポット</option>
                             <option value="restaurant">🍽️ ご飯屋さん</option>
                             <option value="hospital">🏥 病院 (ドクター)</option>
                             <option value="hotel">🏨 ホテル (休憩所)</option>
@@ -1033,6 +1034,7 @@ export default function AdminDashboard() {
                       <label className="block text-sm font-bold mb-1 text-pink-900">対象の施設タイプ</label>
                       <select value={dropFacilityType} onChange={e => setDropFacilityType(e.target.value)} className="w-full border p-3 rounded-lg focus:ring-2 focus:ring-pink-500">
                         <option value="normal">📍 通常スポット</option>
+                        <option value="special">🌟 特別スポット</option>
                         <option value="restaurant">🍽️ ご飯屋さん</option>
                         <option value="hospital">🏥 病院 (ドクター)</option>
                         <option value="hotel">🏨 ホテル (休憩所)</option>
@@ -1254,7 +1256,7 @@ export default function AdminDashboard() {
                               <div className="font-bold text-lg flex items-center gap-2">
                                 {master.name}
                                 <span className="text-[10px] font-bold px-2 py-0.5 rounded-full border bg-teal-50 text-teal-800 border-teal-200">
-                                  {master.facility_type === 'restaurant' ? '🍽️ ご飯' : master.facility_type === 'hospital' ? '🏥 病院' : master.facility_type === 'hotel' ? '🏨 ホテル' : '📍 通常'}
+                                  {master.facility_type === 'special' ? '🌟 特別' : master.facility_type === 'restaurant' ? '🍽️ ご飯' : master.facility_type === 'hospital' ? '🏥 病院' : master.facility_type === 'hotel' ? '🏨 ホテル' : '📍 通常'}
                                 </span>
                                 <button onClick={() => toggleLandmarkMasterPublic(master.id, master.is_public)} className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${master.is_public ? 'bg-green-100 text-green-800 border-green-300' : 'bg-gray-200 text-gray-600 border-gray-300'}`}>
                                   {master.is_public ? '公開中' : '非公開'}
@@ -1414,7 +1416,7 @@ export default function AdminDashboard() {
                         <div className="flex-1">
                           <div className="flex items-center gap-3">
                             <span className="text-lg font-bold text-gray-800">
-                              {drop.facility_type === 'restaurant' ? '🍽️ ご飯屋さん' : drop.facility_type === 'hospital' ? '🏥 病院' : drop.facility_type === 'hotel' ? '🏨 ホテル' : '📍 通常スポット'}
+                              {drop.facility_type === 'special' ? '🌟 特別スポット' : drop.facility_type === 'restaurant' ? '🍽️ ご飯屋さん' : drop.facility_type === 'hospital' ? '🏥 病院' : drop.facility_type === 'hotel' ? '🏨 ホテル' : '📍 通常スポット'}
                             </span>
                             <span className="text-gray-400 font-bold">→</span>
                             <span className="font-bold text-blue-700">
