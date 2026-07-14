@@ -1,8 +1,8 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, Suspense } from 'react';
 import Script from 'next/script';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { createClient } from '@/utils/supabase/client';
 import { hatchPet } from '@/app/actions/gacha';
 
@@ -23,9 +23,10 @@ function getDistance(lat1: number, lon1: number, lat2: number, lon2: number) {
   return R * c;
 }
 
-export default function HomeAR() {
+function HomeAR() {
   const router = useRouter();
   const supabase = useMemo(() => createClient(), []);
+  const searchParams = useSearchParams();
   
   const [viewMode, setViewMode] = useState<'mindar' | 'gps' | 'report'>('mindar');
   const [isClient, setIsClient] = useState(false);
@@ -53,12 +54,23 @@ export default function HomeAR() {
   const [level, setLevel] = useState(1);
   const [exp, setExp] = useState(0);
 
-  // --- 🌟 状態異常 (Condition) State ---
+  // --- 状態異常 (Condition) State ---
   const [petCondition, setPetCondition] = useState<'healthy' | 'sick' | 'starving'>('healthy');
   const [showConditionSOS, setShowConditionSOS] = useState(false);
   
-  // ターゲットマインド（マーカー）
-  const petMarkerUrl = '/markers/target.mind'; 
+  // 🌟 NFCのシークエンスID（tag_id）の読み込みとトラッキング情報の設定
+  const tagIdParam = searchParams.get('tag_id');
+  const tagId = tagIdParam ? parseInt(tagIdParam, 10) : null;
+
+  let petMarkerUrl = '/markers/target.mind'; // デフォルトフォールバック
+  let activeTargetIndex = 0;
+
+  // 🌟 tag_idの数値から動的に読み込む mindファイル と インデックス を計算
+  if (tagId && !isNaN(tagId) && tagId > 0) {
+    const groupIndex = Math.ceil(tagId / 5); // 5個ずつグループ化
+    petMarkerUrl = `/markers/targets_${groupIndex}.mind`;
+    activeTargetIndex = (tagId - 1) % 5; // 各mindファイル内のインデックス（0〜4）
+  }
   
   // 卵モデルはDBのegg_typeに応じて動的に変えるためのState
   const [eggModelUrl, setEggModelUrl] = useState<string>('/models/eggs/egg_A.glb');
@@ -72,7 +84,7 @@ export default function HomeAR() {
   const [hatchOverlay, setHatchOverlay] = useState<{ active: boolean; particles: any[]; rarity: string } | null>(null);
   const [hatchAnimating, setHatchAnimating] = useState(false);
 
-  // --- 🌟 レベルアップ用エフェクト State ---
+  // --- レベルアップ用エフェクト State ---
   const [levelUpOverlay, setLevelUpOverlay] = useState<{ active: boolean; particles: any[]; level: number; isMilestone: boolean } | null>(null);
 
   // --- インベントリ ＆ ショップ ---
@@ -122,7 +134,6 @@ export default function HomeAR() {
   const targetLandmarkVisits = 2;
   const targetEventCount = 1;
 
-  // 1歩 = 約0.75m として歩数を計算
   const stepCount = Math.floor(walkDistance / 0.75);
 
   useEffect(() => { setIsClient(true); }, []);
@@ -144,7 +155,9 @@ export default function HomeAR() {
     const initAuthAndProfile = async () => {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) {
-        router.push('/login');
+        // tag_idをログイン画面にも引き継ぐためのクエリ文字列作成
+        const queryString = tagIdParam ? `?tag_id=${tagIdParam}` : '';
+        router.push(`/login${queryString}`);
         return;
       }
       
@@ -160,7 +173,7 @@ export default function HomeAR() {
       }
     };
     initAuthAndProfile();
-  }, [supabase, router]); 
+  }, [supabase, router, tagIdParam]); 
 
   // --- ログインボーナス処理用関数 ---
   const grantLoginBonusItem = async (userId: string) => {
@@ -231,7 +244,6 @@ export default function HomeAR() {
       const { data: items } = await supabase.from('item_masters').select('*').order('id', { ascending: false });
       if (items) setShopItems(items);
       
-      // 🌟 landmarks 取得時に landmark_masters の facility_type も結合取得
       const { data: spots } = await supabase.from('landmarks').select('*, landmark_masters(facility_type)');
       if (spots) setLandmarks(spots);
       
@@ -260,7 +272,6 @@ export default function HomeAR() {
         setExp(pet.exp || 0); setCustomName(pet.custom_name); setBirthday(pet.birthday);
         setIsEggUnregistered(false); 
         
-        // 🌟 状態異常の復元
         const currentCondition = pet.condition_status || 'healthy';
         setPetCondition(currentCondition as any);
         if (currentCondition !== 'healthy') {
@@ -345,7 +356,7 @@ export default function HomeAR() {
         last_fed_at: null,
         custom_name: null,
         birthday: null,
-        condition_status: 'healthy' // 状態異常もリセット
+        condition_status: 'healthy' 
       }).eq('id', petId);
 
       await supabase.from('activity_logs').insert({
@@ -395,7 +406,6 @@ export default function HomeAR() {
       if (isSleeping) baseMotivation = 100;
       setMotivationPercent(Math.max(0, Math.min(100, Math.floor(baseMotivation))));
 
-      // 🌟 飢餓状態の判定
       if (finalHunger <= 20 && petCondition !== 'starving') {
         setPetCondition('starving');
         setShowConditionSOS(true);
@@ -436,7 +446,6 @@ export default function HomeAR() {
   };
   const currentMood = getCurrentMood();
 
-  // --- 孵化エフェクト表示ロジック ---
   const showHatchEffect = (rarity: string) => {
     return new Promise<void>((resolve) => {
       const multiplier = rarity === 'UR' ? 3 : rarity === 'SR' ? 2 : rarity === 'R' ? 1.5 : 1;
@@ -475,16 +484,14 @@ export default function HomeAR() {
     });
   };
 
-  // --- 🌟 レベルアップ演出用エフェクトロジック ---
   const showLevelUpEffect = (newLevel: number) => {
     return new Promise<void>((resolve) => {
-      // 5の倍数をキリ番（マイルストーン）として判定
       const isMilestone = newLevel % 5 === 0;
       const count = isMilestone ? 150 : 50;
       
       const colors = isMilestone
-        ? ['#FFD700', '#FF73FA', '#7CF0FF', '#FF9F1C', '#FFFFFF'] // キリ番は豪華な色
-        : ['#60A5FA', '#34D399', '#FBBF24']; // 通常レベルアップ
+        ? ['#FFD700', '#FF73FA', '#7CF0FF', '#FF9F1C', '#FFFFFF'] 
+        : ['#60A5FA', '#34D399', '#FBBF24']; 
 
       const particles = Array.from({ length: count }).map((_, i) => {
         const angle = (Math.random() - 0.5) * Math.PI * 2;
@@ -513,7 +520,6 @@ export default function HomeAR() {
     });
   };
 
-  // 🌟 病気をランダムで発症させる
   const triggerRandomSickness = async () => {
     if (level > 2 && Math.random() < 0.15 && petCondition === 'healthy') {
       setPetCondition('sick');
@@ -543,16 +549,15 @@ export default function HomeAR() {
     setExp(newExp); setLevel(newLevel);
     await supabase.from('pets').update({ exp: newExp, level: newLevel }).eq('id', petId);
     
-    // レベルアップした時の処理
     if (leveledUp) {
       playSound('levelup'); 
-      await showLevelUpEffect(newLevel); // 🌟 レベルアップエフェクトの呼び出し
+      await showLevelUpEffect(newLevel); 
       
       alert(`🌟 レベルアップ！ Lv.${newLevel} になりました！`);
       if (newLevel === 5 && petModelUrlV2) alert('体が大きくなったみたい…！');
       if (newLevel === 10 && petModelUrlV3) alert('姿が大きく変わった…！');
 
-      await triggerRandomSickness(); // レベルアップ時に病気の抽選
+      await triggerRandomSickness(); 
     }
   };
 
@@ -589,7 +594,6 @@ export default function HomeAR() {
     if (viewMode === 'mindar' && petId && !isEgg && !isSleeping) {
       const petModel = document.querySelector('#pet-model');
       const handlePetTap = () => {
-        // 🌟 状態異常時はタップの経験値獲得をブロック
         if (petCondition === 'starving' || petCondition === 'sick') {
           playSound('error');
           setActionAnim('Sad');
@@ -603,7 +607,6 @@ export default function HomeAR() {
         setEventCount(prev => prev + 1);
         supabase.from('activity_logs').insert({ pet_id: petId, action_type: 'event', points_earned: 5 }).then();
         
-        // 🌟 タップ時のリアクションとして Jump, Fly, Happy をランダムで再生
         const tapActions = ['Jump', 'Fly', 'Happy'];
         const randomAction = tapActions[Math.floor(Math.random() * tapActions.length)];
         setActionAnim(randomAction); 
@@ -674,9 +677,9 @@ export default function HomeAR() {
   };
 
   const handleFeed = async () => {
-    if (!petId || isSleeping || petCondition === 'sick') return; // 病気時はご飯不可
+    if (!petId || isSleeping || petCondition === 'sick') return; 
     playSound('eat'); 
-    setActionAnim('Eat'); // 🌟 食事のアニメーション
+    setActionAnim('Eat'); 
     setTimeout(() => setActionAnim(null), 2000);
     setFeedCount(prev => prev + 1);
     await supabase.from('activity_logs').insert({ pet_id: petId, action_type: 'feed', points_earned: 10 });
@@ -715,7 +718,6 @@ export default function HomeAR() {
       await supabase.from('pets').update({ sleeping_until: sleepEnd.toISOString() }).eq('id', petId);
       alert(`💤 ペットは ${item.effect_value} 時間眠りにつきました。`);
     } else if (item.item_type === 'medicine') {
-      // 🌟 薬の利用ロジック
       if (petCondition === 'sick') {
         setPetCondition('healthy'); setShowConditionSOS(false);
         await supabase.from('pets').update({ condition_status: 'healthy' }).eq('id', petId);
@@ -745,7 +747,6 @@ export default function HomeAR() {
     } catch (e) { alert('エラーが発生しました'); }
   };
 
-  // 🌟 名前のフォールバックから施設タイプを判定するヘルパー
   const getFacilityType = (name: string) => {
     if (name.includes('ご飯') || name.includes('レストラン') || name.includes('カフェ')) return 'restaurant';
     if (name.includes('病院') || name.includes('クリニック') || name.includes('ドクター')) return 'hospital';
@@ -757,7 +758,6 @@ export default function HomeAR() {
     if (!activeLandmark || !petId || !sessionUserId) return;
     const today = new Date().toLocaleDateString('sv-SE'); 
 
-    // 🌟 施設タイプの取得
     const master = activeLandmark.landmark_masters;
     const facilityType = master?.facility_type && master.facility_type !== 'normal' ? master.facility_type : getFacilityType(activeLandmark.name);
 
@@ -775,7 +775,6 @@ export default function HomeAR() {
     playSound('levelup');
     await supabase.from('activity_logs').insert({ pet_id: petId, action_type: 'landmark_visit', points_earned: activeLandmark.bonus_points });
     
-    // 🌟 施設ごとのボーナス処理
     if (facilityType === 'restaurant') {
       alert(`🍽️ ${activeLandmark.name} に到着！\n美味しい匂いに釣られて元気が出た！`);
       if (petCondition === 'starving') {
@@ -1123,7 +1122,7 @@ export default function HomeAR() {
         </div>
       )}
 
-      {/* --- 🌟 状態異常SOS モーダル --- */}
+      {/* --- 状態異常SOS モーダル --- */}
       {showConditionSOS && !isEgg && petCondition !== 'healthy' && (
         <div className="absolute top-36 left-4 right-4 z-[100] animate-bounce">
           <div className={`p-4 rounded-2xl shadow-2xl border-4 flex items-start gap-4 ${petCondition === 'sick' ? 'bg-purple-100 border-purple-400 text-purple-900' : 'bg-red-100 border-red-400 text-red-900'}`}>
@@ -1333,12 +1332,12 @@ export default function HomeAR() {
         </div>
       </div>
 
-      {/* --- 背面：ARレイヤー (embedded指定でコンテナに収める) --- */}
+      {/* --- 背面：ARレイヤー --- */}
       <div className="absolute top-0 left-0 w-full h-full z-0">
         
         {viewMode === 'mindar' && sessionUserId && (
           /* @ts-ignore */
-          <a-scene embedded key={`mindar-${sceneKey}-${petMarkerUrl}`} style={{ height: '100%', width: '100%' }} mindar-image={`imageTargetSrc: ${petMarkerUrl}; autoStart: true; uiLoading: no; uiError: no;`} renderer="preserveDrawingBuffer: true; colorManagement: true; physicallyCorrectLights: true;" color-space="sRGB" vr-mode-ui="enabled: false" device-orientation-permission-ui="enabled: false">
+          <a-scene embedded key={`mindar-${sceneKey}-${petMarkerUrl}-${activeTargetIndex}`} style={{ height: '100%', width: '100%' }} mindar-image={`imageTargetSrc: ${petMarkerUrl}; autoStart: true; uiLoading: no; uiError: no; maxTrack: 1;`} renderer="preserveDrawingBuffer: true; colorManagement: true; physicallyCorrectLights: true;" color-space="sRGB" vr-mode-ui="enabled: false" device-orientation-permission-ui="enabled: false">
             {/* @ts-ignore */}
             <a-assets><a-asset-item id="pet-asset" src={activeModelUrl}></a-asset-item></a-assets>
             {/* @ts-ignore */}
@@ -1347,8 +1346,10 @@ export default function HomeAR() {
             <a-light type="directional" color="#ffffff" intensity="1.5" position="-1 2 1" castShadow="true"></a-light>
             {/* @ts-ignore */}
             <a-camera position="0 0 0" look-controls="enabled: false" cursor="rayOrigin: mouse;" raycaster="objects: .clickable"></a-camera>
+            
+            {/* 🌟 tag_idから計算された activeTargetIndex のエンティティだけを生成・レンダリングしてトラッキング */}
             {/* @ts-ignore */}
-            <a-entity mindar-image-target="targetIndex: 0">
+            <a-entity mindar-image-target={`targetIndex: ${activeTargetIndex}`}>
               {/* @ts-ignore */}
               <a-gltf-model
                 id="pet-model"
@@ -1358,7 +1359,6 @@ export default function HomeAR() {
                 scale={hatchAnimating ? "0.1 0.1 0.1" : "0.5 0.5 0.5"}
                 src={activeModelUrl}
                 shadow="cast: true; receive: true"
-                // 🌟 アクションアニメーション (Idle, Eat, Jump, Sleep 等の切り替えを適用。異常時はSad)
                 animation-mixer={isEgg ? "" : `clip: ${actionAnim || currentMood.clip}; loop: ${actionAnim ? 'once' : 'repeat'}; crossFadeDuration: 0.3;`}
                 animation={hatchAnimating ? `property: scale; to: 0.5 0.5 0.5; dur: 800; easing: easeOutElastic;` : undefined}
               ></a-gltf-model>
@@ -1385,7 +1385,6 @@ export default function HomeAR() {
                   scale="1.5 1.5 1.5"
                   position={`0 -1.5 ${cameraFacing === 'user' ? '-2' : '-4'}`}
                   rotation={`0 180 0`}
-                  // 🌟 お散歩モード中は Walk または 状態異常で Sad を適用
                   animation-mixer={`clip: ${petCondition !== 'healthy' ? 'Sad' : 'Walk'}; loop: repeat; crossFadeDuration: 0.3;`}
                 ></a-entity>
               )}
@@ -1400,5 +1399,14 @@ export default function HomeAR() {
         )}
       </div>
     </div>
+  );
+}
+
+// 🌟 buildエラー（Suspense境界なしでのuseSearchParams使用）を回避するためのラッパー
+export default function HomeARPage() {
+  return (
+    <Suspense fallback={<div className="bg-black w-full h-full text-white flex items-center justify-center">ARエンジンを起動中...</div>}>
+      <HomeAR />
+    </Suspense>
   );
 }
