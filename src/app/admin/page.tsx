@@ -50,6 +50,7 @@ export default function AdminDashboard() {
   const [facilityDropsList, setFacilityDropsList] = useState<any[]>([]);     // 施設別ドロップ報酬リスト
   const [raritiesList, setRaritiesList] = useState<any[]>([]);
   const [attributesList, setAttributesList] = useState<any[]>([]);
+  const [affinitiesList, setAffinitiesList] = useState<any[]>([]);           // 🌟 追加: 属性とアイテムの相性リスト
 
   // --- ペット用State ---
   const [petName, setPetName] = useState('');
@@ -139,7 +140,8 @@ export default function AdminDashboard() {
       attributesRes, 
       petAttrsRes,
       userPetsRes,
-      facilityDropsRes
+      facilityDropsRes,
+      affinitiesRes // 🌟 追加: 相性データ
     ] = await Promise.all([
       supabase.from('pet_masters').select('*').order('id', { ascending: false }),
       supabase.from('landmark_masters').select('*').order('id', { ascending: false }),
@@ -152,7 +154,8 @@ export default function AdminDashboard() {
       supabase.from('attributes').select('*').order('id', { ascending: true }),
       supabase.from('pet_master_attributes').select('*'),
       supabase.from('pets').select('*, pet_masters(name)').order('created_at', { ascending: false }),
-      supabase.from('facility_drop_masters').select('*, item_masters(name, image_url), coupon_masters(name, qr_image_url)').order('id', { ascending: false })
+      supabase.from('facility_drop_masters').select('*, item_masters(name, image_url), coupon_masters(name, qr_image_url)').order('id', { ascending: false }),
+      supabase.from('attribute_item_affinities').select('*, item_masters(name)').order('id', { ascending: true }) // 🌟 追加
     ]);
     
     if (petsRes.data) {
@@ -177,6 +180,7 @@ export default function AdminDashboard() {
     if (attributesRes && attributesRes.data) setAttributesList(attributesRes.data);
     if (userPetsRes.data) setUserPetsList(userPetsRes.data);
     if (facilityDropsRes.data) setFacilityDropsList(facilityDropsRes.data);
+    if (affinitiesRes && affinitiesRes.data) setAffinitiesList(affinitiesRes.data); // 🌟 追加
   };
 
   useEffect(() => {
@@ -261,6 +265,39 @@ export default function AdminDashboard() {
       alert('削除しました');
     } catch (e: any) {
       alert(`削除に失敗しました: ${e.message}`);
+    }
+  };
+
+  // 🌟 新規: 属性のアイテム相性を追加
+  const handleAddAffinity = async (attributeId: number, itemId: string, affinityType: string) => {
+    if (!itemId) return alert('アイテムを選択してください');
+    try {
+      const { error } = await supabase.from('attribute_item_affinities').insert({
+        attribute_id: attributeId,
+        item_id: parseInt(itemId, 10),
+        affinity_type: affinityType
+      });
+      if (error) throw error;
+      fetchData();
+      alert('相性を設定しました');
+    } catch (e: any) {
+      if (e.code === '23505') {
+        alert('このアイテムは既に相性設定がされています');
+      } else {
+        alert(`エラー: ${e.message}`);
+      }
+    }
+  };
+
+  // 🌟 新規: 属性のアイテム相性を削除
+  const handleDeleteAffinity = async (affinityId: number) => {
+    if (!window.confirm('相性設定を削除しますか？')) return;
+    try {
+      const { error } = await supabase.from('attribute_item_affinities').delete().eq('id', affinityId);
+      if (error) throw error;
+      fetchData();
+    } catch (e: any) {
+      alert(`エラー: ${e.message}`);
     }
   };
 
@@ -1628,7 +1665,7 @@ export default function AdminDashboard() {
                 </div>
               </div>
 
-              {/* 属性管理エリア */}
+              {/* 🌟 属性と相性管理エリア */}
               <div className="bg-gray-50 p-4 rounded-xl border">
                 <h3 className="font-bold mb-3">属性を追加</h3>
                 <form onSubmit={handleAddAttribute} className="space-y-3 bg-white p-4 rounded-lg border shadow-sm">
@@ -1646,18 +1683,83 @@ export default function AdminDashboard() {
                 </form>
 
                 <div className="mt-6">
-                  <h4 className="font-bold mb-2 border-b pb-2 text-gray-800">登録済み属性</h4>
-                  <div className="space-y-2 mt-3">
+                  <h4 className="font-bold mb-2 border-b pb-2 text-gray-800">登録済み属性とアイテム相性</h4>
+                  <div className="space-y-4 mt-3">
                     {attributesList.length === 0 && <div className="text-sm text-gray-500 text-center py-4 bg-white rounded border">まだ登録されていません</div>}
+                    
+                    {/* 🌟 各属性ごとの相性設定カード */}
                     {attributesList.map(a => (
-                      <div key={a.id} className="flex items-center justify-between bg-white p-3 rounded-lg border shadow-sm">
-                        <div>
-                          <div className="text-sm font-bold text-gray-800">{a.name}</div>
-                          {a.description && <div className="text-xs text-gray-500 mt-0.5">{a.description}</div>}
+                      <div key={a.id} className="flex flex-col bg-white p-3 rounded-lg border shadow-sm">
+                        <div className="flex items-center justify-between mb-3">
+                          <div>
+                            <div className="text-sm font-bold text-gray-800">{a.name}</div>
+                            {a.description && <div className="text-xs text-gray-500 mt-0.5">{a.description}</div>}
+                          </div>
+                          <button onClick={() => handleDeleteAttribute(a.id)} className="text-red-600 text-xs font-bold bg-red-50 border border-red-200 px-2 py-1 rounded hover:bg-red-100">
+                            属性を削除
+                          </button>
                         </div>
-                        <button onClick={() => handleDeleteAttribute(a.id)} className="text-red-600 text-xs font-bold bg-red-50 border border-red-200 px-2 py-1 rounded hover:bg-red-100">
-                          削除
-                        </button>
+                        
+                        {/* 相性設定セクション */}
+                        <div className="pt-3 border-t text-sm bg-gray-50 -mx-3 -mb-3 p-3 rounded-b-lg">
+                          <div className="font-bold text-gray-700 mb-2 text-xs">アイテム相性設定</div>
+                          
+                          <div className="grid grid-cols-1 gap-4">
+                            {/* 効くアイテム */}
+                            <div>
+                              <div className="text-xs font-bold text-green-700 mb-1">👍 効くアイテム (効果UP)</div>
+                              <div className="flex flex-wrap gap-1 mb-2 min-h-[24px]">
+                                {affinitiesList.filter(af => af.attribute_id === a.id && af.affinity_type === 'good').map(af => (
+                                  <span key={af.id} className="text-xs bg-white border border-green-300 text-green-800 px-2 py-1 rounded flex items-center gap-1 shadow-sm">
+                                    {af.item_masters?.name}
+                                    <button type="button" onClick={() => handleDeleteAffinity(af.id)} className="text-red-400 font-bold ml-1 hover:text-red-600">×</button>
+                                  </span>
+                                ))}
+                                {affinitiesList.filter(af => af.attribute_id === a.id && af.affinity_type === 'good').length === 0 && (
+                                  <span className="text-xs text-gray-400">設定なし</span>
+                                )}
+                              </div>
+                              <div className="flex gap-1">
+                                <select id={`good_item_${a.id}`} className="border p-1.5 text-xs rounded flex-1 focus:ring-green-500">
+                                  <option value="">アイテムを選択</option>
+                                  {itemsList.map(item => <option key={`good_${a.id}_${item.id}`} value={item.id}>{item.name}</option>)}
+                                </select>
+                                <button type="button" onClick={() => {
+                                  const select = document.getElementById(`good_item_${a.id}`) as HTMLSelectElement;
+                                  handleAddAffinity(a.id, select.value, 'good');
+                                  select.value = '';
+                                }} className="bg-green-100 border border-green-300 text-green-700 px-3 py-1 rounded text-xs font-bold hover:bg-green-200">追加</button>
+                              </div>
+                            </div>
+
+                            {/* 効かないアイテム */}
+                            <div>
+                              <div className="text-xs font-bold text-red-700 mb-1">👎 効かないアイテム (効果ダウン)</div>
+                              <div className="flex flex-wrap gap-1 mb-2 min-h-[24px]">
+                                {affinitiesList.filter(af => af.attribute_id === a.id && af.affinity_type === 'bad').map(af => (
+                                  <span key={af.id} className="text-xs bg-white border border-red-300 text-red-800 px-2 py-1 rounded flex items-center gap-1 shadow-sm">
+                                    {af.item_masters?.name}
+                                    <button type="button" onClick={() => handleDeleteAffinity(af.id)} className="text-red-400 font-bold ml-1 hover:text-red-600">×</button>
+                                  </span>
+                                ))}
+                                {affinitiesList.filter(af => af.attribute_id === a.id && af.affinity_type === 'bad').length === 0 && (
+                                  <span className="text-xs text-gray-400">設定なし</span>
+                                )}
+                              </div>
+                              <div className="flex gap-1">
+                                <select id={`bad_item_${a.id}`} className="border p-1.5 text-xs rounded flex-1 focus:ring-red-500">
+                                  <option value="">アイテムを選択</option>
+                                  {itemsList.map(item => <option key={`bad_${a.id}_${item.id}`} value={item.id}>{item.name}</option>)}
+                                </select>
+                                <button type="button" onClick={() => {
+                                  const select = document.getElementById(`bad_item_${a.id}`) as HTMLSelectElement;
+                                  handleAddAffinity(a.id, select.value, 'bad');
+                                  select.value = '';
+                                }} className="bg-red-100 border border-red-300 text-red-700 px-3 py-1 rounded text-xs font-bold hover:bg-red-200">追加</button>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
                       </div>
                     ))}
                   </div>
