@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo, Suspense } from 'react';
+import { useState, useEffect, useMemo, Suspense, useRef } from 'react';
 import Script from 'next/script';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { createClient } from '@/utils/supabase/client';
@@ -36,6 +36,8 @@ function HomeAR() {
   const [petId, setPetId] = useState<string | null>(null);
   const [ownerId, setOwnerId] = useState<string | null>(null);
   const [affection, setAffection] = useState(0);
+  const [generation, setGeneration] = useState(1);
+  const [hallOfFameCount, setHallOfFameCount] = useState(0);
   
   const [petMasterName, setPetMasterName] = useState<string>('');
   const [customName, setCustomName] = useState<string | null>(null);
@@ -95,6 +97,7 @@ function HomeAR() {
 
   // --- お知らせ ＆ プロフィール設定 State ---
   const [newsList, setNewsList] = useState<any[]>([]);
+  const [userNotifications, setUserNotifications] = useState<any[]>([]);
   const [isNewsOpen, setIsNewsOpen] = useState(false);
   
   const [showProfileSetup, setShowProfileSetup] = useState(false);
@@ -120,6 +123,17 @@ function HomeAR() {
   const [gameOverNotice, setGameOverNotice] = useState<string | null>(null);
   const [gameOverHandled, setGameOverHandled] = useState(false);
 
+  // --- マインドフルネス機能 State ---
+  const [showMindfulness, setShowMindfulness] = useState(false);
+  const [mindPhase, setMindPhase] = useState<'intro'|'inhale'|'hold'|'exhale'|'done'>('intro');
+  const [mindTime, setMindTime] = useState(5);
+  const [mindSet, setMindSet] = useState(1);
+  const hasTriggeredMindfulness = useRef(false);
+
+  // --- 寿命（虹の橋）機能 State ---
+  const [showRainbowBridge, setShowRainbowBridge] = useState(false);
+  const [rainbowPhase, setRainbowPhase] = useState(0);
+
   // --- AR・カメラ制御 ＆ スポット機能 State ---
   const [location, setLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [prevLocation, setPrevLocation] = useState<{ lat: number; lng: number } | null>(null);
@@ -128,6 +142,9 @@ function HomeAR() {
   const [isSpotMapOpen, setIsSpotMapOpen] = useState(false);
   const [cameraFacing, setCameraFacing] = useState<'environment' | 'user'>('environment');
   const [sceneKey, setSceneKey] = useState(0);
+  
+  // すれ違い通信の連投防止用Ref
+  const lastEncounterTime = useRef(0);
 
   const targetDistanceToHatch = 1200;
   const targetFeedCount = 3;
@@ -169,11 +186,65 @@ function HomeAR() {
       if (!profile || !profile.birth_year) {
         setShowProfileSetup(true);
       } else {
+        setHallOfFameCount(profile.hall_of_fame_count || 0);
         await checkLoginBonus(userId, profile);
       }
     };
     initAuthAndProfile();
   }, [supabase, router, tagIdParam]); 
+
+  // --- マインドフルネス機能のトリガー（ログイン時などに確率で発生）---
+  useEffect(() => {
+    if (sessionUserId && petId && !isEgg && !hasTriggeredMindfulness.current) {
+      hasTriggeredMindfulness.current = true;
+      // 1日のランダムな時間帯の想定として、30%の確率で発動
+      if (Math.random() < 0.3) {
+        setShowMindfulness(true);
+        setMindPhase('intro');
+      }
+    }
+  }, [sessionUserId, petId, isEgg]);
+
+  // マインドフルネスのタイマー処理
+  useEffect(() => {
+    if (!showMindfulness || mindPhase === 'intro' || mindPhase === 'done') return;
+    const timer = setInterval(() => {
+      setMindTime((prev) => {
+        if (prev > 1) return prev - 1;
+        
+        // フェーズの切り替え
+        if (mindPhase === 'inhale') { setMindPhase('hold'); return 2; }
+        if (mindPhase === 'hold') { setMindPhase('exhale'); return 5; }
+        if (mindPhase === 'exhale') {
+          if (mindSet < 3) { 
+            setMindSet(s => s + 1); 
+            setMindPhase('inhale'); 
+            return 5; 
+          } else { 
+            setMindPhase('done'); 
+            return 0; 
+          }
+        }
+        return 0;
+      });
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [showMindfulness, mindPhase, mindSet]);
+
+  const startMindfulness = () => {
+    setMindPhase('inhale');
+    setMindTime(5);
+    setMindSet(1);
+  };
+
+  const completeMindfulness = async () => {
+    setShowMindfulness(false);
+    alert('気分がスッキリしました！ペットのごきげんがアップしました。');
+    setMotivationPercent(100);
+    if (petId) {
+      addExperience(20);
+    }
+  };
 
   // --- ログインボーナス処理用関数 ---
   const grantLoginBonusItem = async (userId: string) => {
@@ -250,6 +321,9 @@ function HomeAR() {
       const { data: news } = await supabase.from('announcements').select('*').eq('is_active', true).order('published_at', { ascending: false });
       if (news) setNewsList(news);
 
+      const { data: notifications } = await supabase.from('user_notifications').select('*').eq('user_id', sessionUserId).order('created_at', { ascending: false }).limit(20);
+      if (notifications) setUserNotifications(notifications);
+
       setGameOverNotice(null);
       setGameOverHandled(false);
 
@@ -257,7 +331,7 @@ function HomeAR() {
         .from('pets')
         .select(`
           id, owner_id, affection_level, sleeping_until, last_fed_at, 
-          is_egg, walk_distance_m, level, exp, custom_name, birthday, condition_status,
+          is_egg, walk_distance_m, level, exp, custom_name, birthday, condition_status, generation, is_deceased,
           pet_masters(name, model_url, model_url_v2, model_url_v3, rarity, egg_type)
         `)
         .eq('owner_id', sessionUserId)
@@ -265,11 +339,12 @@ function HomeAR() {
         .limit(1)
         .maybeSingle();
 
-      if (pet) {
+      if (pet && !pet.is_deceased) {
         setPetId(pet.id); setOwnerId(pet.owner_id); setAffection(pet.affection_level || 0); 
         setSleepingUntil(pet.sleeping_until); setLastFedAt(pet.last_fed_at); 
         setIsEgg(pet.is_egg); setWalkDistance(pet.walk_distance_m || 0); setLevel(pet.level || 1);
         setExp(pet.exp || 0); setCustomName(pet.custom_name); setBirthday(pet.birthday);
+        setGeneration(pet.generation || 1);
         setIsEggUnregistered(false); 
         
         const currentCondition = pet.condition_status || 'healthy';
@@ -305,6 +380,14 @@ function HomeAR() {
         const { count: landmarkCount } = await supabase.from('landmark_visits').select('id', { count: 'exact', head: true }).eq('user_id', sessionUserId);
         if (landmarkCount !== null) setLandmarkVisitCount(landmarkCount);
 
+        // 寿命チェックロジック (生まれてから30日以上経過を寿命とするデモロジック)
+        if (!pet.is_egg && pet.birthday) {
+          const daysLived = (new Date().getTime() - new Date(pet.birthday).getTime()) / (1000 * 3600 * 24);
+          if (daysLived > 30) {
+            triggerRainbowBridge(pet.id, pet.generation || 1);
+          }
+        }
+
       } else {
         setIsEggUnregistered(true); 
         setIsEgg(true); 
@@ -313,6 +396,47 @@ function HomeAR() {
     };
     fetchGameData();
   }, [sessionUserId, supabase]);
+
+  // --- 寿命 (虹の橋) 処理 ---
+  const triggerRainbowBridge = async (targetPetId: string, currentGeneration: number) => {
+    setShowRainbowBridge(true);
+    setRainbowPhase(1);
+
+    try {
+      // 殿堂入りカウントアップ
+      const newHallOfFameCount = hallOfFameCount + 1;
+      await supabase.from('user_profiles').update({ hall_of_fame_count: newHallOfFameCount }).eq('id', sessionUserId);
+      setHallOfFameCount(newHallOfFameCount);
+
+      // ペットを卵に戻して引き継ぎボーナスを付与する (is_deceasedにせずループさせる仕様)
+      await supabase.from('pets').update({
+        is_egg: true,
+        walk_distance_m: 0,
+        level: 1,
+        exp: 300, // 300EXP引き継ぎ
+        affection_level: 50, // 愛情度引継ぎ
+        sleeping_until: null,
+        last_fed_at: null,
+        custom_name: null,
+        birthday: null,
+        condition_status: 'healthy',
+        generation: currentGeneration + 1
+      }).eq('id', targetPetId);
+
+      // 演出フェーズの切り替え
+      setTimeout(() => {
+        setRainbowPhase(2);
+      }, 4000);
+
+    } catch (error) {
+      console.error('虹の橋の処理に失敗しました', error);
+    }
+  };
+
+  const closeRainbowBridge = () => {
+    setShowRainbowBridge(false);
+    window.location.reload(); // リセットされた状態でリロード
+  };
 
   const getCurrentModelUrl = () => {
     if (isEgg || isEggUnregistered) return eggModelUrl;
@@ -561,6 +685,46 @@ function HomeAR() {
     }
   };
 
+  // --- すれ違い通信をトリガーする関数 ---
+  const triggerEncounter = async () => {
+    if (!sessionUserId) return;
+    const now = Date.now();
+    // 連続で発動しないようにする（例：5分=300000ms間隔）
+    if (now - lastEncounterTime.current < 300000) return;
+    lastEncounterTime.current = now;
+
+    try {
+      // ぺたるの香りを付与
+      let { data: item } = await supabase.from('item_masters').select('id').eq('name', 'ぺたるの香り').maybeSingle();
+      if (item) {
+        const { data: inventoryItem } = await supabase.from('user_inventory')
+          .select('id, quantity').eq('user_id', sessionUserId).eq('item_id', item.id).maybeSingle();
+
+        if (inventoryItem) {
+          await supabase.from('user_inventory').update({ quantity: inventoryItem.quantity + 1 }).eq('id', inventoryItem.id);
+        } else {
+          await supabase.from('user_inventory').insert({ user_id: sessionUserId, item_id: item.id, quantity: 1 });
+        }
+      }
+      
+      // DBに通知を作成
+      const newNotification = {
+        user_id: sessionUserId,
+        title: 'すれ違い通信',
+        content: 'ほかのユーザーとすれ違いました！「ぺたるの香り」を手に入れました。もちものから使用して経験値を獲得しましょう！'
+      };
+      await supabase.from('user_notifications').insert(newNotification);
+
+      // フロントエンドのState更新
+      setUserNotifications(prev => [newNotification, ...prev]);
+      alert('📡 すれ違い通信が発生しました！お知らせを確認してください。');
+      playSound('item');
+
+    } catch (err) {
+      console.error('すれ違い処理エラー', err);
+    }
+  };
+
   useEffect(() => {
     if (viewMode === 'gps' && navigator.geolocation) {
       const watchId = navigator.geolocation.watchPosition(
@@ -573,6 +737,11 @@ function HomeAR() {
               const newDistance = walkDistance + dist;
               setWalkDistance(newDistance);
               if (petId) await supabase.from('pets').update({ walk_distance_m: newDistance }).eq('id', petId);
+
+              // 移動中にランダム(10%の確率)ですれ違い通信を発生
+              if (Math.random() < 0.10) {
+                triggerEncounter();
+              }
             }
           }
           setPrevLocation(newLoc);
@@ -726,6 +895,9 @@ function HomeAR() {
       } else {
         alert('今は健康なので効果がなかったみたい。');
       }
+    } else if (item.item_type === 'exp') {
+      addExperience(item.effect_value || 100);
+      alert(`✨ ${item.name} の香りに包まれて、経験値を獲得しました！`);
     }
   };
 
@@ -949,6 +1121,43 @@ function HomeAR() {
         </div>
       )}
 
+      {/* --- 虹の橋（寿命）エフェクトオーバーレイ --- */}
+      {showRainbowBridge && (
+        <div className="fixed inset-0 z-[200] bg-black flex flex-col items-center justify-center p-6 text-center text-white transition-opacity duration-1000">
+          {rainbowPhase === 1 && (
+            <div className="animate-pulse space-y-6">
+              <h1 className="text-4xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-purple-400 via-pink-400 to-red-400">
+                🌈 虹の橋を渡りました...
+              </h1>
+              <p className="text-lg text-gray-300">
+                {displayName}は寿命を全うし、虹の橋の向こう側へ旅立ちました。<br/>
+                これまで大切に育ててくれてありがとう。
+              </p>
+            </div>
+          )}
+          {rainbowPhase === 2 && (
+            <div className="space-y-6 animate-fade-in-up">
+              <div className="text-6xl mb-4">🏆</div>
+              <h2 className="text-3xl font-bold text-yellow-300">殿堂入りしました！</h2>
+              <p className="text-md text-gray-200">
+                あなたのプロフィールに「殿堂入り: {hallOfFameCount + 1}」が記録されました。<br/>
+                そして、{displayName}の魂は次の世代へ引き継がれます...
+              </p>
+              <div className="bg-white/20 p-4 rounded-xl mt-4">
+                <ul className="text-sm text-left list-disc pl-5">
+                  <li>新しい卵にステータスの一部がボーナスとして付与されました</li>
+                  <li>経験値、愛情度などが少し高い状態からスタートします</li>
+                  <li>世代: 第{generation + 1}世代</li>
+                </ul>
+              </div>
+              <button onClick={closeRainbowBridge} className="mt-8 bg-gradient-to-r from-blue-500 to-purple-600 text-white font-bold py-4 px-8 rounded-full shadow-2xl hover:scale-105 transition-transform">
+                新しい命を迎える
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* --- 初回プロフィール設定モーダル --- */}
       {showProfileSetup && (
         <div className="absolute inset-0 z-[120] bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
@@ -994,6 +1203,51 @@ function HomeAR() {
               {isNamingSubmitting ? '保存中...' : '名前を決定する！'}
             </button>
           </form>
+        </div>
+      )}
+
+      {/* --- マインドフルネス機能 モーダル --- */}
+      {showMindfulness && (
+        <div className="absolute inset-0 z-[160] bg-black/90 backdrop-blur-xl flex flex-col items-center justify-center p-6 text-white text-center">
+          {mindPhase === 'intro' && (
+            <div className="space-y-6">
+              <div className="text-6xl animate-bounce">🧘</div>
+              <h2 className="text-2xl font-bold">マインドフルネスしましょう</h2>
+              <p className="text-gray-300">ぺたるからの提案です。<br/>少し立ち止まって、一緒に深呼吸をしませんか？</p>
+              <button onClick={startMindfulness} className="bg-teal-500 text-white font-bold py-3 px-8 rounded-full shadow-lg hover:bg-teal-600">
+                はじめる
+              </button>
+              <button onClick={() => setShowMindfulness(false)} className="block w-full text-sm text-gray-400 mt-4 underline">
+                今はやめておく
+              </button>
+            </div>
+          )}
+
+          {(mindPhase === 'inhale' || mindPhase === 'hold' || mindPhase === 'exhale') && (
+            <div className="space-y-8 flex flex-col items-center">
+              <h2 className="text-3xl font-bold">
+                {mindPhase === 'inhale' && '息を吸って...'}
+                {mindPhase === 'hold' && '止めて...'}
+                {mindPhase === 'exhale' && 'ゆっくり吐いて...'}
+              </h2>
+              <div className="relative flex items-center justify-center w-40 h-40">
+                <div className={`absolute w-full h-full border-4 border-teal-400 rounded-full transition-transform duration-1000 ease-in-out ${mindPhase === 'inhale' ? 'scale-150 opacity-50' : mindPhase === 'exhale' ? 'scale-75 opacity-100' : 'scale-150 opacity-100'}`}></div>
+                <span className="text-5xl font-black">{mindTime}</span>
+              </div>
+              <p className="text-gray-300 text-lg">セット {mindSet} / 3</p>
+            </div>
+          )}
+
+          {mindPhase === 'done' && (
+            <div className="space-y-6 animate-fade-in">
+              <div className="text-6xl">✨</div>
+              <h2 className="text-2xl font-bold">お疲れ様でした</h2>
+              <p className="text-gray-300">心が落ち着きましたね。<br/>ご褒美にペットのごきげんと経験値が少しアップしました。</p>
+              <button onClick={completeMindfulness} className="bg-teal-500 text-white font-bold py-3 px-8 rounded-full shadow-lg hover:bg-teal-600">
+                戻る
+              </button>
+            </div>
+          )}
         </div>
       )}
 
@@ -1105,20 +1359,43 @@ function HomeAR() {
       {isNewsOpen && (
         <div className="absolute top-20 left-4 right-4 bg-white/95 p-5 rounded-3xl shadow-2xl backdrop-blur-md z-50 border border-gray-200">
           <div className="flex justify-between items-center mb-4 border-b pb-3">
-            <h3 className="font-bold text-xl text-gray-800">📢 運営からのお知らせ</h3>
+            <h3 className="font-bold text-xl text-gray-800">📢 お知らせ</h3>
             <button onClick={() => setIsNewsOpen(false)} className="text-gray-500 font-bold px-4 py-2 bg-gray-100 rounded-full hover:bg-gray-200">閉じる</button>
           </div>
-          {newsList.length === 0 ? ( <p className="text-gray-500 text-center py-8">現在お知らせはありません</p> ) : (
-            <div className="space-y-3 max-h-[60vh] overflow-y-auto pr-1">
-              {newsList.map((news) => (
-                <div key={news.id} className="bg-blue-50 border border-blue-100 rounded-2xl p-4">
-                  <h4 className="font-bold text-blue-900 mb-2">{news.title}</h4>
-                  <p className="text-sm text-gray-700 whitespace-pre-wrap">{news.content}</p>
-                  <div className="text-[10px] text-gray-500 mt-2 text-right">{new Date(news.published_at).toLocaleDateString()}</div>
+          
+          <div className="space-y-4 max-h-[60vh] overflow-y-auto pr-1">
+            {/* 個別お知らせ (すれ違い通信など) */}
+            {userNotifications.length > 0 && (
+              <div className="mb-4">
+                <h4 className="font-bold text-sm text-gray-500 mb-2 border-l-4 border-pink-500 pl-2">あなたへのお知らせ</h4>
+                <div className="space-y-2">
+                  {userNotifications.map(n => (
+                    <div key={n.id} className="bg-pink-50 border border-pink-100 rounded-xl p-3">
+                      <h4 className="font-bold text-pink-900 text-sm mb-1">{n.title}</h4>
+                      <p className="text-xs text-gray-700 whitespace-pre-wrap">{n.content}</p>
+                      <div className="text-[10px] text-gray-500 mt-2 text-right">{new Date(n.created_at).toLocaleString()}</div>
+                    </div>
+                  ))}
                 </div>
-              ))}
+              </div>
+            )}
+
+            {/* 運営からのお知らせ */}
+            <div>
+              <h4 className="font-bold text-sm text-gray-500 mb-2 border-l-4 border-blue-500 pl-2">運営からのお知らせ</h4>
+              {newsList.length === 0 ? ( <p className="text-gray-500 text-center py-4 text-sm">現在お知らせはありません</p> ) : (
+                <div className="space-y-3">
+                  {newsList.map((news) => (
+                    <div key={news.id} className="bg-blue-50 border border-blue-100 rounded-xl p-3">
+                      <h4 className="font-bold text-blue-900 text-sm mb-1">{news.title}</h4>
+                      <p className="text-xs text-gray-700 whitespace-pre-wrap">{news.content}</p>
+                      <div className="text-[10px] text-gray-500 mt-2 text-right">{new Date(news.published_at).toLocaleDateString()}</div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
-          )}
+          </div>
         </div>
       )}
 
@@ -1146,14 +1423,14 @@ function HomeAR() {
       {sessionUserId && (
         <div className="absolute top-4 left-4 right-4 z-20 flex flex-col gap-3 pointer-events-none">
           <div className="flex justify-between items-end">
-            <span className="text-white font-bold text-2xl drop-shadow-lg">{isEggUnregistered ? '謎のNFCタグ' : displayName}</span>
+            <span className="text-white font-bold text-2xl drop-shadow-lg">{isEggUnregistered ? '謎のNFCタグ' : displayName} <span className="text-xs ml-1 text-gray-300">(殿堂: {hallOfFameCount})</span></span>
             <span className={`${currentMood.color} text-white px-3 py-1.5 rounded-lg font-bold shadow-md text-sm transition-colors duration-300`}>{currentMood.text}</span>
           </div>
 
           {(isEgg && !isEggUnregistered) && (
             <div className="bg-black/80 p-4 rounded-xl backdrop-blur-sm shadow-lg pointer-events-auto border border-yellow-500 space-y-3">
               <div className="flex justify-between text-xs font-bold text-yellow-400">
-                <span>🥚 孵化条件</span>
+                <span>🥚 孵化条件 <span className="ml-2 text-gray-300">第{generation}世代</span></span>
                 <span>{isHatchReady ? '準備完了！' : 'あと少し...'}</span>
               </div>
               <div className="space-y-2 text-xs text-white">
@@ -1183,7 +1460,7 @@ function HomeAR() {
                 <div className="w-full h-2.5 bg-gray-800 rounded-full overflow-hidden shadow-inner"><div className="h-full bg-gradient-to-r from-pink-400 to-pink-600 transition-all duration-1000" style={{ width: `${motivationPercent}%` }}></div></div>
               </div>
               <div className="bg-black/60 p-2.5 rounded-xl backdrop-blur-sm shadow-lg pointer-events-auto border border-blue-500">
-                <div className="flex justify-between text-xs font-bold text-blue-200 mb-1.5"><span>🌟 Lv.{level}</span><span>EXP: {exp} / {expNeededForNextLevel}</span></div>
+                <div className="flex justify-between text-xs font-bold text-blue-200 mb-1.5"><span>🌟 Lv.{level} <span className="text-[10px] text-gray-400 ml-1">第{generation}世代</span></span><span>EXP: {exp} / {expNeededForNextLevel}</span></div>
                 <div className="w-full h-2 bg-gray-800 rounded-full overflow-hidden shadow-inner"><div className="h-full bg-blue-500 transition-all duration-500" style={{ width: `${(exp / expNeededForNextLevel) * 100}%` }}></div></div>
               </div>
               <div className="bg-black/70 p-3 rounded-xl shadow-lg pointer-events-auto border border-indigo-500 space-y-3 text-xs text-white">
@@ -1205,9 +1482,9 @@ function HomeAR() {
       )}
 
       {/* --- 右上ボタン群 --- */}
-      <div className="absolute top-48 right-4 z-40 flex flex-col gap-4 pointer-events-auto">
+      <div className="absolute top-48 right-4 z-40 flex flex-col gap-4 pointer-events-auto mt-4">
         <button onClick={() => { setIsNewsOpen(true); playSound('tap'); }} className="bg-white/90 p-3 rounded-full shadow-2xl border border-gray-200 active:scale-90 flex items-center justify-center w-14 h-14 relative" aria-label="お知らせ">
-          <span className="text-2xl">📢</span>{newsList.length > 0 && <span className="absolute top-0 right-0 w-4 h-4 bg-red-500 rounded-full border-2 border-white"></span>}
+          <span className="text-2xl">📢</span>{(newsList.length > 0 || userNotifications.length > 0) && <span className="absolute top-0 right-0 w-4 h-4 bg-red-500 rounded-full border-2 border-white"></span>}
         </button>
 
         {viewMode === 'gps' && activeLandmark ? (
