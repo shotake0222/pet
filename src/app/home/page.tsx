@@ -27,10 +27,9 @@ function HomeAR() {
   const supabase = useMemo(() => createClient(), []);
   const searchParams = useSearchParams();
   
-  const [viewMode, setViewMode] = useState<'mindar' | 'gps' | 'report'>('mindar');
   const [isClient, setIsClient] = useState(false);
   const [isAuthChecking, setIsAuthChecking] = useState(true);
-  const [isDataLoaded, setIsDataLoaded] = useState(false); // 🌟 データロード完了フラグ
+  const [isDataLoaded, setIsDataLoaded] = useState(false); 
   
   // --- セッション・ユーザー情報 ---
   const [sessionUserId, setSessionUserId] = useState<string | null>(null);
@@ -62,7 +61,7 @@ function HomeAR() {
   const [petCondition, setPetCondition] = useState<'healthy' | 'sick' | 'starving'>('healthy');
   const [showConditionSOS, setShowConditionSOS] = useState(false);
   
-  // NFCのシークエンスID（tag_id）の読み込みとトラッキング情報の設定
+  // NFCのシークエンスID（tag_id）の読み込み
   const tagIdParam = searchParams.get('tag_id');
   const tagId = tagIdParam ? parseInt(tagIdParam, 10) : null;
 
@@ -105,11 +104,7 @@ function HomeAR() {
   const [namingInput, setNamingInput] = useState('');
   const [isNamingSubmitting, setIsNamingSubmitting] = useState(false);
 
-  const [loginBonusState, setLoginBonusState] = useState({
-    days: 0,
-    gotBonus: false,
-    showModal: false,
-  });
+  const [loginBonusState, setLoginBonusState] = useState({ days: 0, gotBonus: false, showModal: false });
 
   const [hungerPercent, setHungerPercent] = useState(100);
   const [motivationPercent, setMotivationPercent] = useState(100);
@@ -126,50 +121,23 @@ function HomeAR() {
   const [showRainbowBridge, setShowRainbowBridge] = useState(false);
   const [rainbowPhase, setRainbowPhase] = useState(0);
 
+  // マップ確認用（カメラは使わずGPS座標のみ利用）
   const [location, setLocation] = useState<{ lat: number; lng: number } | null>(null);
-  const [prevLocation, setPrevLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [landmarks, setLandmarks] = useState<any[]>([]);
-  const [activeLandmark, setActiveLandmark] = useState<any | null>(null);
   const [isSpotMapOpen, setIsSpotMapOpen] = useState(false);
-  const [cameraFacing, setCameraFacing] = useState<'environment' | 'user'>('environment');
-  const [sceneKey, setSceneKey] = useState(0);
   
-  // 🌟 追加したモーダル用State
   const [isStatusModalOpen, setIsStatusModalOpen] = useState(false);
   const [isDebugModalOpen, setIsDebugModalOpen] = useState(false);
-
-  const lastEncounterTime = useRef(0);
+  const [sceneKey, setSceneKey] = useState(0);
 
   const targetDistanceToHatch = 1200;
   const targetFeedCount = 3;
   const targetLandmarkVisits = 2;
   const targetEventCount = 1;
 
-  const stepCount = Math.floor(walkDistance / 0.75);
-
   useEffect(() => { setIsClient(true); }, []);
 
-  // 🌟 画面真っ暗問題を解決するためのカメラ解放クリーンアップ処理
-  useEffect(() => {
-    if (!isClient) return;
-    const videos = document.querySelectorAll('video');
-    videos.forEach(v => {
-      if (v.srcObject) {
-        const tracks = (v.srcObject as MediaStream).getTracks();
-        tracks.forEach(track => track.stop());
-      }
-    });
-  }, [viewMode, sceneKey, isClient]);
-
-  useEffect(() => {
-    // データロードが終わるまではカメラ再生成などをブロック
-    if (isAuthChecking || !isDataLoaded) return;
-    setSceneKey(prev => prev + 1);
-  }, [viewMode, isAuthChecking, isDataLoaded]);
-
-  // ==========================================
-  //  Auth & Profile チェック
-  // ==========================================
+  // Auth & Profile チェック
   useEffect(() => {
     const initAuthAndProfile = async () => {
       const { data: { session } } = await supabase.auth.getSession();
@@ -196,6 +164,7 @@ function HomeAR() {
     initAuthAndProfile();
   }, [supabase, router, tagIdParam]); 
 
+  // マインドフルネスのランダムトリガー
   useEffect(() => {
     if (sessionUserId && petId && !isEgg && !hasTriggeredMindfulness.current) {
       hasTriggeredMindfulness.current = true;
@@ -206,6 +175,7 @@ function HomeAR() {
     }
   }, [sessionUserId, petId, isEgg]);
 
+  // マインドフルネスタイマー
   useEffect(() => {
     if (!showMindfulness || mindPhase === 'intro' || mindPhase === 'done') return;
     const timer = setInterval(() => {
@@ -214,14 +184,8 @@ function HomeAR() {
         if (mindPhase === 'inhale') { setMindPhase('hold'); return 2; }
         if (mindPhase === 'hold') { setMindPhase('exhale'); return 5; }
         if (mindPhase === 'exhale') {
-          if (mindSet < 3) { 
-            setMindSet(s => s + 1); 
-            setMindPhase('inhale'); 
-            return 5; 
-          } else { 
-            setMindPhase('done'); 
-            return 0; 
-          }
+          if (mindSet < 3) { setMindSet(s => s + 1); setMindPhase('inhale'); return 5; }
+          else { setMindPhase('done'); return 0; }
         }
         return 0;
       });
@@ -229,12 +193,7 @@ function HomeAR() {
     return () => clearInterval(timer);
   }, [showMindfulness, mindPhase, mindSet]);
 
-  const startMindfulness = () => {
-    setMindPhase('inhale');
-    setMindTime(5);
-    setMindSet(1);
-  };
-
+  const startMindfulness = () => { setMindPhase('inhale'); setMindTime(5); setMindSet(1); };
   const completeMindfulness = async () => {
     setShowMindfulness(false);
     alert('気分がスッキリしました！ペットのごきげんがアップしました。');
@@ -248,32 +207,14 @@ function HomeAR() {
 
   const grantLoginBonusItem = async (userId: string) => {
     let { data: item } = await supabase.from('item_masters').select('id').eq('name', 'ログボご飯').maybeSingle();
-    
     if (!item) {
-      const { data: newItem, error } = await supabase.from('item_masters')
-        .insert({
-          name: 'ログボご飯',
-          description: '7日間ログインしたご褒美！普通のご飯より少し多くやる気が回復する特別なおご飯。',
-          item_type: 'food',
-          price_jpy: 0,
-          effect_value: 15, 
-          image_url: null 
-        })
-        .select('id').single();
-      
+      const { data: newItem, error } = await supabase.from('item_masters').insert({ name: 'ログボご飯', description: '7日間ログインしたご褒美！', item_type: 'food', price_jpy: 0, effect_value: 15, image_url: null }).select('id').single();
       if (error) return;
       item = newItem;
     }
-
-    const { data: inventoryItem } = await supabase.from('user_inventory')
-      .select('id, quantity').eq('user_id', userId).eq('item_id', item.id).maybeSingle();
-
-    if (inventoryItem) {
-      await supabase.from('user_inventory').update({ quantity: inventoryItem.quantity + 1 }).eq('id', inventoryItem.id);
-    } else {
-      await supabase.from('user_inventory').insert({ user_id: userId, item_id: item.id, quantity: 1 });
-    }
-    
+    const { data: inventoryItem } = await supabase.from('user_inventory').select('id, quantity').eq('user_id', userId).eq('item_id', item.id).maybeSingle();
+    if (inventoryItem) await supabase.from('user_inventory').update({ quantity: inventoryItem.quantity + 1 }).eq('id', inventoryItem.id);
+    else await supabase.from('user_inventory').insert({ user_id: userId, item_id: item.id, quantity: 1 });
     const { data: inv } = await supabase.from('user_inventory').select('id, quantity, item_masters(*)').eq('user_id', userId).gt('quantity', 0);
     if (inv) setInventory(inv);
   };
@@ -282,26 +223,12 @@ function HomeAR() {
     const today = new Date().toLocaleDateString('sv-SE'); 
     const lastLoginDate = profile.last_login_date;
     let currentLoginDays = profile.login_days || 0;
-
     if (lastLoginDate !== today) {
       currentLoginDays = (currentLoginDays >= 7) ? 1 : currentLoginDays + 1;
-      
       let gotBonus = false;
-      if (currentLoginDays === 7) {
-        await grantLoginBonusItem(userId);
-        gotBonus = true;
-      }
-
-      await supabase.from('user_profiles').update({
-        last_login_date: today,
-        login_days: currentLoginDays
-      }).eq('id', userId);
-
-      setLoginBonusState({
-        days: currentLoginDays,
-        gotBonus: gotBonus,
-        showModal: true
-      });
+      if (currentLoginDays === 7) { await grantLoginBonusItem(userId); gotBonus = true; }
+      await supabase.from('user_profiles').update({ last_login_date: today, login_days: currentLoginDays }).eq('id', userId);
+      setLoginBonusState({ days: currentLoginDays, gotBonus: gotBonus, showModal: true });
       playSound('levelup'); 
     }
   };
@@ -325,17 +252,7 @@ function HomeAR() {
       setGameOverNotice(null);
       setGameOverHandled(false);
 
-      const { data: pet } = await supabase
-        .from('pets')
-        .select(`
-          id, owner_id, affection_level, sleeping_until, last_fed_at, 
-          is_egg, walk_distance_m, level, exp, custom_name, birthday, condition_status, generation, is_deceased, egg_master_id, pet_master_id,
-          pet_masters(name, model_url, model_url_v2, model_url_v3, rarity, egg_type)
-        `)
-        .eq('owner_id', sessionUserId)
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .maybeSingle();
+      const { data: pet } = await supabase.from('pets').select(`id, owner_id, affection_level, sleeping_until, last_fed_at, is_egg, walk_distance_m, level, exp, custom_name, birthday, condition_status, generation, is_deceased, egg_master_id, pet_master_id, pet_masters(name, model_url, model_url_v2, model_url_v3, rarity, egg_type)`).eq('owner_id', sessionUserId).order('created_at', { ascending: false }).limit(1).maybeSingle();
 
       if (pet && !pet.is_deceased) {
         setPetId(pet.id); setOwnerId(pet.owner_id); setAffection(pet.affection_level || 0); 
@@ -347,30 +264,21 @@ function HomeAR() {
         
         const currentCondition = pet.condition_status || 'healthy';
         setPetCondition(currentCondition as any);
-        if (currentCondition !== 'healthy') {
-          setShowConditionSOS(true);
-        } else {
-          setShowConditionSOS(false);
-        }
+        if (currentCondition !== 'healthy') setShowConditionSOS(true);
+        else setShowConditionSOS(false);
 
-        // 🌟 卵のモデルURL取得 (egg_mastersを参照する処理)
         if (pet.egg_master_id) {
           const { data: eggData } = await supabase.from('egg_masters').select('*').eq('id', pet.egg_master_id).maybeSingle();
-          if (eggData && eggData.model_url) {
-            setEggModelUrl(eggData.model_url);
-          } else {
-            setEggModelUrl('/models/eggs/egg_A.glb'); // フォールバック
-          }
+          if (eggData && eggData.model_url) setEggModelUrl(eggData.model_url);
+          else setEggModelUrl('/models/eggs/egg_A.glb'); 
         } else {
-          setEggModelUrl('/models/eggs/egg_A.glb'); // フォールバック
+          setEggModelUrl('/models/eggs/egg_A.glb'); 
         }
 
-        // 🌟 ペットマスターのURL取得 (既に孵化済みなら設定されているはず)
         if (pet.pet_masters) { 
           const pm = (pet.pet_masters && pet.pet_masters[0] ? pet.pet_masters[0] : pet.pet_masters) || {};
           const rarityPm = (pm as any).rarity || '?';
           const fallbackBase = `/models/pet/${rarityPm}`;
-          
           setPetModelUrlV1((pm as any).model_url || `${fallbackBase}/v1.glb`);
           setPetModelUrlV2((pm as any).model_url_v2 || `${fallbackBase}/v2.glb`);
           setPetModelUrlV3((pm as any).model_url_v3 || `${fallbackBase}/v3.glb`);
@@ -395,58 +303,50 @@ function HomeAR() {
 
         if (!pet.is_egg && pet.birthday) {
           const daysLived = (new Date().getTime() - new Date(pet.birthday).getTime()) / (1000 * 3600 * 24);
-          if (daysLived > 30) {
-            triggerRainbowBridge(pet.id, pet.generation || 1);
-          }
+          if (daysLived > 30) triggerRainbowBridge(pet.id, pet.generation || 1);
         }
-
       } else {
         setIsEggUnregistered(true); 
         setIsEgg(true); 
         setEggModelUrl('/models/eggs/egg_A.glb');
       }
       
-      setIsDataLoaded(true); // データロード完了
+      setIsDataLoaded(true); 
     };
     fetchGameData();
   }, [sessionUserId, supabase]);
 
+  // GPSロケーションの取得（マップ表示用のみ。カメラ起動はしない）
+  useEffect(() => {
+    if (navigator.geolocation) {
+      const watchId = navigator.geolocation.watchPosition(
+        (position) => { setLocation({ lat: position.coords.latitude, lng: position.coords.longitude }); },
+        (error) => console.error("GPSエラー", error), 
+        { enableHighAccuracy: true, maximumAge: 0 }
+      );
+      return () => navigator.geolocation.clearWatch(watchId);
+    }
+  }, []);
+
   const triggerRainbowBridge = async (targetPetId: string, currentGeneration: number) => {
     setShowRainbowBridge(true);
     setRainbowPhase(1);
-
     try {
       const newHallOfFameCount = hallOfFameCount + 1;
       await supabase.from('user_profiles').update({ hall_of_fame_count: newHallOfFameCount }).eq('id', sessionUserId);
       setHallOfFameCount(newHallOfFameCount);
 
       await supabase.from('pets').update({
-        is_egg: true,
-        walk_distance_m: 0,
-        level: 1,
-        exp: 300, 
-        affection_level: 50, 
-        sleeping_until: null,
-        last_fed_at: null,
-        custom_name: null,
-        birthday: null,
-        condition_status: 'healthy',
-        generation: currentGeneration + 1
+        is_egg: true, walk_distance_m: 0, level: 1, exp: 300, affection_level: 50, 
+        sleeping_until: null, last_fed_at: null, custom_name: null, birthday: null,
+        condition_status: 'healthy', generation: currentGeneration + 1
       }).eq('id', targetPetId);
 
-      setTimeout(() => {
-        setRainbowPhase(2);
-      }, 4000);
-
-    } catch (error) {
-      console.error('虹の橋の処理に失敗しました', error);
-    }
+      setTimeout(() => { setRainbowPhase(2); }, 4000);
+    } catch (error) { console.error('虹の橋処理エラー', error); }
   };
 
-  const closeRainbowBridge = () => {
-    setShowRainbowBridge(false);
-    window.location.reload(); 
-  };
+  const closeRainbowBridge = () => { setShowRainbowBridge(false); window.location.reload(); };
 
   const getCurrentModelUrl = () => {
     if (isEgg || isEggUnregistered) return eggModelUrl;
@@ -459,10 +359,8 @@ function HomeAR() {
   const displayName = customName || petMasterName || '名無し';
 
   const getLevelRequirement = (levelNumber: number) => ({
-    distance: targetDistanceToHatch * levelNumber,
-    feed: targetFeedCount * levelNumber,
-    landmark: targetLandmarkVisits * levelNumber,
-    event: targetEventCount * levelNumber,
+    distance: targetDistanceToHatch * levelNumber, feed: targetFeedCount * levelNumber,
+    landmark: targetLandmarkVisits * levelNumber, event: targetEventCount * levelNumber,
   });
 
   const hatchProgress = {
@@ -473,56 +371,21 @@ function HomeAR() {
   };
   const isHatchReady = !isEggUnregistered && isEgg && petId && hatchProgress.distance >= 1 && hatchProgress.feed >= 1 && hatchProgress.landmark >= 1 && hatchProgress.event >= 1;
   const nextLevelRequirements = getLevelRequirement(level);
-  const isNextLevelReady = !isEgg && petId && walkDistance >= nextLevelRequirements.distance && feedCount >= nextLevelRequirements.feed && landmarkVisitCount >= nextLevelRequirements.landmark && eventCount >= nextLevelRequirements.event;
   const expNeededForNextLevel = level * 150;
 
   const resetPetToEgg = async (reason: string) => {
     if (!petId || isEgg || gameOverHandled) return;
-
     try {
       await supabase.from('pets').update({
-        is_egg: true,
-        walk_distance_m: 0,
-        level: 1,
-        exp: 0,
-        affection_level: 0,
-        sleeping_until: null,
-        last_fed_at: null,
-        custom_name: null,
-        birthday: null,
-        condition_status: 'healthy' 
+        is_egg: true, walk_distance_m: 0, level: 1, exp: 0, affection_level: 0,
+        sleeping_until: null, last_fed_at: null, custom_name: null, birthday: null, condition_status: 'healthy' 
       }).eq('id', petId);
+      await supabase.from('activity_logs').insert({ pet_id: petId, action_type: 'game_over', points_earned: 0 });
 
-      await supabase.from('activity_logs').insert({
-        pet_id: petId,
-        action_type: 'game_over',
-        points_earned: 0,
-      });
-
-      setIsEgg(true);
-      setWalkDistance(0);
-      setFeedCount(0);
-      setLandmarkVisitCount(0);
-      setEventCount(0);
-      setLevel(1);
-      setExp(0);
-      setAffection(0);
-      setSleepingUntil(null);
-      setLastFedAt(null);
-      setHungerPercent(100);
-      setMotivationPercent(100);
-      setCustomName(null);
-      setBirthday(null);
-      setPetModelUrlV2(null);
-      setPetModelUrlV3(null);
-      setGameOverHandled(true);
-      setPetCondition('healthy');
-      setShowConditionSOS(false);
+      setIsEgg(true); setWalkDistance(0); setFeedCount(0); setLandmarkVisitCount(0); setEventCount(0); setLevel(1); setExp(0); setAffection(0); setSleepingUntil(null); setLastFedAt(null); setHungerPercent(100); setMotivationPercent(100); setCustomName(null); setBirthday(null); setPetModelUrlV2(null); setPetModelUrlV3(null); setGameOverHandled(true); setPetCondition('healthy'); setShowConditionSOS(false);
       setGameOverNotice(`💀 ${reason}\n卵に戻ってしまった…もう一度育て直そう！`);
       playSound('error');
-    } catch (error) {
-      console.error('ゲームオーバー処理に失敗しました', error);
-    }
+    } catch (error) { console.error('ゲームオーバーエラー', error); }
   };
 
   useEffect(() => {
@@ -541,13 +404,10 @@ function HomeAR() {
       setMotivationPercent(Math.max(0, Math.min(100, Math.floor(baseMotivation))));
 
       if (finalHunger <= 20 && petCondition !== 'starving') {
-        setPetCondition('starving');
-        setShowConditionSOS(true);
-        playSound('error');
+        setPetCondition('starving'); setShowConditionSOS(true); playSound('error');
         if (petId) await supabase.from('pets').update({ condition_status: 'starving' }).eq('id', petId);
       } else if (finalHunger > 20 && petCondition === 'starving') {
-        setPetCondition('healthy');
-        setShowConditionSOS(false);
+        setPetCondition('healthy'); setShowConditionSOS(false);
         if (petId) await supabase.from('pets').update({ condition_status: 'healthy' }).eq('id', petId);
       }
     };
@@ -558,14 +418,9 @@ function HomeAR() {
 
   useEffect(() => {
     if (!petId || isEgg || !lastFedAt || gameOverHandled) return;
-
-    const now = Date.now();
-    const lastFedTime = new Date(lastFedAt).getTime();
+    const now = Date.now(); const lastFedTime = new Date(lastFedAt).getTime();
     const hoursPassed = (now - lastFedTime) / (1000 * 60 * 60);
-
-    if (hoursPassed >= 24) {
-      void resetPetToEgg('体力が尽きて24時間が経過したため');
-    }
+    if (hoursPassed >= 24) void resetPetToEgg('体力が尽きて24時間が経過したため');
   }, [petId, lastFedAt, isEgg, gameOverHandled]);
 
   const getCurrentMood = () => {
@@ -585,36 +440,21 @@ function HomeAR() {
       const multiplier = rarity === 'UR' ? 3 : rarity === 'SR' ? 2 : rarity === 'R' ? 1.5 : 1;
       const base = 12;
       const count = Math.min(120, Math.floor(base * multiplier * (rarity === 'UR' ? 2.5 : 1)));
-      const colors = {
-        N: ['#E5E7EB', '#F9FAFB'],
-        R: ['#FDE68A', '#FCA5A5', '#FBCFE8'],
-        SR: ['#C7A3FF', '#FDE68A', '#FECACA', '#A7F3D0'],
-        UR: ['#FFD700', '#FF73FA', '#7CF0FF', '#FF9F1C']
-      } as Record<string, string[]>;
-
+      const colors = { N: ['#E5E7EB', '#F9FAFB'], R: ['#FDE68A', '#FCA5A5', '#FBCFE8'], SR: ['#C7A3FF', '#FDE68A', '#FECACA', '#A7F3D0'], UR: ['#FFD700', '#FF73FA', '#7CF0FF', '#FF9F1C'] } as Record<string, string[]>;
       const particles = Array.from({ length: count }).map((_, i) => {
         const angle = (Math.random() - 0.5) * Math.PI * 2;
         const distance = 80 + Math.random() * (rarity === 'UR' ? 360 : rarity === 'SR' ? 260 : rarity === 'R' ? 180 : 120);
         return {
-          id: `${Date.now()}_${i}`,
-          dx: Math.cos(angle) * distance,
-          dy: Math.sin(angle) * distance - (Math.random() * 80),
+          id: `${Date.now()}_${i}`, dx: Math.cos(angle) * distance, dy: Math.sin(angle) * distance - (Math.random() * 80),
           color: (colors[rarity as keyof typeof colors] || colors.N)[Math.floor(Math.random() * ((colors[rarity as keyof typeof colors] || colors.N).length))],
           size: 6 + Math.random() * (rarity === 'UR' ? 12 : rarity === 'SR' ? 10 : 6),
           duration: 700 + Math.random() * (rarity === 'UR' ? 1200 : 800)
         };
       });
-
       setHatchOverlay({ active: true, particles, rarity });
-      setTimeout(() => {
-        setHatchOverlay(prev => prev ? { ...prev, particles: prev.particles.map(p => ({ ...p, launched: true })) } : prev);
-      }, 40);
-
+      setTimeout(() => { setHatchOverlay(prev => prev ? { ...prev, particles: prev.particles.map(p => ({ ...p, launched: true })) } : prev); }, 40);
       const maxDuration = Math.max(...particles.map(p => p.duration)) + 300;
-      setTimeout(() => {
-        setHatchOverlay(null);
-        resolve();
-      }, maxDuration);
+      setTimeout(() => { setHatchOverlay(null); resolve(); }, maxDuration);
     });
   };
 
@@ -622,46 +462,27 @@ function HomeAR() {
     return new Promise<void>((resolve) => {
       const isMilestone = newLevel % 5 === 0;
       const count = isMilestone ? 150 : 50;
-      
-      const colors = isMilestone
-        ? ['#FFD700', '#FF73FA', '#7CF0FF', '#FF9F1C', '#FFFFFF'] 
-        : ['#60A5FA', '#34D399', '#FBBF24']; 
-
+      const colors = isMilestone ? ['#FFD700', '#FF73FA', '#7CF0FF', '#FF9F1C', '#FFFFFF'] : ['#60A5FA', '#34D399', '#FBBF24']; 
       const particles = Array.from({ length: count }).map((_, i) => {
         const angle = (Math.random() - 0.5) * Math.PI * 2;
         const distance = isMilestone ? 150 + Math.random() * 250 : 80 + Math.random() * 150;
         return {
-          id: `lvl_${Date.now()}_${i}`,
-          dx: Math.cos(angle) * distance,
-          dy: Math.sin(angle) * distance - (Math.random() * 100),
-          color: colors[Math.floor(Math.random() * colors.length)],
-          size: isMilestone ? 8 + Math.random() * 12 : 6 + Math.random() * 8,
+          id: `lvl_${Date.now()}_${i}`, dx: Math.cos(angle) * distance, dy: Math.sin(angle) * distance - (Math.random() * 100),
+          color: colors[Math.floor(Math.random() * colors.length)], size: isMilestone ? 8 + Math.random() * 12 : 6 + Math.random() * 8,
           duration: isMilestone ? 1000 + Math.random() * 1500 : 700 + Math.random() * 800
         };
       });
-
       setLevelUpOverlay({ active: true, particles, level: newLevel, isMilestone });
-      
-      setTimeout(() => {
-        setLevelUpOverlay(prev => prev ? { ...prev, particles: prev.particles.map(p => ({ ...p, launched: true })) } : prev);
-      }, 40);
-
+      setTimeout(() => { setLevelUpOverlay(prev => prev ? { ...prev, particles: prev.particles.map(p => ({ ...p, launched: true })) } : prev); }, 40);
       const maxDuration = Math.max(...particles.map(p => p.duration)) + 300;
-      setTimeout(() => {
-        setLevelUpOverlay(null);
-        resolve();
-      }, maxDuration);
+      setTimeout(() => { setLevelUpOverlay(null); resolve(); }, maxDuration);
     });
   };
 
   const triggerRandomSickness = async () => {
     if (level > 2 && Math.random() < 0.15 && petCondition === 'healthy') {
-      setPetCondition('sick');
-      setShowConditionSOS(true);
-      playSound('error');
-      if (petId) {
-        await supabase.from('pets').update({ condition_status: 'sick' }).eq('id', petId);
-      }
+      setPetCondition('sick'); setShowConditionSOS(true); playSound('error');
+      if (petId) await supabase.from('pets').update({ condition_status: 'sick' }).eq('id', petId);
     }
   };
 
@@ -674,234 +495,99 @@ function HomeAR() {
       if (walkDistance >= nextRequirements.distance && feedCount >= nextRequirements.feed && landmarkVisitCount >= nextRequirements.landmark && eventCount >= nextRequirements.event) {
         newExp -= expNeeded; newLevel += 1; leveledUp = true;
       } else {
-        setExp(newExp);
-        await supabase.from('pets').update({ exp: newExp }).eq('id', petId);
-        return alert(`🌱 もうすぐレベルアップ！ でもまだ条件が揃っていません。
-必要: 歩行 ${nextRequirements.distance}m / 給餌 ${nextRequirements.feed}回 / ランドマーク ${nextRequirements.landmark}回 / イベント ${nextRequirements.event}回`);
+        setExp(newExp); await supabase.from('pets').update({ exp: newExp }).eq('id', petId);
+        return alert(`🌱 もうすぐレベルアップ！ でもまだ条件が揃っていません。\n必要: 歩行 ${nextRequirements.distance}m / 給餌 ${nextRequirements.feed}回 / ランドマーク ${nextRequirements.landmark}回 / イベント ${nextRequirements.event}回`);
       }
     }
     setExp(newExp); setLevel(newLevel);
     await supabase.from('pets').update({ exp: newExp, level: newLevel }).eq('id', petId);
     
     if (leveledUp) {
-      playSound('levelup'); 
-      await showLevelUpEffect(newLevel); 
-      
+      playSound('levelup'); await showLevelUpEffect(newLevel); 
       alert(`🌟 レベルアップ！ Lv.${newLevel} になりました！`);
       if (newLevel === 5 && petModelUrlV2) alert('体が大きくなったみたい…！');
       if (newLevel === 10 && petModelUrlV3) alert('姿が大きく変わった…！');
-
       await triggerRandomSickness(); 
     }
   };
 
-  const triggerEncounter = async () => {
-    if (!sessionUserId) return;
-    const now = Date.now();
-    if (now - lastEncounterTime.current < 300000) return;
-    lastEncounterTime.current = now;
-
-    try {
-      let { data: item } = await supabase.from('item_masters').select('id').eq('name', 'ぺたるの香り').maybeSingle();
-      if (item) {
-        const { data: inventoryItem } = await supabase.from('user_inventory')
-          .select('id, quantity').eq('user_id', sessionUserId).eq('item_id', item.id).maybeSingle();
-
-        if (inventoryItem) {
-          await supabase.from('user_inventory').update({ quantity: inventoryItem.quantity + 1 }).eq('id', inventoryItem.id);
-        } else {
-          await supabase.from('user_inventory').insert({ user_id: sessionUserId, item_id: item.id, quantity: 1 });
-        }
-      }
-      
-      const newNotification = {
-        user_id: sessionUserId,
-        title: 'すれ違い通信',
-        content: 'ほかのユーザーとすれ違いました！「ぺたるの香り」を手に入れました。もちものから使用して経験値を獲得しましょう！'
-      };
-      await supabase.from('user_notifications').insert(newNotification);
-
-      setUserNotifications(prev => [newNotification, ...prev]);
-      alert('📡 すれ違い通信が発生しました！お知らせを確認してください。');
-      playSound('item');
-
-    } catch (err) {
-      console.error('すれ違い処理エラー', err);
-    }
-  };
-
   useEffect(() => {
-    if (viewMode === 'gps' && navigator.geolocation) {
-      const watchId = navigator.geolocation.watchPosition(
-        async (position) => {
-          const newLoc = { lat: position.coords.latitude, lng: position.coords.longitude };
-          setLocation(newLoc);
-          if (prevLocation) {
-            const dist = getDistance(prevLocation.lat, prevLocation.lng, newLoc.lat, newLoc.lng);
-            if (dist > 2 && dist < 50) {
-              const newDistance = walkDistance + dist;
-              setWalkDistance(newDistance);
-              if (petId) await supabase.from('pets').update({ walk_distance_m: newDistance }).eq('id', petId);
-
-              if (Math.random() < 0.10) {
-                triggerEncounter();
-              }
-            }
-          }
-          setPrevLocation(newLoc);
-        },
-        (error) => console.error("GPSエラー", error), 
-        { enableHighAccuracy: true, maximumAge: 0 }
-      );
-      return () => navigator.geolocation.clearWatch(watchId);
-    }
-  }, [viewMode, prevLocation, walkDistance, isEgg, petId, supabase]);
-
-  useEffect(() => {
-    if (viewMode === 'gps' && location && landmarks.length > 0) {
-      setActiveLandmark(landmarks.find(lm => getDistance(location.lat, location.lng, lm.latitude, lm.longitude) <= lm.radius_meters) || null);
-    }
-  }, [location, landmarks, viewMode]);
-
-  useEffect(() => {
-    if (viewMode === 'mindar' && petId && !isEgg && !isSleeping && isDataLoaded) {
+    if (petId && !isEgg && !isSleeping && isDataLoaded) {
       const petModel = document.querySelector('#pet-model');
       const handlePetTap = () => {
         if (petCondition === 'starving' || petCondition === 'sick') {
-          playSound('error');
-          setActionAnim('Sad');
-          setTimeout(() => setActionAnim(null), 1500);
-          setShowConditionSOS(true);
-          return;
+          playSound('error'); setActionAnim('Sad'); setTimeout(() => setActionAnim(null), 1500); setShowConditionSOS(true); return;
         }
-
         playSound('tap');
         setAffection(prev => { const val = prev + 1; supabase.from('pets').update({ affection_level: val }).eq('id', petId).then(); return val; });
         setEventCount(prev => prev + 1);
         supabase.from('activity_logs').insert({ pet_id: petId, action_type: 'event', points_earned: 5 }).then();
-        
         const tapActions = ['Jump', 'Fly', 'Happy'];
-        const randomAction = tapActions[Math.floor(Math.random() * tapActions.length)];
-        setActionAnim(randomAction); 
+        setActionAnim(tapActions[Math.floor(Math.random() * tapActions.length)]); 
         setTimeout(() => setActionAnim(null), 1500);
-        
         addExperience(5); 
       };
       petModel?.addEventListener('click', handlePetTap);
       return () => petModel?.removeEventListener('click', handlePetTap);
     }
-  }, [viewMode, isClient, petId, supabase, isEgg, isSleeping, sceneKey, petCondition, isDataLoaded]);
+  }, [isClient, petId, supabase, isEgg, isSleeping, sceneKey, petCondition, isDataLoaded]);
 
-  // 🌟 卵の作成処理 (egg_masters を参照するように修正)
   const handleCreateEgg = async () => {
     if (!sessionUserId) return;
     try {
       const { data: eggMasters, error: fetchError } = await supabase.from('egg_masters').select('*');
-      if (fetchError || !eggMasters || eggMasters.length === 0) {
-        throw new Error('卵のマスターデータが見つかりません。データベースに卵を登録してください。');
-      }
-      
+      if (fetchError || !eggMasters || eggMasters.length === 0) throw new Error('卵のマスターデータが見つかりません。');
       const selectedEgg = eggMasters[Math.floor(Math.random() * eggMasters.length)];
-      
       const { data: newPet, error: insertError } = await supabase.from('pets').insert({
-        owner_id: sessionUserId,
-        egg_master_id: selectedEgg.id, // 新設されたカラムに格納
-        pet_master_id: null,           // 孵化時に決定するため null
-        is_egg: true,
-        level: 1,
-        exp: 0,
-        affection_level: 0,
-        walk_distance_m: 0,
-        condition_status: 'healthy',
-        generation: 1
+        owner_id: sessionUserId, egg_master_id: selectedEgg.id, pet_master_id: null, is_egg: true, level: 1, exp: 0, affection_level: 0, walk_distance_m: 0, condition_status: 'healthy', generation: 1
       }).select('*').single();
-
       if (insertError) throw insertError;
       
-      setPetId(newPet.id); setOwnerId(newPet.owner_id); 
-      setIsEgg(true); setIsEggUnregistered(false); setWalkDistance(0); setFeedCount(0); setLandmarkVisitCount(0); setEventCount(0);
-      setGameOverNotice(null); setGameOverHandled(false); setLastFedAt(null); setSleepingUntil(null); setHungerPercent(100); setMotivationPercent(100); setLevel(1); setExp(0); setAffection(0);
-      
+      setPetId(newPet.id); setOwnerId(newPet.owner_id); setIsEgg(true); setIsEggUnregistered(false); setWalkDistance(0); setFeedCount(0); setLandmarkVisitCount(0); setEventCount(0); setGameOverNotice(null); setGameOverHandled(false); setLastFedAt(null); setSleepingUntil(null); setHungerPercent(100); setMotivationPercent(100); setLevel(1); setExp(0); setAffection(0);
       setEggModelUrl(selectedEgg.model_url || '/models/eggs/egg_A.glb');
-      
-      playSound('item');
-      alert(`不思議な卵を発見した！\nさんぽ、給餌、ランドマーク、イベントの全てをこなして孵化させよう！`);
-      
-    } catch (err: any) { 
-      console.error(err);
-      alert(`エラーが発生しました: ${err.message}`); 
-    }
+      playSound('item'); alert(`不思議な卵を発見した！\nさんぽ、給餌、ランドマーク、イベントの全てをこなして孵化させよう！`);
+    } catch (err: any) { alert(`エラーが発生しました: ${err.message}`); }
   };
 
-  // 🌟 孵化処理 (ここで pet_masters を参照して中身を確定させる)
   const handleHatchEgg = async (force = false) => {
     if (!petId) return;
-    if (!isHatchReady && !force) {
-      return alert('まだ孵化条件が揃っていません。歩数・給餌・ランドマーク・イベントを全て満たしてから試してください。');
-    }
-
+    if (!isHatchReady && !force) return alert('まだ孵化条件が揃っていません。');
     try {
-      // ここでガチャを引く
       const { data: petMasters } = await supabase.from('pet_masters').select('*');
-      if (!petMasters || petMasters.length === 0) {
-        return alert('ペットのマスターデータが見つかりません。管理画面からペットを登録してください。');
-      }
+      if (!petMasters || petMasters.length === 0) return alert('ペットのマスターデータが見つかりません。');
       const selectedMaster = petMasters[Math.floor(Math.random() * petMasters.length)];
-      
       const rarityRes = selectedMaster.rarity || '?';
       const fallbackBase = `/models/pet/${rarityRes}`;
       const modelV1 = selectedMaster.model_url || `${fallbackBase}/v1.glb`;
       const modelV2 = selectedMaster.model_url_v2 || `${fallbackBase}/v2.glb`;
       const modelV3 = selectedMaster.model_url_v3 || `${fallbackBase}/v3.glb`;
 
-      setPetRarity(rarityRes);
-      setPetMasterName(selectedMaster.name || '不明');
-      setPetModelUrlV1(modelV1);
-      setPetModelUrlV2(modelV2);
-      setPetModelUrlV3(modelV3);
+      setPetRarity(rarityRes); setPetMasterName(selectedMaster.name || '不明');
+      setPetModelUrlV1(modelV1); setPetModelUrlV2(modelV2); setPetModelUrlV3(modelV3);
 
-      playSound('hatch');
-      await showHatchEffect(rarityRes);
-
-      setIsEgg(false);
-      setSceneKey(prev => prev + 1);
-      setHatchAnimating(true);
+      playSound('hatch'); await showHatchEffect(rarityRes);
+      setIsEgg(false); setSceneKey(prev => prev + 1); setHatchAnimating(true);
       if (rarityRes === 'SR' || rarityRes === 'UR') playSound('levelup');
       
       setTimeout(async () => {
         const today = new Date().toISOString().split('T')[0];
         setBirthday(today); setLastFedAt(new Date().toISOString());
-        
-        // DBを更新して中身を確定
-        await supabase.from('pets').update({ 
-          is_egg: false, 
-          pet_master_id: selectedMaster.id,
-          last_fed_at: new Date().toISOString(), 
-          birthday: today 
-        }).eq('id', petId);
-        
-        setHatchAnimating(false);
-        setShowNamingScreen(true);
+        await supabase.from('pets').update({ is_egg: false, pet_master_id: selectedMaster.id, last_fed_at: new Date().toISOString(), birthday: today }).eq('id', petId);
+        setHatchAnimating(false); setShowNamingScreen(true);
       }, 900);
-    } catch (e) {
-      console.error("孵化エラー:", e);
-      alert("孵化処理中にエラーが発生しました。");
-    }
+    } catch (e) { alert("孵化処理中にエラーが発生しました。"); }
   };
 
   const handleFeed = async () => {
     if (!petId || isSleeping || petCondition === 'sick') return; 
-    playSound('eat'); 
-    setActionAnim('Eat'); 
-    setTimeout(() => setActionAnim(null), 2000);
+    playSound('eat'); setActionAnim('Eat'); setTimeout(() => setActionAnim(null), 2000);
     setFeedCount(prev => prev + 1);
     await supabase.from('activity_logs').insert({ pet_id: petId, action_type: 'feed', points_earned: 10 });
     if (!isEgg) {
       const now = new Date().toISOString(); setLastFedAt(now); setHungerPercent(100);
       await supabase.from('pets').update({ last_fed_at: now }).eq('id', petId);
       if (petCondition === 'starving') {
-        setPetCondition('healthy');
-        setShowConditionSOS(false);
+        setPetCondition('healthy'); setShowConditionSOS(false);
         await supabase.from('pets').update({ condition_status: 'healthy' }).eq('id', petId);
       }
     }
@@ -921,27 +607,18 @@ function HomeAR() {
       await supabase.from('pets').update({ affection_level: newAffection, last_fed_at: now }).eq('id', petId);
       await supabase.from('activity_logs').insert({ pet_id: petId, action_type: 'feed', points_earned: item.effect_value || 20 });
       setActionAnim('Eat'); setTimeout(() => setActionAnim(null), 2000); addExperience(50); alert(`✨ ${item.name} をあげました！`);
-      if (petCondition === 'starving') {
-        setPetCondition('healthy'); setShowConditionSOS(false);
-        await supabase.from('pets').update({ condition_status: 'healthy' }).eq('id', petId);
-      }
+      if (petCondition === 'starving') { setPetCondition('healthy'); setShowConditionSOS(false); await supabase.from('pets').update({ condition_status: 'healthy' }).eq('id', petId); }
     } else if (item.item_type === 'sleep') {
       const sleepEnd = new Date(); sleepEnd.setHours(sleepEnd.getHours() + item.effect_value);
-      setSleepingUntil(sleepEnd.toISOString());
-      await supabase.from('pets').update({ sleeping_until: sleepEnd.toISOString() }).eq('id', petId);
+      setSleepingUntil(sleepEnd.toISOString()); await supabase.from('pets').update({ sleeping_until: sleepEnd.toISOString() }).eq('id', petId);
       alert(`💤 ペットは ${item.effect_value} 時間眠りにつきました。`);
     } else if (item.item_type === 'medicine') {
       if (petCondition === 'sick') {
-        setPetCondition('healthy'); setShowConditionSOS(false);
-        await supabase.from('pets').update({ condition_status: 'healthy' }).eq('id', petId);
-        setActionAnim('Happy'); setTimeout(() => setActionAnim(null), 2000);
-        alert('✨ お薬が効いて元気になりました！');
-      } else {
-        alert('今は健康なので効果がなかったみたい。');
-      }
+        setPetCondition('healthy'); setShowConditionSOS(false); await supabase.from('pets').update({ condition_status: 'healthy' }).eq('id', petId);
+        setActionAnim('Happy'); setTimeout(() => setActionAnim(null), 2000); alert('✨ お薬が効いて元気になりました！');
+      } else { alert('今は健康なので効果がなかったみたい。'); }
     } else if (item.item_type === 'exp') {
-      addExperience(item.effect_value || 100);
-      alert(`✨ ${item.name} の香りに包まれて、経験値を獲得しました！`);
+      addExperience(item.effect_value || 100); alert(`✨ ${item.name} の香りに包まれて、経験値を獲得しました！`);
     }
   };
 
@@ -949,15 +626,11 @@ function HomeAR() {
     if (!sessionUserId) return;
     const confirmBuy = window.confirm(`${shopItem.name} を ¥${shopItem.price_jpy} で購入しますか？`);
     if (!confirmBuy) return;
-
     try {
       playSound('item');
       const existingItem = inventory.find(i => i.item_masters.id === shopItem.id);
-      if (existingItem) {
-        await supabase.from('user_inventory').update({ quantity: existingItem.quantity + 1 }).eq('id', existingItem.id);
-      } else {
-        await supabase.from('user_inventory').insert({ user_id: sessionUserId, item_id: shopItem.id, quantity: 1 });
-      }
+      if (existingItem) await supabase.from('user_inventory').update({ quantity: existingItem.quantity + 1 }).eq('id', existingItem.id);
+      else await supabase.from('user_inventory').insert({ user_id: sessionUserId, item_id: shopItem.id, quantity: 1 });
       const { data: inv } = await supabase.from('user_inventory').select('id, quantity, item_masters(*)').eq('user_id', sessionUserId).gt('quantity', 0);
       if (inv) setInventory(inv); alert('🛍️ 購入しました！「もちもの」から使用できます。');
     } catch (e) { alert('エラーが発生しました'); }
@@ -968,52 +641,6 @@ function HomeAR() {
     if (name.includes('病院') || name.includes('クリニック') || name.includes('ドクター')) return 'hospital';
     if (name.includes('ホテル') || name.includes('宿')) return 'hotel';
     return 'normal';
-  };
-
-  const handleCheckIn = async () => {
-    if (!activeLandmark || !petId || !sessionUserId) return;
-    const today = new Date().toLocaleDateString('sv-SE'); 
-
-    const master = activeLandmark.landmark_masters;
-    const facilityType = master?.facility_type && master.facility_type !== 'normal' ? master.facility_type : getFacilityType(activeLandmark.name);
-
-    if (petCondition === 'starving' && facilityType !== 'restaurant') {
-      return alert('お腹が減りすぎて動けません…まずはマップから【ご飯屋さん】を探してチェックインしましょう！');
-    }
-    if (petCondition === 'sick' && facilityType !== 'hospital') {
-      return alert('体調が優れないようです…まずはマップから【ドクター (病院)】を探して診てもらいましょう！');
-    }
-
-    const { error: visitError } = await supabase.from('landmark_visits').insert({ user_id: sessionUserId, landmark_id: activeLandmark.id, visited_date: today });
-    if (visitError) return alert('今日は既に訪問済みです！');
-    
-    setLandmarkVisitCount(prev => prev + 1);
-    playSound('levelup');
-    await supabase.from('activity_logs').insert({ pet_id: petId, action_type: 'landmark_visit', points_earned: activeLandmark.bonus_points });
-    
-    if (facilityType === 'restaurant') {
-      alert(`🍽️ ${activeLandmark.name} に到着！\n美味しい匂いに釣られて元気が出た！`);
-      if (petCondition === 'starving') {
-        setPetCondition('healthy'); setShowConditionSOS(false);
-        await supabase.from('pets').update({ condition_status: 'healthy' }).eq('id', petId);
-      }
-      const now = new Date().toISOString(); setLastFedAt(now); setHungerPercent(100);
-      await supabase.from('pets').update({ last_fed_at: now }).eq('id', petId);
-    } else if (facilityType === 'hospital') {
-      alert(`🏥 ${activeLandmark.name} で診察を受けました！\n体調が全回復しました！`);
-      if (petCondition === 'sick') {
-        setPetCondition('healthy'); setShowConditionSOS(false);
-        await supabase.from('pets').update({ condition_status: 'healthy' }).eq('id', petId);
-      }
-      setMotivationPercent(100);
-    } else if (facilityType === 'hotel') {
-      alert(`🏨 ${activeLandmark.name} でぐっすり休憩！\nごきげんがMAXになりました！`);
-      setMotivationPercent(100);
-    } else {
-      alert(`🎉 ${activeLandmark.name} で ${activeLandmark.bonus_points} ポイント獲得！\n経験値が大幅にアップ！`);
-    }
-
-    addExperience(100);
   };
 
   const takeSnapshot = () => {
@@ -1028,89 +655,38 @@ function HomeAR() {
 
   const handleProfileSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!sessionUserId) {
-      alert('セッションが見つかりません。再度ログインしてください。');
-      return;
-    }
-
+    if (!sessionUserId) return;
     const birthYear = parseInt(inputBirthYear, 10);
-    if (Number.isNaN(birthYear) || birthYear < 1900 || birthYear > new Date().getFullYear()) {
-      alert('正しい誕生年を入力してください。');
-      return;
-    }
-
-    if (!inputGender) {
-      alert('性別を選択してください。');
-      return;
-    }
+    if (Number.isNaN(birthYear) || birthYear < 1900 || birthYear > new Date().getFullYear()) return alert('正しい誕生年を入力してください。');
+    if (!inputGender) return alert('性別を選択してください。');
 
     setIsSetupSubmitting(true);
     try {
       const today = new Date().toLocaleDateString('sv-SE');
-      const { error } = await supabase.from('user_profiles').upsert({
-        id: sessionUserId,
-        birth_year: birthYear,
-        gender: inputGender,
-        email_notify_feed: true,
-        email_notify_news: true,
-        last_login_date: today,
-        login_days: 1
-      }, { onConflict: 'id' });
-
-      if (error) {
-        throw error;
-      }
-
-      setShowProfileSetup(false);
-      alert('プロフィールを設定しました！');
-
-      setLoginBonusState({
-        days: 1,
-        gotBonus: false,
-        showModal: true
-      });
-      playSound('levelup');
-      router.refresh();
-
-    } catch (err: any) {
-      console.error('プロフィール保存エラー', err);
-      alert(err?.message || 'エラーが発生しました。');
-    } finally {
-      setIsSetupSubmitting(false);
-    }
+      const { error } = await supabase.from('user_profiles').upsert({ id: sessionUserId, birth_year: birthYear, gender: inputGender, email_notify_feed: true, email_notify_news: true, last_login_date: today, login_days: 1 }, { onConflict: 'id' });
+      if (error) throw error;
+      setShowProfileSetup(false); alert('プロフィールを設定しました！');
+      setLoginBonusState({ days: 1, gotBonus: false, showModal: true }); playSound('levelup'); router.refresh();
+    } catch (err: any) { alert(err?.message || 'エラーが発生しました。'); } finally { setIsSetupSubmitting(false); }
   };
 
   const handleNamingSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!petId || !namingInput.trim()) return;
-    
     setIsNamingSubmitting(true);
     try {
       await supabase.from('pets').update({ custom_name: namingInput.trim() }).eq('id', petId);
-      setCustomName(namingInput.trim());
-      setShowNamingScreen(false);
-      playSound('levelup');
+      setCustomName(namingInput.trim()); setShowNamingScreen(false); playSound('levelup');
       alert(`これからよろしくね、${namingInput.trim()}！\n（誕生日は今日の日付で記録されました）`);
-    } catch (err) {
-      console.error('名付けエラー', err);
-      alert('エラーが発生しました。');
-    } finally {
-      setIsNamingSubmitting(false);
-    }
+    } catch (err) { alert('エラーが発生しました。'); } finally { setIsNamingSubmitting(false); }
   };
 
-  // 🌟 デバッグ用アクション 🌟
   const debugMaxHatchConditions = async () => {
     if (!petId) return;
-    setWalkDistance(targetDistanceToHatch);
-    setFeedCount(targetFeedCount);
-    setLandmarkVisitCount(targetLandmarkVisits);
-    setEventCount(targetEventCount);
-    await supabase.from('pets').update({ walk_distance_m: targetDistanceToHatch }).eq('id', petId);
-    alert('孵化条件をMAXにしました');
+    setWalkDistance(targetDistanceToHatch); setFeedCount(targetFeedCount); setLandmarkVisitCount(targetLandmarkVisits); setEventCount(targetEventCount);
+    await supabase.from('pets').update({ walk_distance_m: targetDistanceToHatch }).eq('id', petId); alert('孵化条件をMAXにしました');
   };
 
-  // 🌟 ここで未ログインやロード中ならUI・AR描画を完全にブロック
   if (!isClient || isAuthChecking || (sessionUserId && !isDataLoaded)) {
     return (
       <div className="bg-black w-full h-full flex flex-col items-center justify-center text-white fixed inset-0 z-[9999]">
@@ -1122,50 +698,48 @@ function HomeAR() {
 
   return (
     <div className="relative w-full h-full overflow-hidden text-white">
-      {/* 🌟 画面真っ暗問題を解決する強制CSS */}
+      {/* 🌟 徹底的に背景を透過し、MindARのVideoを最背面に配置するCSS */}
       <style jsx global>{`
-        html, body {
+        html, body, #__next {
           background-color: transparent !important;
-          margin: 0;
-          padding: 0;
+          background: transparent !important;
+          margin: 0; padding: 0;
         }
-        #__next {
-          background-color: transparent !important;
-        }
+        /* ARの描画キャンバス */
         .a-canvas {
-          z-index: 1 !important;
           position: absolute !important;
-          top: 0; left: 0;
+          top: 0 !important; left: 0 !important;
           width: 100% !important; height: 100% !important;
+          z-index: 0 !important; /* Videoのすぐ上 */
+          background-color: transparent !important;
         }
+        /* MindARが自動生成するカメラ映像 */
         video {
           position: fixed !important;
           top: 0 !important; left: 0 !important;
-          width: 100vw !important;
-          height: 100vh !important;
+          width: 100vw !important; height: 100vh !important;
           object-fit: cover !important;
-          z-index: 0 !important;
+          z-index: -1 !important; /* 絶対に最背面 */
         }
         .a-enter-vr { display: none !important; }
         .mindar-ui-overlay { display: none !important; }
       `}</style>
 
+      {/* 🌟 AR.jsは読み込まず、MindAR関連のみを読み込む（競合排除） */}
       <Script src="https://aframe.io/releases/1.5.0/aframe.min.js" strategy="beforeInteractive" />
       <Script src="https://cdn.jsdelivr.net/gh/c-frame/aframe-extras@7.2.0/dist/aframe-extras.min.js" strategy="beforeInteractive" />
       <Script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-aframe.prod.js" strategy="beforeInteractive" />
-      {/* 🌟 競合を避けるため、一旦 AR.js (nft) をコメントアウトする */}
-      {/* <Script src="https://raw.githack.com/AR-js-org/AR.js/master/aframe/build/aframe-ar-nft.js" strategy="beforeInteractive" /> */}
 
       {/* --- 左下デバッグボタン --- */}
       <button 
         onClick={() => setIsDebugModalOpen(true)} 
-        className="absolute bottom-24 left-4 z-50 bg-black/50 text-white p-3 rounded-full shadow-2xl active:scale-95 text-xl backdrop-blur-sm border border-gray-600"
+        className="absolute bottom-28 left-4 z-50 bg-black/50 text-white p-3 rounded-full shadow-2xl active:scale-95 text-xl backdrop-blur-sm border border-gray-600"
         aria-label="デバッグメニュー"
       >
         🐞
       </button>
 
-      {/* --- デバッグモーダル --- */}
+      {/* --- 各種モーダル（既存の処理をそのまま継承） --- */}
       {isDebugModalOpen && (
         <div className="absolute inset-0 z-[300] bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl p-6 w-full max-w-sm shadow-2xl space-y-4 max-h-[80vh] overflow-y-auto relative">
@@ -1173,29 +747,23 @@ function HomeAR() {
               <h2 className="text-xl font-bold text-red-600">🐞 デバッグメニュー</h2>
               <button onClick={() => setIsDebugModalOpen(false)} className="text-gray-500 font-bold bg-gray-100 px-3 py-1 rounded">閉じる</button>
             </div>
-
             <div className="space-y-2">
               <h3 className="font-bold text-sm bg-gray-200 p-1 rounded">🥚 卵の検証</h3>
               <button onClick={handleCreateEgg} className="w-full bg-yellow-500 text-white font-bold py-2 rounded-lg shadow text-sm">新しい卵を取得する</button>
               <button onClick={debugMaxHatchConditions} className="w-full bg-orange-500 text-white font-bold py-2 rounded-lg shadow text-sm">孵化条件をすべてMAXにする</button>
               <button onClick={() => handleHatchEgg(true)} className="w-full bg-pink-500 text-white font-bold py-2 rounded-lg shadow text-sm">条件無視で強制孵化させる</button>
             </div>
-
             <div className="space-y-2 mt-4">
               <h3 className="font-bold text-sm bg-gray-200 p-1 rounded">🐕 ペットの検証</h3>
               <button onClick={() => addExperience(1000)} className="w-full bg-blue-500 text-white font-bold py-2 rounded-lg shadow text-sm">経験値 +1000 (レベルアップ)</button>
               <button onClick={() => {
-                const newDist = walkDistance + 1000;
-                setWalkDistance(newDist);
-                supabase.from('pets').update({ walk_distance_m: newDist }).eq('id', petId);
+                const newDist = walkDistance + 1000; setWalkDistance(newDist); supabase.from('pets').update({ walk_distance_m: newDist }).eq('id', petId);
               }} className="w-full bg-green-500 text-white font-bold py-2 rounded-lg shadow text-sm">歩行距離 +1000m</button>
               <button onClick={() => {
-                setPetCondition('sick'); setShowConditionSOS(true);
-                supabase.from('pets').update({ condition_status: 'sick' }).eq('id', petId);
+                setPetCondition('sick'); setShowConditionSOS(true); supabase.from('pets').update({ condition_status: 'sick' }).eq('id', petId);
               }} className="w-full bg-purple-500 text-white font-bold py-2 rounded-lg shadow text-sm">強制的に「病気」にする</button>
               <button onClick={() => {
-                setPetCondition('starving'); setShowConditionSOS(true); setHungerPercent(10);
-                supabase.from('pets').update({ condition_status: 'starving' }).eq('id', petId);
+                setPetCondition('starving'); setShowConditionSOS(true); setHungerPercent(10); supabase.from('pets').update({ condition_status: 'starving' }).eq('id', petId);
               }} className="w-full bg-red-500 text-white font-bold py-2 rounded-lg shadow text-sm">強制的に「空腹(餓死寸前)」にする</button>
               <button onClick={() => triggerRainbowBridge(petId!, generation)} className="w-full bg-black text-white font-bold py-2 rounded-lg shadow text-sm">🌈 寿命(虹の橋)テスト</button>
             </div>
@@ -1203,56 +771,30 @@ function HomeAR() {
         </div>
       )}
 
-      {/* --- レベルアップエフェクトオーバーレイ --- */}
       {levelUpOverlay?.active && (
         <div className="pointer-events-none fixed inset-0 z-[140] overflow-hidden flex items-center justify-center">
           {levelUpOverlay.particles.map((p: any) => (
-            <div
-              key={p.id}
-              style={{
-                position: 'absolute',
-                left: '50%',
-                top: '50%',
-                width: p.size,
-                height: p.size,
-                background: p.color,
-                borderRadius: '50%',
+            <div key={p.id} style={{
+                position: 'absolute', left: '50%', top: '50%', width: p.size, height: p.size, background: p.color, borderRadius: '50%',
                 transform: p.launched ? `translate(calc(-50% + ${p.dx}px), calc(-50% + ${p.dy}px)) scale(1) rotate(${Math.random() * 360}deg)` : 'translate(-50%,-50%) scale(0.2)',
-                opacity: p.launched ? 0 : 1,
-                transition: `transform ${p.duration}ms cubic-bezier(.2,.8,.2,1), opacity ${p.duration}ms linear`
-              }}
-            />
+                opacity: p.launched ? 0 : 1, transition: `transform ${p.duration}ms cubic-bezier(.2,.8,.2,1), opacity ${p.duration}ms linear`
+              }} />
           ))}
           <div className="absolute text-center drop-shadow-2xl animate-bounce">
-            <div className={`font-black italic tracking-wider ${levelUpOverlay.isMilestone ? 'text-6xl text-transparent bg-clip-text bg-gradient-to-r from-yellow-300 via-pink-400 to-cyan-400 drop-shadow-[0_0_15px_rgba(255,255,255,0.8)]' : 'text-5xl text-yellow-300 drop-shadow-md'}`}>
-              LEVEL UP!
-            </div>
-            <div className="text-white text-3xl font-bold mt-2">
-              Lv. {levelUpOverlay.level}
-            </div>
+            <div className={`font-black italic tracking-wider ${levelUpOverlay.isMilestone ? 'text-6xl text-transparent bg-clip-text bg-gradient-to-r from-yellow-300 via-pink-400 to-cyan-400 drop-shadow-[0_0_15px_rgba(255,255,255,0.8)]' : 'text-5xl text-yellow-300 drop-shadow-md'}`}>LEVEL UP!</div>
+            <div className="text-white text-3xl font-bold mt-2">Lv. {levelUpOverlay.level}</div>
           </div>
         </div>
       )}
 
-      {/* --- 孵化エフェクトオーバーレイ --- */}
       {hatchOverlay?.active && (
         <div className="pointer-events-none fixed inset-0 z-[130] overflow-hidden">
           {hatchOverlay.particles.map((p: any) => (
-            <div
-              key={p.id}
-              style={{
-                position: 'absolute',
-                left: '50%',
-                top: '50%',
-                width: p.size,
-                height: p.size,
-                background: p.color,
-                borderRadius: '50%',
+            <div key={p.id} style={{
+                position: 'absolute', left: '50%', top: '50%', width: p.size, height: p.size, background: p.color, borderRadius: '50%',
                 transform: p.launched ? `translate(calc(-50% + ${p.dx}px), calc(-50% + ${p.dy}px)) scale(1)` : 'translate(-50%,-50%) scale(0.2)',
-                opacity: p.launched ? 0 : 1,
-                transition: `transform ${p.duration}ms cubic-bezier(.2,.8,.2,1), opacity ${p.duration}ms linear`
-              }}
-            />
+                opacity: p.launched ? 0 : 1, transition: `transform ${p.duration}ms cubic-bezier(.2,.8,.2,1), opacity ${p.duration}ms linear`
+              }} />
           ))}
           <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-center text-white drop-shadow-2xl pointer-events-none">
             <div className="text-3xl font-extrabold">{hatchOverlay.rarity === 'UR' ? '🌈 UR!' : hatchOverlay.rarity === 'SR' ? '✨ SR' : hatchOverlay.rarity === 'R' ? '⭐ R' : 'N'}</div>
@@ -1260,28 +802,19 @@ function HomeAR() {
         </div>
       )}
 
-      {/* --- 虹の橋（寿命）エフェクトオーバーレイ --- */}
       {showRainbowBridge && (
         <div className="fixed inset-0 z-[200] bg-black flex flex-col items-center justify-center p-6 text-center text-white transition-opacity duration-1000">
           {rainbowPhase === 1 && (
             <div className="animate-pulse space-y-6">
-              <h1 className="text-4xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-purple-400 via-pink-400 to-red-400">
-                🌈 虹の橋を渡りました...
-              </h1>
-              <p className="text-lg text-gray-300">
-                {displayName}は寿命を全うし、虹の橋の向こう側へ旅立ちました。<br/>
-                これまで大切に育ててくれてありがとう。
-              </p>
+              <h1 className="text-4xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-purple-400 via-pink-400 to-red-400">🌈 虹の橋を渡りました...</h1>
+              <p className="text-lg text-gray-300">{displayName}は寿命を全うし、虹の橋の向こう側へ旅立ちました。<br/>これまで大切に育ててくれてありがとう。</p>
             </div>
           )}
           {rainbowPhase === 2 && (
             <div className="space-y-6 animate-fade-in-up">
               <div className="text-6xl mb-4">🏆</div>
               <h2 className="text-3xl font-bold text-yellow-300">殿堂入りしました！</h2>
-              <p className="text-md text-gray-200">
-                あなたのプロフィールに「殿堂入り: {hallOfFameCount + 1}」が記録されました。<br/>
-                そして、{displayName}の魂は次の世代へ引き継がれます...
-              </p>
+              <p className="text-md text-gray-200">あなたのプロフィールに「殿堂入り: {hallOfFameCount + 1}」が記録されました。<br/>そして、{displayName}の魂は次の世代へ引き継がれます...</p>
               <div className="bg-white/20 p-4 rounded-xl mt-4">
                 <ul className="text-sm text-left list-disc pl-5">
                   <li>新しい卵にステータスの一部がボーナスとして付与されました</li>
@@ -1289,21 +822,17 @@ function HomeAR() {
                   <li>世代: 第{generation + 1}世代</li>
                 </ul>
               </div>
-              <button onClick={closeRainbowBridge} className="mt-8 bg-gradient-to-r from-blue-500 to-purple-600 text-white font-bold py-4 px-8 rounded-full shadow-2xl hover:scale-105 transition-transform">
-                新しい命を迎える
-              </button>
+              <button onClick={closeRainbowBridge} className="mt-8 bg-gradient-to-r from-blue-500 to-purple-600 text-white font-bold py-4 px-8 rounded-full shadow-2xl hover:scale-105 transition-transform">新しい命を迎える</button>
             </div>
           )}
         </div>
       )}
 
-      {/* --- 初回プロフィール設定モーダル --- */}
       {showProfileSetup && (
         <div className="absolute inset-0 z-[120] bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
           <form onSubmit={handleProfileSubmit} className="bg-white rounded-3xl p-6 w-full max-w-sm shadow-2xl space-y-5 relative">
             <h2 className="text-xl font-bold text-center border-b pb-3 text-slate-800">🎉 ようこそ Straid AR へ！</h2>
             <p className="text-xs text-gray-500 text-center mb-4">サービス向上のため、情報を教えてください</p>
-            
             <div className="flex gap-3">
               <div className="flex-1">
                 <label className="block text-sm font-bold text-gray-700 mb-1">あなたの誕生年</label>
@@ -1312,10 +841,7 @@ function HomeAR() {
               <div className="flex-1">
                 <label className="block text-sm font-bold text-gray-700 mb-1">性別</label>
                 <select value={inputGender} onChange={e => setInputGender(e.target.value)} className="w-full border p-3 rounded-xl bg-gray-50 focus:ring-2 focus:ring-blue-500 text-black" required>
-                  <option value="">選択...</option>
-                  <option value="male">男性</option>
-                  <option value="female">女性</option>
-                  <option value="other">その他</option>
+                  <option value="">選択...</option><option value="male">男性</option><option value="female">女性</option><option value="other">その他</option>
                 </select>
               </div>
             </div>
@@ -1326,18 +852,15 @@ function HomeAR() {
         </div>
       )}
 
-      {/* --- 名付け設定モーダル（孵化直後） --- */}
       {showNamingScreen && (
         <div className="absolute inset-0 z-[125] bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
           <form onSubmit={handleNamingSubmit} className="bg-white rounded-3xl p-6 w-full max-w-sm shadow-2xl space-y-5 relative">
             <h2 className="text-2xl font-bold text-center border-b pb-3 text-slate-800">✨ 誕生おめでとう！</h2>
             <p className="text-sm text-gray-600 text-center mb-4">新しく生まれたペットに<br/>名前をつけてあげましょう</p>
-            
             <div>
               <label className="block text-sm font-bold text-gray-700 mb-1">ペットの名前</label>
               <input type="text" value={namingInput} onChange={e => setNamingInput(e.target.value)} placeholder="例: ポチ" className="w-full border p-3 rounded-xl bg-gray-50 focus:ring-2 focus:ring-pink-500 text-black" required />
             </div>
-            
             <button disabled={isNamingSubmitting || !namingInput.trim()} className="w-full bg-gradient-to-r from-pink-500 to-orange-400 text-white font-bold py-3 rounded-xl shadow-lg mt-4 disabled:bg-gray-400 transition-transform active:scale-95">
               {isNamingSubmitting ? '保存中...' : '名前を決定する！'}
             </button>
@@ -1345,7 +868,6 @@ function HomeAR() {
         </div>
       )}
 
-      {/* --- マインドフルネス機能 モーダル --- */}
       {showMindfulness && (
         <div className="absolute inset-0 z-[160] bg-black/90 backdrop-blur-xl flex flex-col items-center justify-center p-6 text-white text-center">
           {mindPhase === 'intro' && (
@@ -1353,22 +875,13 @@ function HomeAR() {
               <div className="text-6xl animate-bounce">🧘</div>
               <h2 className="text-2xl font-bold">マインドフルネスしましょう</h2>
               <p className="text-gray-300">ぺたるからの提案です。<br/>少し立ち止まって、一緒に深呼吸をしませんか？</p>
-              <button onClick={startMindfulness} className="bg-teal-500 text-white font-bold py-3 px-8 rounded-full shadow-lg hover:bg-teal-600">
-                はじめる
-              </button>
-              <button onClick={() => setShowMindfulness(false)} className="block w-full text-sm text-gray-400 mt-4 underline">
-                今はやめておく
-              </button>
+              <button onClick={startMindfulness} className="bg-teal-500 text-white font-bold py-3 px-8 rounded-full shadow-lg hover:bg-teal-600">はじめる</button>
+              <button onClick={() => setShowMindfulness(false)} className="block w-full text-sm text-gray-400 mt-4 underline">今はやめておく</button>
             </div>
           )}
-
           {(mindPhase === 'inhale' || mindPhase === 'hold' || mindPhase === 'exhale') && (
             <div className="space-y-8 flex flex-col items-center">
-              <h2 className="text-3xl font-bold">
-                {mindPhase === 'inhale' && '息を吸って...'}
-                {mindPhase === 'hold' && '止めて...'}
-                {mindPhase === 'exhale' && 'ゆっくり吐いて...'}
-              </h2>
+              <h2 className="text-3xl font-bold">{mindPhase === 'inhale' && '息を吸って...'}{mindPhase === 'hold' && '止めて...'}{mindPhase === 'exhale' && 'ゆっくり吐いて...'}</h2>
               <div className="relative flex items-center justify-center w-40 h-40">
                 <div className={`absolute w-full h-full border-4 border-teal-400 rounded-full transition-transform duration-1000 ease-in-out ${mindPhase === 'inhale' ? 'scale-150 opacity-50' : mindPhase === 'exhale' ? 'scale-75 opacity-100' : 'scale-150 opacity-100'}`}></div>
                 <span className="text-5xl font-black">{mindTime}</span>
@@ -1376,86 +889,53 @@ function HomeAR() {
               <p className="text-gray-300 text-lg">セット {mindSet} / 3</p>
             </div>
           )}
-
           {mindPhase === 'done' && (
             <div className="space-y-6 animate-fade-in">
               <div className="text-6xl">✨</div>
               <h2 className="text-2xl font-bold">お疲れ様でした</h2>
               <p className="text-gray-300">心が落ち着きましたね。<br/>ご褒美にペットのごきげんと経験値が少しアップしました。</p>
-              <button onClick={completeMindfulness} className="bg-teal-500 text-white font-bold py-3 px-8 rounded-full shadow-lg hover:bg-teal-600">
-                戻る
-              </button>
+              <button onClick={completeMindfulness} className="bg-teal-500 text-white font-bold py-3 px-8 rounded-full shadow-lg hover:bg-teal-600">戻る</button>
             </div>
           )}
         </div>
       )}
 
-      {/* --- 地図でスポットを探すモーダル --- */}
       {isSpotMapOpen && (
         <div className="absolute inset-0 z-[120] bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl p-6 w-full max-w-sm shadow-2xl relative max-h-[90vh] flex flex-col">
             <h2 className="text-xl font-bold text-center border-b pb-3 mb-4 text-slate-800">🗺️ 周辺のスポット</h2>
-            
             {!location ? (
               <p className="text-center text-gray-500 my-10">GPS座標を取得中...</p>
             ) : (
               <div className="flex-1 overflow-y-auto pr-1">
                 <div className="relative w-full aspect-square bg-gray-100 rounded-2xl overflow-hidden mb-4 shadow-inner border border-gray-300">
-                  <iframe 
-                    width="100%" 
-                    height="100%" 
-                    frameBorder="0" 
-                    scrolling="no" 
-                    marginHeight={0} 
-                    marginWidth={0} 
-                    src={`https://www.openstreetmap.org/export/embed.html?bbox=${location.lng - 0.005}%2C${location.lat - 0.005}%2C${location.lng + 0.005}%2C${location.lat + 0.005}&layer=mapnik`}
-                    className="absolute inset-0 z-0 pointer-events-none"
-                  ></iframe>
-                  
-                  <div className="absolute inset-0 z-10 flex items-center justify-center pointer-events-none">
-                     <div className="w-5 h-5 bg-red-500 rounded-full border-2 border-white shadow-md animate-pulse"></div>
-                  </div>
-                  
+                  <iframe width="100%" height="100%" frameBorder="0" scrolling="no" marginHeight={0} marginWidth={0} src={`https://www.openstreetmap.org/export/embed.html?bbox=${location.lng - 0.005}%2C${location.lat - 0.005}%2C${location.lng + 0.005}%2C${location.lat + 0.005}&layer=mapnik`} className="absolute inset-0 z-0 pointer-events-none"></iframe>
+                  <div className="absolute inset-0 z-10 flex items-center justify-center pointer-events-none"><div className="w-5 h-5 bg-red-500 rounded-full border-2 border-white shadow-md animate-pulse"></div></div>
                   <div className="absolute inset-0 z-20 pointer-events-none">
                   {landmarks.map(spot => {
                      const master = spot.landmark_masters;
                      const facilityType = master?.facility_type && master.facility_type !== 'normal' ? master.facility_type : getFacilityType(spot.name);
                      const typeIcon = facilityType === 'hospital' ? '🏥' : facilityType === 'restaurant' ? '🍽️' : facilityType === 'hotel' ? '🏨' : '📍';
-
                      const topPercent = 50 - ((spot.latitude - location.lat) / 0.01) * 100;
                      const leftPercent = 50 + ((spot.longitude - location.lng) / 0.01) * 100;
-                     
                      return (
-                       <div key={`radar-${spot.id}`} className="absolute w-8 h-8 -ml-4 -mt-4 text-xl flex items-center justify-center filter drop-shadow bg-white/90 rounded-full border border-gray-300 shadow-sm" style={{ top: `${topPercent}%`, left: `${leftPercent}%` }} title={spot.name}>
-                         {typeIcon}
-                       </div>
+                       <div key={`radar-${spot.id}`} className="absolute w-8 h-8 -ml-4 -mt-4 text-xl flex items-center justify-center filter drop-shadow bg-white/90 rounded-full border border-gray-300 shadow-sm" style={{ top: `${topPercent}%`, left: `${leftPercent}%` }} title={spot.name}>{typeIcon}</div>
                      )
                   })}
                   </div>
                 </div>
-                
                 <div className="space-y-3">
                   {landmarks.map(spot => {
                     const dist = getDistance(location.lat, location.lng, spot.latitude, spot.longitude);
                     const master = spot.landmark_masters;
                     const facilityType = master?.facility_type && master.facility_type !== 'normal' ? master.facility_type : getFacilityType(spot.name);
-                    
                     return (
                       <div key={`list-${spot.id}`} className="bg-gray-50 border rounded-xl p-3 flex justify-between items-center shadow-sm">
                         <div>
-                           <div className="font-bold text-gray-800 flex items-center gap-1">
-                             {facilityType === 'hospital' ? '🏥' : facilityType === 'restaurant' ? '🍽️' : facilityType === 'hotel' ? '🏨' : '📍'} {spot.name}
-                           </div>
+                           <div className="font-bold text-gray-800 flex items-center gap-1">{facilityType === 'hospital' ? '🏥' : facilityType === 'restaurant' ? '🍽️' : facilityType === 'hotel' ? '🏨' : '📍'} {spot.name}</div>
                            <div className="text-xs text-gray-500">現在地から約 {Math.floor(dist)}m</div>
                         </div>
-                        <button onClick={() => { 
-                          setViewMode('gps'); 
-                          setIsSpotMapOpen(false); 
-                          setCameraFacing('environment'); 
-                          playSound('tap');
-                        }} className="bg-teal-600 text-white text-xs font-bold px-3 py-2 rounded-lg active:scale-95 transition-transform">
-                          ARで見る
-                        </button>
+                        <button onClick={() => { playSound('tap'); window.location.href = '/walk'; }} className="bg-teal-600 text-white text-xs font-bold px-3 py-2 rounded-lg active:scale-95 transition-transform">さんぽに行く</button>
                       </div>
                     )
                   })}
@@ -1463,19 +943,16 @@ function HomeAR() {
                 </div>
               </div>
             )}
-            
             <button onClick={() => setIsSpotMapOpen(false)} className="mt-4 w-full bg-gray-200 text-gray-700 font-bold py-3 rounded-xl active:scale-95 transition-transform">閉じる</button>
           </div>
         </div>
       )}
 
-      {/* --- ウィークリーログインボーナス モーダル --- */}
       {loginBonusState.showModal && (
         <div className="absolute inset-0 z-[110] bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl p-6 w-full max-w-sm shadow-2xl flex flex-col items-center animate-bounce text-black">
             <h2 className="text-xl font-bold text-center mb-2 text-slate-800">🎁 ログインボーナス</h2>
             <p className="text-sm text-gray-600 mb-6 text-center">毎日ログインしてアイテムをゲットしよう！</p>
-            
             <div className="grid grid-cols-4 gap-3 mb-6 w-full">
               {[1, 2, 3, 4, 5, 6].map(day => (
                 <div key={day} className={`flex flex-col items-center justify-center py-3 rounded-xl border-2 ${loginBonusState.days >= day ? 'border-orange-400 bg-orange-50' : 'border-gray-200 bg-gray-50'}`}>
@@ -1488,28 +965,22 @@ function HomeAR() {
                  <div className={`text-3xl ${loginBonusState.days >= 7 ? 'opacity-100 drop-shadow-md' : 'opacity-30 grayscale'}`}>🎁</div>
               </div>
             </div>
-
             {loginBonusState.gotBonus && (
               <div className="bg-pink-100 text-pink-800 p-3 rounded-xl font-bold w-full text-center mb-4 text-sm shadow-inner">
                 ✨「ログボご飯」をゲットしました！✨<br/><span className="text-xs font-normal">もちものから使ってみよう！</span>
               </div>
             )}
-
-            <button onClick={() => setLoginBonusState(prev => ({ ...prev, showModal: false }))} className="w-full bg-slate-900 text-white font-bold py-3 rounded-xl shadow-lg hover:bg-slate-800 transition-colors">
-              受け取る
-            </button>
+            <button onClick={() => setLoginBonusState(prev => ({ ...prev, showModal: false }))} className="w-full bg-slate-900 text-white font-bold py-3 rounded-xl shadow-lg hover:bg-slate-800 transition-colors">受け取る</button>
           </div>
         </div>
       )}
 
-      {/* --- お知らせ(News) モーダル --- */}
       {isNewsOpen && (
         <div className="absolute top-20 left-4 right-4 bg-white/95 p-5 rounded-3xl shadow-2xl backdrop-blur-md z-50 border border-gray-200">
           <div className="flex justify-between items-center mb-4 border-b pb-3">
             <h3 className="font-bold text-xl text-gray-800">📢 お知らせ</h3>
             <button onClick={() => setIsNewsOpen(false)} className="text-gray-500 font-bold px-4 py-2 bg-gray-100 rounded-full hover:bg-gray-200">閉じる</button>
           </div>
-          
           <div className="space-y-4 max-h-[60vh] overflow-y-auto pr-1">
             {userNotifications.length > 0 && (
               <div className="mb-4">
@@ -1525,7 +996,6 @@ function HomeAR() {
                 </div>
               </div>
             )}
-
             <div>
               <h4 className="font-bold text-sm text-gray-500 mb-2 border-l-4 border-blue-500 pl-2">運営からのお知らせ</h4>
               {newsList.length === 0 ? ( <p className="text-gray-500 text-center py-4 text-sm">現在お知らせはありません</p> ) : (
@@ -1544,7 +1014,6 @@ function HomeAR() {
         </div>
       )}
 
-      {/* --- ステータスモーダル (画面に一瞬映る問題を解決) --- */}
       {isStatusModalOpen && (
         <div className="absolute inset-0 z-[150] bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
           <div className="bg-gray-900 border border-gray-700 rounded-3xl p-6 w-full max-w-sm shadow-2xl relative text-white space-y-4">
@@ -1552,7 +1021,6 @@ function HomeAR() {
               <h2 className="text-xl font-bold text-white">📊 ステータス詳細</h2>
               <button onClick={() => setIsStatusModalOpen(false)} className="text-gray-400 hover:text-white font-bold px-3 py-1 bg-gray-800 rounded-full">閉じる</button>
             </div>
-
             {(isEgg && !isEggUnregistered) && (
               <div className="space-y-3">
                 <div className="flex justify-between text-xs font-bold text-yellow-400">
@@ -1571,7 +1039,6 @@ function HomeAR() {
                 </div>
               </div>
             )}
-
             {(!isEgg && !isEggUnregistered && petId) && (
               <>
                 <div className="space-y-4">
@@ -1588,7 +1055,6 @@ function HomeAR() {
                     <div className="w-full h-3 bg-gray-800 rounded-full overflow-hidden"><div className="h-full bg-blue-500" style={{ width: `${(exp / expNeededForNextLevel) * 100}%` }}></div></div>
                   </div>
                 </div>
-
                 <div className="border-t border-gray-700 pt-4 mt-2 space-y-3 text-xs text-gray-300">
                   <div className="font-bold text-indigo-300 mb-2">🔜 次のレベルアップ条件</div>
                   <div className="flex justify-between"><span>🚶 歩行 {Math.floor(walkDistance)} / {nextLevelRequirements.distance}m</span><span>{Math.floor(Math.min(100, (walkDistance / nextLevelRequirements.distance) * 100))}%</span></div>
@@ -1606,7 +1072,6 @@ function HomeAR() {
         </div>
       )}
 
-      {/* --- 状態異常SOS モーダル --- */}
       {showConditionSOS && !isEgg && petCondition !== 'healthy' && (
         <div className="absolute top-24 left-4 right-4 z-[100] animate-bounce">
           <div className={`p-4 rounded-2xl shadow-2xl border-4 flex items-start gap-4 ${petCondition === 'sick' ? 'bg-purple-100 border-purple-400 text-purple-900' : 'bg-red-100 border-red-400 text-red-900'}`}>
@@ -1614,20 +1079,16 @@ function HomeAR() {
             <div className="flex-1">
               <h3 className="font-bold text-lg mb-1">{petCondition === 'sick' ? '体調不良です！' : 'お腹が減って動けません！'}</h3>
               <p className="text-xs font-bold mb-3">
-                {petCondition === 'sick' 
-                  ? '病気になってしまいました。マップを開いて【病院 (ドクター)】へ連れて行ってください！' 
-                  : '飢餓状態です。マップを開いて【ご飯屋さん (レストラン)】へ連れて行ってください！'}
+                {petCondition === 'sick' ? '病気になってしまいました。マップを開いて【病院 (ドクター)】へ連れて行ってください！' : '飢餓状態です。マップを開いて【ご飯屋さん (レストラン)】へ連れて行ってください！'}
               </p>
-              <button onClick={() => { setIsSpotMapOpen(true); setShowConditionSOS(false); playSound('tap'); }} className={`w-full py-2 rounded-xl text-white font-bold text-sm shadow active:scale-95 ${petCondition === 'sick' ? 'bg-purple-600' : 'bg-red-600'}`}>
-                マップで施設を探す
-              </button>
+              <button onClick={() => { setIsSpotMapOpen(true); setShowConditionSOS(false); playSound('tap'); }} className={`w-full py-2 rounded-xl text-white font-bold text-sm shadow active:scale-95 ${petCondition === 'sick' ? 'bg-purple-600' : 'bg-red-600'}`}>マップで施設を探す</button>
             </div>
           </div>
         </div>
       )}
 
-      {/* --- UIレイヤー (ヘッダー: スッキリ化) --- */}
-      {sessionUserId && viewMode !== 'report' && (
+      {/* --- UIレイヤー (ヘッダー) --- */}
+      {sessionUserId && (
         <div className="absolute top-4 left-4 right-4 z-20 flex flex-col gap-3 pointer-events-none">
           <div className="flex justify-between items-end">
             <span className="text-white font-bold text-3xl drop-shadow-lg bg-black/30 px-3 py-1 rounded-xl backdrop-blur-sm">{isEggUnregistered ? '' : displayName}</span>
@@ -1637,44 +1098,20 @@ function HomeAR() {
       )}
 
       {/* --- 右上ボタン群 --- */}
-      {viewMode !== 'report' && (
-        <div className="absolute top-20 right-4 z-40 flex flex-col gap-4 pointer-events-auto">
-          {/* ステータス確認ボタン (追加) */}
-          {(!isEggUnregistered) && (
-            <button onClick={() => { setIsStatusModalOpen(true); playSound('tap'); }} className="bg-white/90 p-3 rounded-full shadow-2xl border border-gray-200 active:scale-90 flex items-center justify-center w-14 h-14 relative" aria-label="ステータス">
-              <span className="text-2xl">📊</span>
-              {(isEgg && isHatchReady) && <span className="absolute top-0 right-0 w-4 h-4 bg-yellow-400 rounded-full border-2 border-white animate-pulse"></span>}
-            </button>
-          )}
-          
-          <button onClick={() => { setIsNewsOpen(true); playSound('tap'); }} className="bg-white/90 p-3 rounded-full shadow-2xl border border-gray-200 active:scale-90 flex items-center justify-center w-14 h-14 relative" aria-label="お知らせ">
-            <span className="text-2xl">📢</span>{(newsList.length > 0 || userNotifications.length > 0) && <span className="absolute top-0 right-0 w-4 h-4 bg-red-500 rounded-full border-2 border-white"></span>}
+      <div className="absolute top-20 right-4 z-40 flex flex-col gap-4 pointer-events-auto">
+        {(!isEggUnregistered) && (
+          <button onClick={() => { setIsStatusModalOpen(true); playSound('tap'); }} className="bg-white/90 p-3 rounded-full shadow-2xl border border-gray-200 active:scale-90 flex items-center justify-center w-14 h-14 relative" aria-label="ステータス">
+            <span className="text-2xl">📊</span>
+            {(isEgg && isHatchReady) && <span className="absolute top-0 right-0 w-4 h-4 bg-yellow-400 rounded-full border-2 border-white animate-pulse"></span>}
           </button>
-
-          {viewMode === 'gps' && activeLandmark ? (
-            <>
-              <button 
-                onClick={() => { setCameraFacing(prev => prev === 'environment' ? 'user' : 'environment'); setSceneKey(k => k + 1); playSound('tap'); }} 
-                className="bg-white/90 p-3 rounded-full shadow-2xl border border-gray-200 active:scale-90 transition-transform flex items-center justify-center w-14 h-14" 
-                aria-label="カメラ切替"
-              >
-                <span className="text-2xl">🔄</span>
-              </button>
-              <button 
-                onClick={takeSnapshot} 
-                className="bg-white/90 p-3 rounded-full shadow-2xl border border-gray-200 active:scale-90 transition-transform flex items-center justify-center w-14 h-14" 
-                aria-label="写真を撮る"
-              >
-                <span className="text-2xl">📸</span>
-              </button>
-            </>
-          ) : viewMode === 'mindar' ? (
-             <button onClick={takeSnapshot} className="bg-white/90 p-3 rounded-full shadow-2xl border border-gray-200 active:scale-90 transition-transform flex items-center justify-center w-14 h-14" aria-label="写真を撮る">
-               <span className="text-2xl">📸</span>
-             </button>
-          ) : null}
-        </div>
-      )}
+        )}
+        <button onClick={() => { setIsNewsOpen(true); playSound('tap'); }} className="bg-white/90 p-3 rounded-full shadow-2xl border border-gray-200 active:scale-90 flex items-center justify-center w-14 h-14 relative" aria-label="お知らせ">
+          <span className="text-2xl">📢</span>{(newsList.length > 0 || userNotifications.length > 0) && <span className="absolute top-0 right-0 w-4 h-4 bg-red-500 rounded-full border-2 border-white"></span>}
+        </button>
+        <button onClick={takeSnapshot} className="bg-white/90 p-3 rounded-full shadow-2xl border border-gray-200 active:scale-90 transition-transform flex items-center justify-center w-14 h-14" aria-label="写真を撮る">
+          <span className="text-2xl">📸</span>
+        </button>
+      </div>
 
       {gameOverNotice && (
         <div className="absolute inset-0 z-[130] bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
@@ -1687,63 +1124,8 @@ function HomeAR() {
         </div>
       )}
 
-      {/* --- きろく（Report）画面 --- */}
-      {viewMode === 'report' && (
-        <div className="absolute inset-0 z-30 bg-black/90 text-white overflow-y-auto pb-32 pt-10 px-6 backdrop-blur-md">
-          <h2 className="text-3xl font-bold mb-6 text-center text-purple-400">📊 育成とマインドフルネスの記録</h2>
-          <div className="space-y-6">
-            
-            <div className="bg-gray-800 p-5 rounded-2xl border border-purple-500/30 shadow-lg">
-              <h3 className="font-bold text-xl mb-3 border-b border-gray-600 pb-2">🏃 ウォーキング記録</h3>
-              <p className="text-4xl font-black text-cyan-400">{Math.floor(walkDistance)} <span className="text-sm font-normal text-gray-300">m</span></p>
-              <p className="text-md text-gray-400 mt-1">推定歩数: 約 {stepCount} 歩</p>
-            </div>
-
-            <div className="bg-gray-800 p-5 rounded-2xl border border-teal-500/30 shadow-lg">
-              <h3 className="font-bold text-xl mb-3 border-b border-gray-600 pb-2">🧘 マインドフルネス記録</h3>
-              <p className="text-4xl font-black text-teal-400">{mindfulnessLogCount} <span className="text-sm font-normal text-gray-300">回 実行</span></p>
-              <p className="text-md text-gray-400 mt-1">心の平穏とペットへの愛情度が記録されています。</p>
-              
-              <div className="mt-4 grid grid-cols-2 gap-4">
-                  <div className="bg-gray-700 p-3 rounded-xl text-center shadow-inner">
-                      <div className="text-xs text-gray-400">現在の愛情度</div>
-                      <div className="text-xl font-bold text-pink-400">💖 {Math.floor(affection)}</div>
-                  </div>
-                  <div className="bg-gray-700 p-3 rounded-xl text-center shadow-inner">
-                      <div className="text-xs text-gray-400">ごきげん</div>
-                      <div className="text-xl font-bold text-orange-400">✨ {motivationPercent}%</div>
-                  </div>
-              </div>
-            </div>
-
-            <div className="bg-gray-800 p-5 rounded-2xl border border-yellow-500/30 shadow-lg">
-              <h3 className="font-bold text-xl mb-3 border-b border-gray-600 pb-2">📋 アクティビティ総数</h3>
-              <ul className="space-y-3 text-gray-300">
-                  <li className="flex justify-between items-center bg-gray-700/50 p-3 rounded-lg">
-                    <span>殿堂入り達成</span> <span className="font-bold text-yellow-400 text-lg">🏆 {hallOfFameCount} 回</span>
-                  </li>
-                  <li className="flex justify-between items-center bg-gray-700/50 p-3 rounded-lg">
-                    <span>ごはんをあげた回数</span> <span className="font-bold text-lg">🍚 {feedCount} 回</span>
-                  </li>
-                  <li className="flex justify-between items-center bg-gray-700/50 p-3 rounded-lg">
-                    <span>スポットを訪れた回数</span> <span className="font-bold text-lg">📍 {landmarkVisitCount} 回</span>
-                  </li>
-                  <li className="flex justify-between items-center bg-gray-700/50 p-3 rounded-lg">
-                    <span>なでた回数</span> <span className="font-bold text-lg">✨ {eventCount} 回</span>
-                  </li>
-                  <li className="flex justify-between items-center bg-gray-700/50 p-3 rounded-lg">
-                    <span>現在のレベル</span> <span className="font-bold text-yellow-400 text-lg">🌟 Lv. {level}</span>
-                  </li>
-              </ul>
-            </div>
-            
-          </div>
-        </div>
-      )}
-
       {/* --- UIレイヤー (ボトム) --- */}
       <div className="absolute z-40 bottom-0 w-full p-4 flex flex-col gap-4 pointer-events-auto">
-        
         {isShopOpen && (
           <div className="absolute bottom-24 left-4 right-4 bg-white/95 p-5 rounded-3xl shadow-2xl backdrop-blur-md z-50 border border-gray-200">
             <div className="flex justify-between items-center mb-4 border-b pb-3"><h3 className="font-bold text-xl text-gray-800">🛒 おみせ</h3><button onClick={() => setIsShopOpen(false)} className="text-gray-500 font-bold px-4 py-2 bg-gray-100 rounded-full hover:bg-gray-200">閉じる</button></div>
@@ -1778,65 +1160,43 @@ function HomeAR() {
           </div>
         )}
 
-        {viewMode === 'mindar' && isEggUnregistered && sessionUserId && (
+        {isEggUnregistered && sessionUserId && (
           <button onClick={handleCreateEgg} className="bg-gradient-to-r from-yellow-400 to-orange-500 text-white p-4 rounded-2xl font-bold shadow-lg w-full animate-pulse text-lg border-4 border-yellow-200">🥚 不思議な卵を発見！<br/><span className="text-sm">タップして拾い上げる</span></button>
         )}
 
-        {viewMode === 'mindar' && isEgg && !isEggUnregistered && isHatchReady && petId && (
+        {isEgg && !isEggUnregistered && isHatchReady && petId && (
           <button onClick={() => handleHatchEgg(false)} className="bg-gradient-to-r from-pink-400 to-red-500 text-white p-4 rounded-2xl font-bold shadow-lg w-full animate-bounce text-lg border-4 border-pink-200">✨ 卵が割れそうだ！<br/><span className="text-sm">タップして孵化させる</span></button>
         )}
 
-        {viewMode === 'mindar' && !isEgg && !isEggUnregistered && petId && (
+        {!isEgg && !isEggUnregistered && petId && (
           <div className="flex gap-2 w-full">
             <button onClick={handleFeed} disabled={isSleeping || hungerPercent === 100 || petCondition === 'sick'} className={`flex-[2] text-white py-3 rounded-2xl font-bold shadow-lg transition-all ${(isSleeping || hungerPercent === 100 || petCondition === 'sick') ? 'bg-gray-400 opacity-80' : 'bg-gradient-to-br from-orange-400 to-orange-600 active:scale-95'}`}>🍚<br/><span className="text-xs">ごはん</span></button>
             <button onClick={() => { setIsInventoryOpen(true); setIsShopOpen(false); setIsNewsOpen(false); playSound('tap'); }} className="flex-1 bg-gradient-to-br from-blue-500 to-blue-700 text-white py-3 rounded-2xl font-bold shadow-lg active:scale-95 transition-all flex flex-col items-center justify-center">🎒<br/><span className="text-xs">もちもの</span></button>
             <button onClick={() => { setIsShopOpen(true); setIsInventoryOpen(false); setIsNewsOpen(false); playSound('tap'); }} className="flex-1 bg-gradient-to-br from-green-500 to-green-700 text-white py-3 rounded-2xl font-bold shadow-lg active:scale-95 transition-all flex flex-col items-center justify-center">🛒<br/><span className="text-xs">おみせ</span></button>
           </div>
         )}
-        
-        {viewMode === 'gps' && (
-          <>
-            <div className="bg-green-600/90 text-white p-3 rounded-xl font-bold shadow-lg w-full text-center text-sm backdrop-blur-sm">
-              {location ? `🚶‍♂️ 現在地周辺を散歩中... ${petId ? `(歩行: ${Math.floor(walkDistance)}m / 約${stepCount}歩)` : ''}` : '📡 GPSを探索中...'}
-            </div>
-            {activeLandmark && !isEgg && petId && (
-              <button 
-                onClick={handleCheckIn} 
-                className={`p-4 rounded-2xl font-bold shadow-2xl w-full border-4 animate-bounce text-lg text-white 
-                  ${(activeLandmark.landmark_masters?.facility_type || getFacilityType(activeLandmark.name)) === 'hospital' ? 'bg-gradient-to-br from-purple-400 to-purple-600 border-purple-200' 
-                  : (activeLandmark.landmark_masters?.facility_type || getFacilityType(activeLandmark.name)) === 'restaurant' ? 'bg-gradient-to-br from-red-400 to-red-600 border-red-200' 
-                  : (activeLandmark.landmark_masters?.facility_type || getFacilityType(activeLandmark.name)) === 'hotel' ? 'bg-gradient-to-br from-blue-400 to-blue-600 border-blue-200'
-                  : 'bg-gradient-to-br from-yellow-400 to-yellow-600 border-yellow-200 text-yellow-900'}`}
-              >
-                ✨ 【{activeLandmark.name}】を発見！<br/>タップしてチェックイン！
-              </button>
-            )}
-          </>
-        )}
 
-        {viewMode !== 'report' && (
-          <button 
-            onClick={() => { setIsSpotMapOpen(true); playSound('tap'); }} 
-            className="bg-gradient-to-r from-teal-400 to-teal-600 text-white p-3 rounded-2xl font-bold shadow-lg w-full flex justify-center items-center gap-2 border-2 border-teal-300 active:scale-95 transition-transform text-lg"
-          >
-            🗺️ 地図でスポットを探す
-          </button>
-        )}
+        <button 
+          onClick={() => { setIsSpotMapOpen(true); playSound('tap'); }} 
+          className="bg-gradient-to-r from-teal-400 to-teal-600 text-white p-3 rounded-2xl font-bold shadow-lg w-full flex justify-center items-center gap-2 border-2 border-teal-300 active:scale-95 transition-transform text-lg"
+        >
+          🗺️ 地図でスポットを探す
+        </button>
 
+        {/* 🌟 ページ遷移用ナビゲーション（フルリロード） */}
         <div className="flex justify-around bg-white p-3 rounded-2xl shadow-xl border border-gray-100">
-          <button onClick={() => { setViewMode('mindar'); playSound('tap'); }} className={`font-bold flex flex-col items-center gap-1 ${viewMode === 'mindar' ? 'text-blue-600' : 'text-gray-400'}`}><span className="text-xl">🏠</span><span className="text-xs">おうち</span></button>
-          <button onClick={() => { setViewMode('gps'); playSound('tap'); }} className={`font-bold flex flex-col items-center gap-1 ${viewMode === 'gps' ? 'text-green-600' : 'text-gray-400'}`}><span className="text-xl">🚶</span><span className="text-xs">さんぽ</span></button>
-          <button onClick={() => { setViewMode('report'); playSound('tap'); }} className={`font-bold flex flex-col items-center gap-1 ${viewMode === 'report' ? 'text-purple-600' : 'text-gray-400'}`}><span className="text-xl">📊</span><span className="text-xs">きろく</span></button>
+          <button onClick={() => { playSound('tap'); window.location.href = '/home'; }} className="font-bold flex flex-col items-center gap-1 text-blue-600"><span className="text-xl">🏠</span><span className="text-xs">おうち</span></button>
+          <button onClick={() => { playSound('tap'); window.location.href = '/walk'; }} className="font-bold flex flex-col items-center gap-1 text-gray-400 hover:text-green-600 transition-colors"><span className="text-xl">🚶</span><span className="text-xs">さんぽ</span></button>
+          <button onClick={() => { playSound('tap'); window.location.href = '/report'; }} className="font-bold flex flex-col items-center gap-1 text-gray-400 hover:text-purple-600 transition-colors"><span className="text-xl">📊</span><span className="text-xs">きろく</span></button>
         </div>
       </div>
 
-      {/* --- 背面：ARレイヤー --- */}
+      {/* --- 背面：ARレイヤー（MindAR専用） --- */}
       <div className="absolute top-0 left-0 w-full h-full z-0 pointer-events-none">
-        
-        {viewMode === 'mindar' && sessionUserId && isDataLoaded && (
+        {sessionUserId && isDataLoaded && (
           <div key={`mindar-container-${sceneKey}`} className="absolute inset-0 z-0 pointer-events-auto">
             {/* @ts-ignore */}
-            <a-scene embedded style={{ height: '100%', width: '100%', pointerEvents: 'auto' }} mindar-image={`imageTargetSrc: ${petMarkerUrl}; autoStart: true; uiLoading: no; uiError: no; maxTrack: 1;`} renderer="preserveDrawingBuffer: true; colorManagement: true; physicallyCorrectLights: true;" color-space="sRGB" vr-mode-ui="enabled: false" device-orientation-permission-ui="enabled: false">
+            <a-scene embedded style={{ height: '100%', width: '100%', pointerEvents: 'auto' }} mindar-image={`imageTargetSrc: ${petMarkerUrl}; autoStart: true; uiLoading: no; uiError: no; maxTrack: 1;`} renderer="preserveDrawingBuffer: true; colorManagement: true; physicallyCorrectLights: true; alpha: true;" color-space="sRGB" vr-mode-ui="enabled: false" device-orientation-permission-ui="enabled: false">
               {/* @ts-ignore */}
               <a-assets><a-asset-item id="pet-asset" src={activeModelUrl}></a-asset-item></a-assets>
               {/* @ts-ignore */}
@@ -1861,39 +1221,6 @@ function HomeAR() {
                   animation={hatchAnimating ? `property: scale; to: 0.5 0.5 0.5; dur: 800; easing: easeOutElastic;` : undefined}
                 ></a-gltf-model>
               </a-entity>
-            </a-scene>
-          </div>
-        )}
-
-        {viewMode === 'gps' && location && isDataLoaded && (
-          <div key={`gps-container-${sceneKey}-${cameraFacing}`} className="absolute inset-0 z-0 pointer-events-auto">
-            {/* @ts-ignore */}
-            <a-scene embedded style={{ height: '100%', width: '100%', pointerEvents: 'auto' }} vr-mode-ui="enabled: false" renderer="preserveDrawingBuffer: true; colorManagement: true;" arjs={`sourceType: webcam; videoTexture: true; debugUIEnabled: false; facingMode: ${cameraFacing};`}>
-              {/* @ts-ignore */}
-              <a-assets><a-asset-item id="pet-asset-gps" src={activeModelUrl}></a-asset-item>{activeLandmark && activeLandmark.model_url && (<a-asset-item id="landmark-asset-dynamic" src={activeLandmark.model_url}></a-asset-item>)}</a-assets>
-              {/* @ts-ignore */}
-              <a-light type="ambient" color="#ffffff" intensity="0.7"></a-light>
-              {/* @ts-ignore */}
-              <a-light type="directional" color="#ffffff" intensity="1.5" position="0 5 0"></a-light>
-              
-              {/* @ts-ignore */}
-              <a-camera gps-camera rotation-reader>
-                {!isEgg && petId && (
-                  /* @ts-ignore */
-                  <a-entity
-                    gltf-model={activeModelUrl}
-                    scale="1.5 1.5 1.5"
-                    position={`0 -1.5 ${cameraFacing === 'user' ? '-2' : '-4'}`}
-                    rotation={`0 180 0`}
-                    animation-mixer={`clip: ${petCondition !== 'healthy' ? 'Sad' : 'Walk'}; loop: repeat; crossFadeDuration: 0.3;`}
-                  ></a-entity>
-                )}
-              </a-camera>
-
-              {activeLandmark && !isEgg && petId && (
-                /* @ts-ignore */
-                <a-entity gps-entity-place={`latitude: ${activeLandmark.latitude}; longitude: ${activeLandmark.longitude};`} gltf-model={activeLandmark.model_url ? "#landmark-asset-dynamic" : "/models/treasure.glb"} scale="5 5 5" position="0 2 0" animation="property: rotation; to: 0 360 0; loop: true; dur: 4000; easing: linear;"></a-entity>
-              )}
             </a-scene>
           </div>
         )}
