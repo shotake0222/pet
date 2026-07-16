@@ -51,6 +51,7 @@ export default function AdminDashboard() {
   const [raritiesList, setRaritiesList] = useState<any[]>([]);
   const [attributesList, setAttributesList] = useState<any[]>([]);
   const [affinitiesList, setAffinitiesList] = useState<any[]>([]);           // 🌟 追加: 属性とアイテムの相性リスト
+  const [eggsList, setEggsList] = useState<any[]>([]);                       // 🌟 追加: 卵リスト
 
   // --- ペット用State ---
   const [petName, setPetName] = useState('');
@@ -64,7 +65,9 @@ export default function AdminDashboard() {
   const [selectedAttributeIds, setSelectedAttributeIds] = useState<number[]>([]);
   const [editingPetId, setEditingPetId] = useState<number | null>(null);
   
-  // --- 設定用State: レアリティ / 属性 ---
+  // --- 設定用State: 卵 / レアリティ / 属性 ---
+  const [newEggName, setNewEggName] = useState('');
+  const [newEggWeight, setNewEggWeight] = useState('100'); // 🌟 卵の排出ウェイト
   const [newRarityCode, setNewRarityCode] = useState('');
   const [newRarityLabel, setNewRarityLabel] = useState('');
   const [newRarityColor, setNewRarityColor] = useState('#ffffff');
@@ -141,7 +144,8 @@ export default function AdminDashboard() {
       petAttrsRes,
       userPetsRes,
       facilityDropsRes,
-      affinitiesRes // 🌟 追加: 相性データ
+      affinitiesRes, // 🌟 追加: 相性データ
+      eggsRes        // 🌟 追加: 卵データ
     ] = await Promise.all([
       supabase.from('pet_masters').select('*').order('id', { ascending: false }),
       supabase.from('landmark_masters').select('*').order('id', { ascending: false }),
@@ -155,7 +159,8 @@ export default function AdminDashboard() {
       supabase.from('pet_master_attributes').select('*'),
       supabase.from('pets').select('*, pet_masters(name)').order('created_at', { ascending: false }),
       supabase.from('facility_drop_masters').select('*, item_masters(name, image_url), coupon_masters(name, qr_image_url)').order('id', { ascending: false }),
-      supabase.from('attribute_item_affinities').select('*, item_masters(name)').order('id', { ascending: true }) // 🌟 追加
+      supabase.from('attribute_item_affinities').select('*, item_masters(name)').order('id', { ascending: true }), // 🌟 追加
+      supabase.from('egg_masters').select('*').order('id', { ascending: true }) // 🌟 追加: 卵マスターが必要
     ]);
     
     if (petsRes.data) {
@@ -180,12 +185,69 @@ export default function AdminDashboard() {
     if (attributesRes && attributesRes.data) setAttributesList(attributesRes.data);
     if (userPetsRes.data) setUserPetsList(userPetsRes.data);
     if (facilityDropsRes.data) setFacilityDropsList(facilityDropsRes.data);
-    if (affinitiesRes && affinitiesRes.data) setAffinitiesList(affinitiesRes.data); // 🌟 追加
+    if (affinitiesRes && affinitiesRes.data) setAffinitiesList(affinitiesRes.data);
+    if (eggsRes && eggsRes.data) {
+      setEggsList(eggsRes.data);
+      // 初回の卵タイプのセットアップ
+      if (!petEggType && eggsRes.data.length > 0) {
+        setPetEggType(eggsRes.data[0].name);
+      }
+    }
   };
 
   useEffect(() => {
     fetchData();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // --- 卵: CRUD ハンドラ ---
+  const handleAddEgg = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newEggName) return alert('卵の名前を入力してください');
+    setIsSubmitting(true);
+    try {
+      const { error } = await supabase.from('egg_masters').insert({ 
+        name: newEggName, 
+        drop_weight: parseInt(newEggWeight, 10) 
+      });
+      if (error) throw error;
+      setNewEggName(''); setNewEggWeight('100');
+      await fetchData(); // 🌟 await にして確実な反映
+      alert('卵を追加しました');
+    } catch (e: any) {
+      alert(`追加に失敗しました: ${e.message}`);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleUpdateEggWeight = async (id: number, currentWeight: number) => {
+    const newWeightStr = window.prompt('新しい排出ウェイトを入力してください（整数）\n※数値が大きいほど出やすくなります。', String(currentWeight));
+    if (newWeightStr === null) return;
+    const newWeight = parseInt(newWeightStr, 10);
+    if (isNaN(newWeight) || newWeight < 0) return alert('正しい数値を入力してください');
+
+    try {
+      const { error } = await supabase.from('egg_masters').update({ drop_weight: newWeight }).eq('id', id);
+      if (error) throw error;
+      await fetchData();
+      alert('ウェイトを更新しました');
+    } catch (e: any) {
+      alert(`更新に失敗しました: ${e.message}`);
+    }
+  };
+
+  const handleDeleteEgg = async (id: number) => {
+    if (!window.confirm('この卵を削除しますか？既存のペットに影響が出る可能性があります')) return;
+    try {
+      const { error } = await supabase.from('egg_masters').delete().eq('id', id);
+      if (error) throw error;
+      await fetchData();
+      alert('削除しました');
+    } catch (e: any) {
+      alert(`削除に失敗しました: ${e.message}`);
+    }
+  };
+
 
   // --- レアリティ / 属性: CRUD ハンドラ ---
   const handleAddRarity = async (e: React.FormEvent) => {
@@ -201,7 +263,7 @@ export default function AdminDashboard() {
       });
       if (error) throw error;
       setNewRarityCode(''); setNewRarityLabel(''); setNewRarityColor('#ffffff'); setNewRarityWeight('100');
-      fetchData();
+      await fetchData(); // 🌟 await に変更
       alert('レアリティを追加しました');
     } catch (e: any) {
       alert(`追加に失敗しました: ${e.message}`);
@@ -220,7 +282,7 @@ export default function AdminDashboard() {
     try {
       const { error } = await supabase.from('rarities').update({ drop_weight: newWeight }).eq('id', id);
       if (error) throw error;
-      fetchData();
+      await fetchData(); // 🌟 await に変更
       alert('ウェイトを更新しました');
     } catch (e: any) {
       alert(`更新に失敗しました: ${e.message}`);
@@ -232,7 +294,7 @@ export default function AdminDashboard() {
     try {
       const { error } = await supabase.from('rarities').delete().eq('id', id);
       if (error) throw error;
-      fetchData();
+      await fetchData(); // 🌟 await に変更
       alert('削除しました');
     } catch (e: any) {
       alert(`削除に失敗しました: ${e.message}`);
@@ -247,7 +309,7 @@ export default function AdminDashboard() {
       const { error } = await supabase.from('attributes').insert({ name: newAttributeName, description: newAttributeDesc });
       if (error) throw error;
       setNewAttributeName(''); setNewAttributeDesc('');
-      fetchData();
+      await fetchData(); // 🌟 await にして追加の即時反映を確実にする
       alert('属性を追加しました');
     } catch (e: any) {
       alert(`追加に失敗しました: ${e.message}`);
@@ -261,7 +323,7 @@ export default function AdminDashboard() {
     try {
       const { error } = await supabase.from('attributes').delete().eq('id', id);
       if (error) throw error;
-      fetchData();
+      await fetchData(); // 🌟 await に変更
       alert('削除しました');
     } catch (e: any) {
       alert(`削除に失敗しました: ${e.message}`);
@@ -278,7 +340,7 @@ export default function AdminDashboard() {
         affinity_type: affinityType
       });
       if (error) throw error;
-      fetchData();
+      await fetchData(); // 🌟 await に変更
       alert('相性を設定しました');
     } catch (e: any) {
       if (e.code === '23505') {
@@ -295,7 +357,7 @@ export default function AdminDashboard() {
     try {
       const { error } = await supabase.from('attribute_item_affinities').delete().eq('id', affinityId);
       if (error) throw error;
-      fetchData();
+      await fetchData(); // 🌟 await に変更
     } catch (e: any) {
       alert(`エラー: ${e.message}`);
     }
@@ -317,7 +379,10 @@ export default function AdminDashboard() {
 
   const handleSavePet = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!petModelFile || !petMarkerFile || !petName) return alert('必須項目が不足しています（名前、第1形態モデル、マーカー）');
+    if (!petModelFile && !editingPetId) return alert('必須項目が不足しています（第1形態モデル）');
+    if (!petMarkerFile && !editingPetId) return alert('必須項目が不足しています（マーカー）');
+    if (!petName) return alert('名前が不足しています');
+    
     setIsSubmitting(true);
     try {
       let modelUrl: string | null = null;
@@ -387,10 +452,10 @@ export default function AdminDashboard() {
       }
 
       setPetName(''); setPetModelFile(null); setPetModelV2File(null); setPetModelV3File(null); setPetMarkerFile(null);
-      setPetEggType('A');
+      setPetEggType(eggsList.length > 0 ? eggsList[0].name : 'A');
       setSelectedAttributeIds([]);
       setEditingPetId(null);
-      fetchData();
+      await fetchData(); // 🌟 awaitに変更
     } catch (e: any) {
       alert(`エラー: ${e.message}`);
     } finally {
@@ -427,7 +492,7 @@ export default function AdminDashboard() {
 
       setLmMasterName(''); setLmMasterDesc(''); setLmMasterFacilityType('normal'); setLmMasterModelFile(null); setLmAutoGenerate(false);
       setLmGenStartTime(''); setLmGenEndTime(''); setLmGenCount('100');
-      fetchData();
+      await fetchData(); // 🌟 awaitに変更
     } catch (e: any) {
       alert(`エラー: ${e.message}`);
     } finally {
@@ -454,7 +519,7 @@ export default function AdminDashboard() {
 
       alert(`スポット「${landmarkName}」を地図上に設置しました！`);
       setLandmarkName(''); setLandmarkDesc(''); setLandmarkLat(''); setLandmarkLng(''); setLandmarkModelFile(null);
-      fetchData();
+      await fetchData(); // 🌟 awaitに変更
     } catch (e: any) {
       alert(`エラー: ${e.message}`);
     } finally {
@@ -475,7 +540,7 @@ export default function AdminDashboard() {
       alert(`スケジュールを設定し、全国に ${count} 箇所を発生させました！`);
       setActiveMassGenMaster(null);
       setLmGenStartTime(''); setLmGenEndTime(''); setLmGenCount('100');
-      fetchData();
+      await fetchData(); // 🌟 awaitに変更
     } catch (err: any) {
       alert(`エラー: ${err.message}`);
     } finally {
@@ -505,7 +570,7 @@ export default function AdminDashboard() {
 
       alert(`アイテム「${itemName}」をショップに並べました！`);
       setItemName(''); setItemDesc(''); setItemPrice('100'); setItemEffect('10'); setItemImageFile(null);
-      fetchData();
+      await fetchData(); // 🌟 awaitに変更
     } catch (e: any) {
       alert(`エラー: ${e.message}`);
     } finally {
@@ -533,7 +598,7 @@ export default function AdminDashboard() {
 
       alert(`クーポン「${couponName}」を登録しました！`);
       setCouponName(''); setCouponDesc(''); setCouponCode(''); setCouponQrFile(null);
-      fetchData();
+      await fetchData(); // 🌟 awaitに変更
     } catch (e: any) {
       alert(`エラー: ${e.message}`);
     } finally {
@@ -558,7 +623,7 @@ export default function AdminDashboard() {
       if (error) throw error;
       alert('ドロップ報酬を設定しました！');
       setDropItemId(''); setDropCouponId(''); setDropAmount('1'); setDropRate('100');
-      fetchData();
+      await fetchData(); // 🌟 awaitに変更
     } catch (e: any) {
       alert(`エラー: ${e.message}`);
     } finally {
@@ -579,7 +644,7 @@ export default function AdminDashboard() {
 
       alert('お知らせを配信しました！');
       setNewsTitle(''); setNewsContent('');
-      fetchData();
+      await fetchData(); // 🌟 awaitに変更
     } catch (e: any) {
       alert(`エラー: ${e.message}`);
     } finally {
@@ -593,7 +658,7 @@ export default function AdminDashboard() {
       const { error } = await supabase.from('pets').update({ condition_status: newCondition }).eq('id', petId);
       if (error) throw error;
       alert('ステータスを更新しました。');
-      fetchData();
+      await fetchData(); // 🌟 awaitに変更
     } catch (e: any) {
       alert(`エラー: ${e.message}`);
     }
@@ -619,7 +684,7 @@ export default function AdminDashboard() {
       const { error } = await supabase.from('pet_masters').delete().eq('id', id);
       if (error) throw error;
       alert('削除しました。');
-      fetchData();
+      await fetchData(); // 🌟 awaitに変更
     } catch (e: any) {
       alert(`削除に失敗しました: ${e.message}`);
     }
@@ -633,7 +698,7 @@ export default function AdminDashboard() {
       const { error } = await supabase.from('landmark_masters').delete().eq('id', id);
       if (error) throw error;
       alert('スポットリストから削除しました。');
-      fetchData();
+      await fetchData(); // 🌟 awaitに変更
     } catch (e: any) {
       alert(`削除に失敗しました: ${e.message}`);
     }
@@ -643,7 +708,7 @@ export default function AdminDashboard() {
     try {
       const { error } = await supabase.from('landmark_masters').update({ is_public: !current }).eq('id', id);
       if (error) throw error;
-      fetchData();
+      await fetchData(); // 🌟 awaitに変更
     } catch (e: any) {
       alert(`エラー: ${e.message}`);
     }
@@ -655,7 +720,7 @@ export default function AdminDashboard() {
       const { error } = await supabase.from('landmarks').delete().eq('id', id);
       if (error) throw error;
       alert('スポットを撤去しました。');
-      fetchData();
+      await fetchData(); // 🌟 awaitに変更
     } catch (e: any) {
       alert(`削除に失敗しました: ${e.message}`);
     }
@@ -671,7 +736,7 @@ export default function AdminDashboard() {
       const { error } = await supabase.from('item_masters').delete().eq('id', id);
       if (error) throw error;
       alert('削除しました。');
-      fetchData();
+      await fetchData(); // 🌟 awaitに変更
     } catch (e: any) {
       alert(`削除に失敗しました: ${e.message}`);
     }
@@ -687,7 +752,7 @@ export default function AdminDashboard() {
       const { error } = await supabase.from('coupon_masters').delete().eq('id', id);
       if (error) throw error;
       alert('削除しました。');
-      fetchData();
+      await fetchData(); // 🌟 awaitに変更
     } catch (e: any) {
       alert(`削除に失敗しました: ${e.message}`);
     }
@@ -699,7 +764,7 @@ export default function AdminDashboard() {
       const { error } = await supabase.from('facility_drop_masters').delete().eq('id', id);
       if (error) throw error;
       alert('削除しました。');
-      fetchData();
+      await fetchData(); // 🌟 awaitに変更
     } catch (e: any) {
       alert(`削除に失敗しました: ${e.message}`);
     }
@@ -709,7 +774,7 @@ export default function AdminDashboard() {
     try {
       const { error } = await supabase.from('announcements').update({ is_active: !currentStatus }).eq('id', id);
       if (error) throw error;
-      fetchData();
+      await fetchData(); // 🌟 awaitに変更
     } catch (e: any) {
       alert(`エラー: ${e.message}`);
     }
@@ -722,13 +787,16 @@ export default function AdminDashboard() {
     acc[type].push(pet);
     return acc;
   }, {} as Record<string, any[]>);
-  const eggTypes = Object.keys(groupedPets).sort();
+  const groupedEggTypes = Object.keys(groupedPets).sort();
 
+  // 卵の全体のウェイト合計（表示用）
+  const totalEggWeight = eggsList.reduce((sum, e) => sum + (e.drop_weight || 0), 0);
+  
   // レアリティの全体のウェイト合計（表示用）
   const totalRarityWeight = raritiesList.reduce((sum, r) => sum + (r.drop_weight || 0), 0);
 
   return (
-    <div className="max-w-6xl mx-auto p-6 bg-white shadow-xl rounded-3xl mt-8 mb-20">
+    <div className="max-w-7xl mx-auto p-6 bg-white shadow-xl rounded-3xl mt-8 mb-20">
       <h1 className="text-2xl font-bold mb-6 text-gray-800">⚙️ Straid AR 全体管理ダッシュボード</h1>
       
       {/* タブ切り替え */}
@@ -746,7 +814,7 @@ export default function AdminDashboard() {
             {tab === 'drops' && '🎁 報酬設定'}
             {tab === 'news' && '📢 お知らせ管理'}
             {tab === 'users' && '👥 ユーザー/状態管理'}
-            {tab === 'settings' && '⚙️ 設定 (レアリティ/属性)'}
+            {tab === 'settings' && '⚙️ 設定 (卵/レアリティ/属性)'}
           </button>
         ))}
       </div>
@@ -773,10 +841,18 @@ export default function AdminDashboard() {
                     <div className="flex-[1]">
                       <label className="block text-sm font-bold mb-1 text-orange-700">属する卵タイプ</label>
                       <select value={petEggType} onChange={e => setPetEggType(e.target.value)} className="w-full border p-3 rounded-lg focus:ring-2 focus:ring-orange-500 font-bold bg-orange-50 text-orange-900 border-orange-200">
-                        <option value="A">卵 A</option>
-                        <option value="B">卵 B</option>
-                        <option value="C">卵 C</option>
-                        <option value="D">卵 D</option>
+                        {eggsList && eggsList.length > 0 ? (
+                          eggsList.map(egg => (
+                            <option key={egg.id} value={egg.name}>{egg.name}</option>
+                          ))
+                        ) : (
+                          <>
+                            <option value="A">卵 A</option>
+                            <option value="B">卵 B</option>
+                            <option value="C">卵 C</option>
+                            <option value="D">卵 D</option>
+                          </>
+                        )}
                       </select>
                     </div>
                   </div>
@@ -804,7 +880,7 @@ export default function AdminDashboard() {
                       <div className="w-full border p-3 rounded-lg bg-white max-h-40 overflow-y-auto">
                         {attributesList && attributesList.length > 0 ? (
                           attributesList.map(a => (
-                            <label key={a.id} className="flex items-center gap-2 text-sm mb-2">
+                            <label key={a.id} className="flex items-center gap-2 text-sm mb-2 cursor-pointer">
                               <input type="checkbox" checked={selectedAttributeIds.includes(a.id)} onChange={e => {
                                 if (e.target.checked) setSelectedAttributeIds(prev => [...prev, a.id]);
                                 else setSelectedAttributeIds(prev => prev.filter(id => id !== a.id));
@@ -850,7 +926,7 @@ export default function AdminDashboard() {
                     {editingPetId && (
                       <button type="button" onClick={() => {
                         setEditingPetId(null);
-                        setPetName(''); setPetEggType('A'); setPetRarity('N'); setPetWeight('100'); setSelectedAttributeIds([]);
+                        setPetName(''); setPetEggType(eggsList.length > 0 ? eggsList[0].name : 'A'); setPetRarity('N'); setPetWeight('100'); setSelectedAttributeIds([]);
                         setPetModelFile(null); setPetModelV2File(null); setPetModelV3File(null); setPetMarkerFile(null);
                       }} className="bg-gray-200 text-gray-700 font-bold py-4 px-4 rounded-xl">キャンセル</button>
                     )}
@@ -908,7 +984,7 @@ export default function AdminDashboard() {
 
                       <div className="flex items-center gap-3 bg-white p-3 border rounded-lg">
                         <label className="text-sm font-bold whitespace-nowrap">公開ステータス:</label>
-                        <button type="button" onClick={() => setLmMasterIsPublic(!lmMasterIsPublic)} className={`text-xs font-bold px-3 py-1 rounded-full ${lmMasterIsPublic ? 'bg-green-100 text-green-800' : 'bg-gray-300 text-gray-700'}`}>
+                        <button type="button" onClick={() => toggleLandmarkMasterPublic(0, false)} /* プレビュー用ダミー */ className={`text-xs font-bold px-3 py-1 rounded-full ${lmMasterIsPublic ? 'bg-green-100 text-green-800' : 'bg-gray-300 text-gray-700'}`}>
                           {lmMasterIsPublic ? '公開 (本番表示)' : '非公開 (準備中)'}
                         </button>
                       </div>
@@ -1176,9 +1252,9 @@ export default function AdminDashboard() {
                     <span className="text-sm font-normal text-gray-500">全 {petsList.length} 匹</span>
                   </h2>
 
-                  {eggTypes.length === 0 && <p className="text-center text-gray-400 py-10 bg-white rounded-xl">データがありません</p>}
+                  {groupedEggTypes.length === 0 && <p className="text-center text-gray-400 py-10 bg-white rounded-xl">データがありません</p>}
                   
-                  {eggTypes.map(type => {
+                  {groupedEggTypes.map(type => {
                     const petsInEgg: any[] = groupedPets[type];
                     const totalWeight = petsInEgg.reduce((sum, p) => sum + (Number(p.drop_weight) || 0), 0);
                     
@@ -1257,7 +1333,7 @@ export default function AdminDashboard() {
                                   setActiveTab('pets');
                                   setEditingPetId(pet.id);
                                   setPetName(pet.name || '');
-                                  setPetEggType(pet.egg_type || 'A'); 
+                                  setPetEggType(pet.egg_type || (eggsList.length > 0 ? eggsList[0].name : 'A')); 
                                   setPetRarity(pet.rarity || 'N');
                                   setPetWeight(String(pet.drop_weight || 100));
                                   setSelectedAttributeIds((pet.attributes || []).map((a: any) => a.id));
@@ -1580,12 +1656,75 @@ export default function AdminDashboard() {
           </>
         )}
 
-        {/* --- 設定タブ: レアリティ / 属性 管理（設定タブ選択時のみ表示） --- */}
+        {/* --- 設定タブ: 卵 / レアリティ / 属性 管理（設定タブ選択時のみ表示） --- */}
         {activeTab === 'settings' && (
           <div className="col-span-1 lg:col-span-2 bg-white p-6 rounded-2xl border border-gray-100">
-            <h2 className="text-xl font-bold mb-4">⚙️ レアリティ / 属性 管理</h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <h2 className="text-xl font-bold mb-4">⚙️ 卵 / レアリティ / 属性 管理</h2>
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
               
+              {/* 🌟 卵管理エリア */}
+              <div className="bg-orange-50 p-4 rounded-xl border border-orange-100">
+                <h3 className="font-bold mb-3 text-orange-900">卵を追加</h3>
+                <form onSubmit={handleAddEgg} className="space-y-3 bg-white p-4 rounded-lg border shadow-sm">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-xs font-bold text-gray-600 block mb-1">卵の名前 (例: レア卵)</label>
+                      <input value={newEggName} onChange={e => setNewEggName(e.target.value)} className="w-full border p-2 rounded text-sm" required />
+                    </div>
+                    <div>
+                      <label className="text-xs font-bold text-orange-700 block mb-1">排出ウェイト 🌟</label>
+                      <input type="number" value={newEggWeight} onChange={e => setNewEggWeight(e.target.value)} className="w-full border p-2 rounded text-sm bg-orange-50 focus:ring-orange-500" required />
+                    </div>
+                  </div>
+                  <button disabled={isSubmitting} className="w-full bg-slate-900 text-white font-bold py-2 rounded hover:bg-slate-800 shadow mt-2">
+                    追加する
+                  </button>
+                </form>
+
+                <div className="mt-6">
+                  <div className="flex justify-between items-end mb-2 border-b border-orange-200 pb-2">
+                    <h4 className="font-bold text-orange-900">登録済み卵タイプ</h4>
+                    <span className="text-xs font-bold text-gray-500 bg-white border px-2 py-1 rounded">総ウェイト: {totalEggWeight}</span>
+                  </div>
+                  
+                  <div className="space-y-3 mt-3">
+                    {eggsList.length === 0 && <div className="text-sm text-gray-500 text-center py-4 bg-white rounded border">まだ登録されていません</div>}
+                    
+                    {[...eggsList].sort((a, b) => (b.drop_weight || 0) - (a.drop_weight || 0)).map(egg => {
+                      const dropPercentage = totalEggWeight > 0 ? (((egg.drop_weight || 0) / totalEggWeight) * 100).toFixed(1) : '0.0';
+
+                      return (
+                        <div key={egg.id} className="bg-white p-3 rounded-lg border shadow-sm group">
+                          <div className="flex items-center justify-between mb-2">
+                            <span className="font-bold text-lg">{egg.name}</span>
+                            <div className="flex gap-2">
+                              <button 
+                                onClick={() => handleUpdateEggWeight(egg.id, egg.drop_weight || 0)} 
+                                className="text-xs font-bold text-blue-600 bg-blue-50 border border-blue-200 px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity hover:bg-blue-100"
+                              >
+                                ウェイト変更
+                              </button>
+                              <button 
+                                onClick={() => handleDeleteEgg(egg.id)} 
+                                className="text-xs font-bold text-red-600 bg-red-50 border border-red-200 px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-100"
+                              >
+                                削除
+                              </button>
+                            </div>
+                          </div>
+                          <div className="flex items-center justify-between bg-orange-50 px-3 py-2 rounded text-sm">
+                            <span className="font-bold text-gray-700">ウェイト: <span className="text-orange-700 text-base">{egg.drop_weight || 0}</span></span>
+                            <span className="font-bold text-orange-600 bg-white px-2 py-0.5 rounded border border-orange-200">
+                              排出率: {dropPercentage}%
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+
               {/* レアリティ管理エリア */}
               <div className="bg-gray-50 p-4 rounded-xl border">
                 <h3 className="font-bold mb-3">レアリティを追加</h3>
@@ -1626,7 +1765,6 @@ export default function AdminDashboard() {
                     
                     {/* ウェイトが大きい（出やすい）順に並び替えて表示 */}
                     {[...raritiesList].sort((a, b) => (b.drop_weight || 0) - (a.drop_weight || 0)).map(r => {
-                      // 🌟 全体のウェイトに対する割合（％）を計算
                       const dropPercentage = totalRarityWeight > 0 ? (((r.drop_weight || 0) / totalRarityWeight) * 100).toFixed(1) : '0.0';
 
                       return (
