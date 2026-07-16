@@ -4,7 +4,6 @@ import { useState, useEffect, useMemo, Suspense, useRef } from 'react';
 import Script from 'next/script';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { createClient } from '@/utils/supabase/client';
-import { hatchPet } from '@/app/actions/gacha';
 
 // --- サウンド再生用ヘルパー ---
 const playSound = (type: 'tap' | 'eat' | 'hatch' | 'levelup' | 'item' | 'error' | 'camera') => {
@@ -53,6 +52,7 @@ function HomeAR() {
   const [feedCount, setFeedCount] = useState(0);
   const [landmarkVisitCount, setLandmarkVisitCount] = useState(0);
   const [eventCount, setEventCount] = useState(0);
+  const [mindfulnessLogCount, setMindfulnessLogCount] = useState(0); // 🌟 マインドフルネス記録用
   const [level, setLevel] = useState(1);
   const [exp, setExp] = useState(0);
 
@@ -243,6 +243,9 @@ function HomeAR() {
     setMotivationPercent(100);
     if (petId) {
       addExperience(20);
+      // 本番環境としてDBにマインドフルネスの実行を記録
+      await supabase.from('activity_logs').insert({ pet_id: petId, action_type: 'mindfulness', points_earned: 20 });
+      setMindfulnessLogCount(prev => prev + 1);
     }
   };
 
@@ -373,10 +376,16 @@ function HomeAR() {
         const { data: inv } = await supabase.from('user_inventory').select('id, quantity, item_masters(*)').eq('user_id', sessionUserId).gt('quantity', 0);
         if (inv) setInventory(inv);
 
+        // 各種ログのカウント取得
         const { count: feedLogCount } = await supabase.from('activity_logs').select('id', { count: 'exact', head: true }).eq('pet_id', pet.id).eq('action_type', 'feed');
         if (feedLogCount !== null) setFeedCount(feedLogCount);
+        
         const { count: eventLogCount } = await supabase.from('activity_logs').select('id', { count: 'exact', head: true }).eq('pet_id', pet.id).eq('action_type', 'event');
         if (eventLogCount !== null) setEventCount(eventLogCount);
+        
+        const { count: mindCount } = await supabase.from('activity_logs').select('id', { count: 'exact', head: true }).eq('pet_id', pet.id).eq('action_type', 'mindfulness');
+        if (mindCount !== null) setMindfulnessLogCount(mindCount);
+        
         const { count: landmarkCount } = await supabase.from('landmark_visits').select('id', { count: 'exact', head: true }).eq('user_id', sessionUserId);
         if (landmarkCount !== null) setLandmarkVisitCount(landmarkCount);
 
@@ -788,35 +797,60 @@ function HomeAR() {
     }
   }, [viewMode, isClient, petId, supabase, isEgg, isSleeping, sceneKey, petCondition]);
 
+  // 🌟 本番環境としての卵作成処理（サーバーアクション依存を排除しクライアントから直接DB操作）
   const handleCreateEgg = async () => {
     if (!sessionUserId) return;
     try {
-      const result = await hatchPet('random_encounter'); 
-      if (result.success) {
-        setPetId(result.pet.id); setOwnerId(result.pet.owner_id); 
-        setIsEgg(true); setIsEggUnregistered(false); setWalkDistance(0); setFeedCount(0); setLandmarkVisitCount(0); setEventCount(0);
-        setGameOverNotice(null); setGameOverHandled(false); setLastFedAt(null); setSleepingUntil(null); setHungerPercent(100); setMotivationPercent(100); setLevel(1); setExp(0); setAffection(0);
-        
-        if (result.pet.pet_masters) {
-          const pm = result.pet.pet_masters;
-          const eggGroup = (pm as any).egg_type || 'A';
-          setEggModelUrl(`/models/eggs/egg_${eggGroup}.glb`);
-
-          const rarityRes = pm.rarity || '?';
-          const fallbackBase = `/models/pet/${rarityRes}`;
-          setPetModelUrlV1(pm.model_url || `${fallbackBase}/v1.glb`);
-          setPetModelUrlV2(pm.model_url_v2 || `${fallbackBase}/v2.glb`);
-          setPetModelUrlV3(pm.model_url_v3 || `${fallbackBase}/v3.glb`);
-          setPetMasterName(pm.name || '不明');
-          setPetRarity(rarityRes);
-        } else {
-          setEggModelUrl(`/models/eggs/egg_A.glb`);
-        }
-        
-        playSound('item');
-        alert(`不思議な卵を拾った！\nさんぽ、給餌、ランドマーク、イベントの全てをこなして孵化させよう！`);
+      const { data: petMasters, error: fetchError } = await supabase.from('pet_masters').select('*');
+      if (fetchError || !petMasters || petMasters.length === 0) {
+        throw new Error('ペットのマスターデータが見つかりません。');
       }
-    } catch (err) { alert('エラーが発生しました。'); }
+      
+      const selectedMaster = petMasters[Math.floor(Math.random() * petMasters.length)];
+      
+      const { data: newPet, error: insertError } = await supabase.from('pets').insert({
+        owner_id: sessionUserId,
+        pet_master_id: selectedMaster.id,
+        is_egg: true,
+        level: 1,
+        exp: 0,
+        affection_level: 0,
+        walk_distance_m: 0,
+        condition_status: 'healthy',
+        generation: 1
+      }).select('*, pet_masters(*)').single();
+
+      if (insertError) throw insertError;
+      
+      const pet = newPet;
+      
+      setPetId(pet.id); setOwnerId(pet.owner_id); 
+      setIsEgg(true); setIsEggUnregistered(false); setWalkDistance(0); setFeedCount(0); setLandmarkVisitCount(0); setEventCount(0);
+      setGameOverNotice(null); setGameOverHandled(false); setLastFedAt(null); setSleepingUntil(null); setHungerPercent(100); setMotivationPercent(100); setLevel(1); setExp(0); setAffection(0);
+      
+      if (pet.pet_masters) {
+        const pm = pet.pet_masters;
+        const eggGroup = (pm as any).egg_type || 'A';
+        setEggModelUrl(`/models/eggs/egg_${eggGroup}.glb`);
+
+        const rarityRes = pm.rarity || '?';
+        const fallbackBase = `/models/pet/${rarityRes}`;
+        setPetModelUrlV1(pm.model_url || `${fallbackBase}/v1.glb`);
+        setPetModelUrlV2(pm.model_url_v2 || `${fallbackBase}/v2.glb`);
+        setPetModelUrlV3(pm.model_url_v3 || `${fallbackBase}/v3.glb`);
+        setPetMasterName(pm.name || '不明');
+        setPetRarity(rarityRes);
+      } else {
+        setEggModelUrl(`/models/eggs/egg_A.glb`);
+      }
+      
+      playSound('item');
+      alert(`不思議な卵を拾った！\nさんぽ、給餌、ランドマーク、イベントの全てをこなして孵化させよう！`);
+      
+    } catch (err: any) { 
+      console.error(err);
+      alert(`エラーが発生しました: ${err.message}`); 
+    }
   };
 
   const handleHatchEgg = async () => {
@@ -1251,7 +1285,7 @@ function HomeAR() {
         </div>
       )}
 
-      {/* --- スポットマップ確認モーダル（レーダー） --- */}
+      {/* --- 🌟 本番環境用：地図でスポットを探すモーダル --- */}
       {isSpotMapOpen && (
         <div className="absolute inset-0 z-[120] bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl p-6 w-full max-w-sm shadow-2xl relative max-h-[90vh] flex flex-col">
@@ -1261,29 +1295,42 @@ function HomeAR() {
               <p className="text-center text-gray-500 my-10">GPS座標を取得中...</p>
             ) : (
               <div className="flex-1 overflow-y-auto pr-1">
-                {/* 視覚的レーダーマップ */}
-                <div className="relative w-full aspect-square bg-green-50 rounded-2xl border-4 border-green-200 overflow-hidden mb-4 shadow-inner">
-                  <div className="absolute inset-0 flex items-center justify-center">
-                     <div className="w-full h-px bg-green-200"></div>
-                     <div className="absolute h-full w-px bg-green-200"></div>
-                     {/* ユーザー現在地 */}
-                     <div className="absolute w-4 h-4 bg-red-500 rounded-full border-2 border-white z-10 shadow-md animate-pulse"></div>
+                {/* 🌟 実際のOpenStreetMapを埋め込んだ地図表示 */}
+                <div className="relative w-full aspect-square bg-gray-100 rounded-2xl overflow-hidden mb-4 shadow-inner border border-gray-300">
+                  <iframe 
+                    width="100%" 
+                    height="100%" 
+                    frameBorder="0" 
+                    scrolling="no" 
+                    marginHeight={0} 
+                    marginWidth={0} 
+                    src={`https://www.openstreetmap.org/export/embed.html?bbox=${location.lng - 0.005}%2C${location.lat - 0.005}%2C${location.lng + 0.005}%2C${location.lat + 0.005}&layer=mapnik`}
+                    className="absolute inset-0 z-0 pointer-events-none"
+                  ></iframe>
+                  
+                  {/* 現在地のアイコン表示 */}
+                  <div className="absolute inset-0 z-10 flex items-center justify-center pointer-events-none">
+                     <div className="w-5 h-5 bg-red-500 rounded-full border-2 border-white shadow-md animate-pulse"></div>
                   </div>
+                  
                   {/* 周辺スポットのピン表示 */}
+                  <div className="absolute inset-0 z-20 pointer-events-none">
                   {landmarks.map(spot => {
                      const master = spot.landmark_masters;
                      const facilityType = master?.facility_type && master.facility_type !== 'normal' ? master.facility_type : getFacilityType(spot.name);
                      const typeIcon = facilityType === 'hospital' ? '🏥' : facilityType === 'restaurant' ? '🍽️' : facilityType === 'hotel' ? '🏨' : '📍';
 
-                     const dLat = (spot.latitude - location.lat) * 111000;
-                     const dLng = (spot.longitude - location.lng) * 91000;
-                     const scale = 0.05; 
-                     const top = `calc(50% - ${dLat * scale}px)`;
-                     const left = `calc(50% + ${dLng * scale}px)`;
+                     // bboxの幅0.01度分（約1.1km）をコンテナ100%として計算
+                     const topPercent = 50 - ((spot.latitude - location.lat) / 0.01) * 100;
+                     const leftPercent = 50 + ((spot.longitude - location.lng) / 0.01) * 100;
+                     
                      return (
-                       <div key={`radar-${spot.id}`} className="absolute w-8 h-8 -ml-4 -mt-4 text-xl flex items-center justify-center filter drop-shadow z-0" style={{ top, left }} title={spot.name}>{typeIcon}</div>
+                       <div key={`radar-${spot.id}`} className="absolute w-8 h-8 -ml-4 -mt-4 text-xl flex items-center justify-center filter drop-shadow bg-white/90 rounded-full border border-gray-300 shadow-sm" style={{ top: `${topPercent}%`, left: `${leftPercent}%` }} title={spot.name}>
+                         {typeIcon}
+                       </div>
                      )
                   })}
+                  </div>
                 </div>
                 
                 {/* スポットリスト */}
@@ -1306,7 +1353,7 @@ function HomeAR() {
                           setIsSpotMapOpen(false); 
                           setCameraFacing('environment'); 
                           playSound('tap');
-                        }} className="bg-blue-600 text-white text-xs font-bold px-3 py-2 rounded-lg active:scale-95 transition-transform">
+                        }} className="bg-teal-600 text-white text-xs font-bold px-3 py-2 rounded-lg active:scale-95 transition-transform">
                           ARで見る
                         </button>
                       </div>
@@ -1420,10 +1467,11 @@ function HomeAR() {
       )}
 
       {/* --- UIレイヤー (ヘッダー) --- */}
-      {sessionUserId && (
+      {sessionUserId && viewMode !== 'report' && (
         <div className="absolute top-4 left-4 right-4 z-20 flex flex-col gap-3 pointer-events-none">
           <div className="flex justify-between items-end">
-            <span className="text-white font-bold text-2xl drop-shadow-lg">{isEggUnregistered ? '謎のNFCタグ' : displayName} <span className="text-xs ml-1 text-gray-300">(殿堂: {hallOfFameCount})</span></span>
+            {/* 🌟 謎のNFCタグという文言を削除し、未登録時は名前を空表示に */}
+            <span className="text-white font-bold text-2xl drop-shadow-lg">{isEggUnregistered ? '' : displayName} <span className="text-xs ml-1 text-gray-300">(殿堂: {hallOfFameCount})</span></span>
             <span className={`${currentMood.color} text-white px-3 py-1.5 rounded-lg font-bold shadow-md text-sm transition-colors duration-300`}>{currentMood.text}</span>
           </div>
 
@@ -1482,34 +1530,36 @@ function HomeAR() {
       )}
 
       {/* --- 右上ボタン群 --- */}
-      <div className="absolute top-48 right-4 z-40 flex flex-col gap-4 pointer-events-auto mt-4">
-        <button onClick={() => { setIsNewsOpen(true); playSound('tap'); }} className="bg-white/90 p-3 rounded-full shadow-2xl border border-gray-200 active:scale-90 flex items-center justify-center w-14 h-14 relative" aria-label="お知らせ">
-          <span className="text-2xl">📢</span>{(newsList.length > 0 || userNotifications.length > 0) && <span className="absolute top-0 right-0 w-4 h-4 bg-red-500 rounded-full border-2 border-white"></span>}
-        </button>
+      {viewMode !== 'report' && (
+        <div className="absolute top-48 right-4 z-40 flex flex-col gap-4 pointer-events-auto mt-4">
+          <button onClick={() => { setIsNewsOpen(true); playSound('tap'); }} className="bg-white/90 p-3 rounded-full shadow-2xl border border-gray-200 active:scale-90 flex items-center justify-center w-14 h-14 relative" aria-label="お知らせ">
+            <span className="text-2xl">📢</span>{(newsList.length > 0 || userNotifications.length > 0) && <span className="absolute top-0 right-0 w-4 h-4 bg-red-500 rounded-full border-2 border-white"></span>}
+          </button>
 
-        {viewMode === 'gps' && activeLandmark ? (
-          <>
-            <button 
-              onClick={() => { setCameraFacing(prev => prev === 'environment' ? 'user' : 'environment'); setSceneKey(k => k + 1); playSound('tap'); }} 
-              className="bg-white/90 p-3 rounded-full shadow-2xl border border-gray-200 active:scale-90 transition-transform flex items-center justify-center w-14 h-14" 
-              aria-label="カメラ切替"
-            >
-              <span className="text-2xl">🔄</span>
-            </button>
-            <button 
-              onClick={takeSnapshot} 
-              className="bg-white/90 p-3 rounded-full shadow-2xl border border-gray-200 active:scale-90 transition-transform flex items-center justify-center w-14 h-14" 
-              aria-label="写真を撮る"
-            >
-              <span className="text-2xl">📸</span>
-            </button>
-          </>
-        ) : viewMode === 'mindar' ? (
-           <button onClick={takeSnapshot} className="bg-white/90 p-3 rounded-full shadow-2xl border border-gray-200 active:scale-90 transition-transform flex items-center justify-center w-14 h-14" aria-label="写真を撮る">
-             <span className="text-2xl">📸</span>
-           </button>
-        ) : null}
-      </div>
+          {viewMode === 'gps' && activeLandmark ? (
+            <>
+              <button 
+                onClick={() => { setCameraFacing(prev => prev === 'environment' ? 'user' : 'environment'); setSceneKey(k => k + 1); playSound('tap'); }} 
+                className="bg-white/90 p-3 rounded-full shadow-2xl border border-gray-200 active:scale-90 transition-transform flex items-center justify-center w-14 h-14" 
+                aria-label="カメラ切替"
+              >
+                <span className="text-2xl">🔄</span>
+              </button>
+              <button 
+                onClick={takeSnapshot} 
+                className="bg-white/90 p-3 rounded-full shadow-2xl border border-gray-200 active:scale-90 transition-transform flex items-center justify-center w-14 h-14" 
+                aria-label="写真を撮る"
+              >
+                <span className="text-2xl">📸</span>
+              </button>
+            </>
+          ) : viewMode === 'mindar' ? (
+             <button onClick={takeSnapshot} className="bg-white/90 p-3 rounded-full shadow-2xl border border-gray-200 active:scale-90 transition-transform flex items-center justify-center w-14 h-14" aria-label="写真を撮る">
+               <span className="text-2xl">📸</span>
+             </button>
+          ) : null}
+        </div>
+      )}
 
       {gameOverNotice && (
         <div className="absolute inset-0 z-[130] bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
@@ -1522,8 +1572,62 @@ function HomeAR() {
         </div>
       )}
 
+      {/* --- 🌟 きろく（Report）画面 --- */}
+      {viewMode === 'report' && (
+        <div className="absolute inset-0 z-30 bg-black/90 text-white overflow-y-auto pb-32 pt-10 px-6 backdrop-blur-md">
+          <h2 className="text-3xl font-bold mb-6 text-center text-purple-400">📊 育成とマインドフルネスの記録</h2>
+          <div className="space-y-6">
+            
+            <div className="bg-gray-800 p-5 rounded-2xl border border-purple-500/30 shadow-lg">
+              <h3 className="font-bold text-xl mb-3 border-b border-gray-600 pb-2">🏃 ウォーキング記録</h3>
+              <p className="text-4xl font-black text-cyan-400">{Math.floor(walkDistance)} <span className="text-sm font-normal text-gray-300">m</span></p>
+              <p className="text-md text-gray-400 mt-1">推定歩数: 約 {stepCount} 歩</p>
+            </div>
+
+            <div className="bg-gray-800 p-5 rounded-2xl border border-teal-500/30 shadow-lg">
+              <h3 className="font-bold text-xl mb-3 border-b border-gray-600 pb-2">🧘 マインドフルネス記録</h3>
+              <p className="text-4xl font-black text-teal-400">{mindfulnessLogCount} <span className="text-sm font-normal text-gray-300">回 実行</span></p>
+              <p className="text-md text-gray-400 mt-1">心の平穏とペットへの愛情度が記録されています。</p>
+              
+              <div className="mt-4 grid grid-cols-2 gap-4">
+                  <div className="bg-gray-700 p-3 rounded-xl text-center shadow-inner">
+                      <div className="text-xs text-gray-400">現在の愛情度</div>
+                      <div className="text-xl font-bold text-pink-400">💖 {Math.floor(affection)}</div>
+                  </div>
+                  <div className="bg-gray-700 p-3 rounded-xl text-center shadow-inner">
+                      <div className="text-xs text-gray-400">ごきげん</div>
+                      <div className="text-xl font-bold text-orange-400">✨ {motivationPercent}%</div>
+                  </div>
+              </div>
+            </div>
+
+            <div className="bg-gray-800 p-5 rounded-2xl border border-yellow-500/30 shadow-lg">
+              <h3 className="font-bold text-xl mb-3 border-b border-gray-600 pb-2">📋 アクティビティ総数</h3>
+              <ul className="space-y-3 text-gray-300">
+                  <li className="flex justify-between items-center bg-gray-700/50 p-3 rounded-lg">
+                    <span>殿堂入り達成</span> <span className="font-bold text-yellow-400 text-lg">🏆 {hallOfFameCount} 回</span>
+                  </li>
+                  <li className="flex justify-between items-center bg-gray-700/50 p-3 rounded-lg">
+                    <span>ごはんをあげた回数</span> <span className="font-bold text-lg">🍚 {feedCount} 回</span>
+                  </li>
+                  <li className="flex justify-between items-center bg-gray-700/50 p-3 rounded-lg">
+                    <span>スポットを訪れた回数</span> <span className="font-bold text-lg">📍 {landmarkVisitCount} 回</span>
+                  </li>
+                  <li className="flex justify-between items-center bg-gray-700/50 p-3 rounded-lg">
+                    <span>なでた回数</span> <span className="font-bold text-lg">✨ {eventCount} 回</span>
+                  </li>
+                  <li className="flex justify-between items-center bg-gray-700/50 p-3 rounded-lg">
+                    <span>現在のレベル</span> <span className="font-bold text-yellow-400 text-lg">🌟 Lv. {level}</span>
+                  </li>
+              </ul>
+            </div>
+            
+          </div>
+        </div>
+      )}
+
       {/* --- UIレイヤー (ボトム) --- */}
-      <div className="absolute z-10 bottom-0 w-full p-4 flex flex-col gap-4 pointer-events-auto">
+      <div className="absolute z-40 bottom-0 w-full p-4 flex flex-col gap-4 pointer-events-auto">
         
         {isShopOpen && (
           <div className="absolute bottom-24 left-4 right-4 bg-white/95 p-5 rounded-3xl shadow-2xl backdrop-blur-md z-50 border border-gray-200">
@@ -1595,12 +1699,14 @@ function HomeAR() {
           </>
         )}
 
-        <button 
-          onClick={() => { setIsSpotMapOpen(true); playSound('tap'); }} 
-          className="bg-gradient-to-r from-teal-400 to-teal-600 text-white p-3 rounded-2xl font-bold shadow-lg w-full flex justify-center items-center gap-2 border-2 border-teal-300 active:scale-95 transition-transform text-lg"
-        >
-          🗺️ 地図でスポットを探す
-        </button>
+        {viewMode !== 'report' && (
+          <button 
+            onClick={() => { setIsSpotMapOpen(true); playSound('tap'); }} 
+            className="bg-gradient-to-r from-teal-400 to-teal-600 text-white p-3 rounded-2xl font-bold shadow-lg w-full flex justify-center items-center gap-2 border-2 border-teal-300 active:scale-95 transition-transform text-lg"
+          >
+            🗺️ 地図でスポットを探す
+          </button>
+        )}
 
         <div className="flex justify-around bg-white p-3 rounded-2xl shadow-xl border border-gray-100">
           <button onClick={() => { setViewMode('mindar'); playSound('tap'); }} className={`font-bold flex flex-col items-center gap-1 ${viewMode === 'mindar' ? 'text-blue-600' : 'text-gray-400'}`}><span className="text-xl">🏠</span><span className="text-xs">おうち</span></button>
