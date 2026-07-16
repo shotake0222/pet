@@ -1121,9 +1121,17 @@ function HomeAR() {
   }
 
   return (
-    <div className="relative w-full h-full overflow-hidden bg-black">
+    <div className="relative w-full h-full overflow-hidden text-white">
       {/* 🌟 画面真っ暗問題を解決する強制CSS */}
       <style jsx global>{`
+        html, body {
+          background-color: transparent !important;
+          margin: 0;
+          padding: 0;
+        }
+        #__next {
+          background-color: transparent !important;
+        }
         .a-canvas {
           z-index: 1 !important;
           position: absolute !important;
@@ -1145,7 +1153,8 @@ function HomeAR() {
       <Script src="https://aframe.io/releases/1.5.0/aframe.min.js" strategy="beforeInteractive" />
       <Script src="https://cdn.jsdelivr.net/gh/c-frame/aframe-extras@7.2.0/dist/aframe-extras.min.js" strategy="beforeInteractive" />
       <Script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-aframe.prod.js" strategy="beforeInteractive" />
-      <Script src="https://raw.githack.com/AR-js-org/AR.js/master/aframe/build/aframe-ar-nft.js" strategy="beforeInteractive" />
+      {/* 🌟 競合を避けるため、一旦 AR.js (nft) をコメントアウトする */}
+      {/* <Script src="https://raw.githack.com/AR-js-org/AR.js/master/aframe/build/aframe-ar-nft.js" strategy="beforeInteractive" /> */}
 
       {/* --- 左下デバッグボタン --- */}
       <button 
