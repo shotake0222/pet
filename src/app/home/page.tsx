@@ -29,6 +29,7 @@ function HomeAR() {
   
   const [viewMode, setViewMode] = useState<'mindar' | 'gps' | 'report'>('mindar');
   const [isClient, setIsClient] = useState(false);
+  const [isAuthChecking, setIsAuthChecking] = useState(true); // 🌟 ログインチェック状態の追加
   
   // --- セッション・ユーザー情報 ---
   const [sessionUserId, setSessionUserId] = useState<string | null>(null);
@@ -52,7 +53,7 @@ function HomeAR() {
   const [feedCount, setFeedCount] = useState(0);
   const [landmarkVisitCount, setLandmarkVisitCount] = useState(0);
   const [eventCount, setEventCount] = useState(0);
-  const [mindfulnessLogCount, setMindfulnessLogCount] = useState(0); // 🌟 マインドフルネス記録用
+  const [mindfulnessLogCount, setMindfulnessLogCount] = useState(0);
   const [level, setLevel] = useState(1);
   const [exp, setExp] = useState(0);
 
@@ -60,24 +61,21 @@ function HomeAR() {
   const [petCondition, setPetCondition] = useState<'healthy' | 'sick' | 'starving'>('healthy');
   const [showConditionSOS, setShowConditionSOS] = useState(false);
   
-  // 🌟 NFCのシークエンスID（tag_id）の読み込みとトラッキング情報の設定
+  // NFCのシークエンスID（tag_id）の読み込みとトラッキング情報の設定
   const tagIdParam = searchParams.get('tag_id');
   const tagId = tagIdParam ? parseInt(tagIdParam, 10) : null;
 
-  let petMarkerUrl = '/markers/target.mind'; // デフォルトフォールバック
+  let petMarkerUrl = '/markers/target.mind'; 
   let activeTargetIndex = 0;
 
-  // 🌟 tag_idの数値から動的に読み込む mindファイル と インデックス を計算
   if (tagId && !isNaN(tagId) && tagId > 0) {
-    const groupIndex = Math.ceil(tagId / 5); // 5個ずつグループ化
+    const groupIndex = Math.ceil(tagId / 5); 
     petMarkerUrl = `/markers/targets_${groupIndex}.mind`;
-    activeTargetIndex = (tagId - 1) % 5; // 各mindファイル内のインデックス（0〜4）
+    activeTargetIndex = (tagId - 1) % 5; 
   }
   
-  // 卵モデルはDBのegg_typeに応じて動的に変えるためのState
   const [eggModelUrl, setEggModelUrl] = useState<string>('/models/eggs/egg_A.glb');
 
-  // 孵化後のペットモデル
   const [petModelUrlV1, setPetModelUrlV1] = useState<string>('');
   const [petModelUrlV2, setPetModelUrlV2] = useState<string | null>(null);
   const [petModelUrlV3, setPetModelUrlV3] = useState<string | null>(null);
@@ -86,16 +84,13 @@ function HomeAR() {
   const [hatchOverlay, setHatchOverlay] = useState<{ active: boolean; particles: any[]; rarity: string } | null>(null);
   const [hatchAnimating, setHatchAnimating] = useState(false);
 
-  // --- レベルアップ用エフェクト State ---
   const [levelUpOverlay, setLevelUpOverlay] = useState<{ active: boolean; particles: any[]; level: number; isMilestone: boolean } | null>(null);
 
-  // --- インベントリ ＆ ショップ ---
   const [inventory, setInventory] = useState<any[]>([]);
   const [isInventoryOpen, setIsInventoryOpen] = useState(false);
   const [shopItems, setShopItems] = useState<any[]>([]);
   const [isShopOpen, setIsShopOpen] = useState(false);
 
-  // --- お知らせ ＆ プロフィール設定 State ---
   const [newsList, setNewsList] = useState<any[]>([]);
   const [userNotifications, setUserNotifications] = useState<any[]>([]);
   const [isNewsOpen, setIsNewsOpen] = useState(false);
@@ -105,12 +100,10 @@ function HomeAR() {
   const [inputGender, setInputGender] = useState('');
   const [isSetupSubmitting, setIsSetupSubmitting] = useState(false);
 
-  // --- 孵化後の名付けモーダル State ---
   const [showNamingScreen, setShowNamingScreen] = useState(false);
   const [namingInput, setNamingInput] = useState('');
   const [isNamingSubmitting, setIsNamingSubmitting] = useState(false);
 
-  // --- ログインボーナス State ---
   const [loginBonusState, setLoginBonusState] = useState({
     days: 0,
     gotBonus: false,
@@ -123,18 +116,15 @@ function HomeAR() {
   const [gameOverNotice, setGameOverNotice] = useState<string | null>(null);
   const [gameOverHandled, setGameOverHandled] = useState(false);
 
-  // --- マインドフルネス機能 State ---
   const [showMindfulness, setShowMindfulness] = useState(false);
   const [mindPhase, setMindPhase] = useState<'intro'|'inhale'|'hold'|'exhale'|'done'>('intro');
   const [mindTime, setMindTime] = useState(5);
   const [mindSet, setMindSet] = useState(1);
   const hasTriggeredMindfulness = useRef(false);
 
-  // --- 寿命（虹の橋）機能 State ---
   const [showRainbowBridge, setShowRainbowBridge] = useState(false);
   const [rainbowPhase, setRainbowPhase] = useState(0);
 
-  // --- AR・カメラ制御 ＆ スポット機能 State ---
   const [location, setLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [prevLocation, setPrevLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [landmarks, setLandmarks] = useState<any[]>([]);
@@ -143,7 +133,6 @@ function HomeAR() {
   const [cameraFacing, setCameraFacing] = useState<'environment' | 'user'>('environment');
   const [sceneKey, setSceneKey] = useState(0);
   
-  // すれ違い通信の連投防止用Ref
   const lastEncounterTime = useRef(0);
 
   const targetDistanceToHatch = 1200;
@@ -156,6 +145,9 @@ function HomeAR() {
   useEffect(() => { setIsClient(true); }, []);
 
   useEffect(() => {
+    // ログイン確認が終わるまではカメラの初期化をしない
+    if (isAuthChecking) return;
+
     setSceneKey(prev => prev + 1);
     const hasGetUserMedia = typeof navigator !== 'undefined' && 'mediaDevices' in navigator && typeof navigator.mediaDevices.getUserMedia === 'function';
     if (hasGetUserMedia) {
@@ -163,16 +155,16 @@ function HomeAR() {
         stream.getTracks().forEach(track => track.stop());
       }).catch(() => {});
     }
-  }, [viewMode]);
+  }, [viewMode, isAuthChecking]);
 
   // ==========================================
-  //  Auth & Profile チェック (初回ログイン時)
+  //  Auth & Profile チェック
   // ==========================================
   useEffect(() => {
     const initAuthAndProfile = async () => {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) {
-        // tag_idをログイン画面にも引き継ぐためのクエリ文字列作成
+        // 未ログイン時はここでリダイレクトをかけ、isAuthCheckingはtrueのままで処理を終える（AR画面を描画させない）
         const queryString = tagIdParam ? `?tag_id=${tagIdParam}` : '';
         router.push(`/login${queryString}`);
         return;
@@ -189,15 +181,16 @@ function HomeAR() {
         setHallOfFameCount(profile.hall_of_fame_count || 0);
         await checkLoginBonus(userId, profile);
       }
+      
+      // セッションの確認とプロフィール取得が完了したらローディング解除
+      setIsAuthChecking(false);
     };
     initAuthAndProfile();
   }, [supabase, router, tagIdParam]); 
 
-  // --- マインドフルネス機能のトリガー（ログイン時などに確率で発生）---
   useEffect(() => {
     if (sessionUserId && petId && !isEgg && !hasTriggeredMindfulness.current) {
       hasTriggeredMindfulness.current = true;
-      // 1日のランダムな時間帯の想定として、30%の確率で発動
       if (Math.random() < 0.3) {
         setShowMindfulness(true);
         setMindPhase('intro');
@@ -205,14 +198,11 @@ function HomeAR() {
     }
   }, [sessionUserId, petId, isEgg]);
 
-  // マインドフルネスのタイマー処理
   useEffect(() => {
     if (!showMindfulness || mindPhase === 'intro' || mindPhase === 'done') return;
     const timer = setInterval(() => {
       setMindTime((prev) => {
         if (prev > 1) return prev - 1;
-        
-        // フェーズの切り替え
         if (mindPhase === 'inhale') { setMindPhase('hold'); return 2; }
         if (mindPhase === 'hold') { setMindPhase('exhale'); return 5; }
         if (mindPhase === 'exhale') {
@@ -243,13 +233,11 @@ function HomeAR() {
     setMotivationPercent(100);
     if (petId) {
       addExperience(20);
-      // 本番環境としてDBにマインドフルネスの実行を記録
       await supabase.from('activity_logs').insert({ pet_id: petId, action_type: 'mindfulness', points_earned: 20 });
       setMindfulnessLogCount(prev => prev + 1);
     }
   };
 
-  // --- ログインボーナス処理用関数 ---
   const grantLoginBonusItem = async (userId: string) => {
     let { data: item } = await supabase.from('item_masters').select('id').eq('name', 'ログボご飯').maybeSingle();
     
@@ -310,7 +298,6 @@ function HomeAR() {
     }
   };
 
-  // --- データベースからのユーザーペット取得 ---
   useEffect(() => {
     const fetchGameData = async () => {
       if (!sessionUserId) return;
@@ -376,7 +363,6 @@ function HomeAR() {
         const { data: inv } = await supabase.from('user_inventory').select('id, quantity, item_masters(*)').eq('user_id', sessionUserId).gt('quantity', 0);
         if (inv) setInventory(inv);
 
-        // 各種ログのカウント取得
         const { count: feedLogCount } = await supabase.from('activity_logs').select('id', { count: 'exact', head: true }).eq('pet_id', pet.id).eq('action_type', 'feed');
         if (feedLogCount !== null) setFeedCount(feedLogCount);
         
@@ -389,7 +375,6 @@ function HomeAR() {
         const { count: landmarkCount } = await supabase.from('landmark_visits').select('id', { count: 'exact', head: true }).eq('user_id', sessionUserId);
         if (landmarkCount !== null) setLandmarkVisitCount(landmarkCount);
 
-        // 寿命チェックロジック (生まれてから30日以上経過を寿命とするデモロジック)
         if (!pet.is_egg && pet.birthday) {
           const daysLived = (new Date().getTime() - new Date(pet.birthday).getTime()) / (1000 * 3600 * 24);
           if (daysLived > 30) {
@@ -406,24 +391,21 @@ function HomeAR() {
     fetchGameData();
   }, [sessionUserId, supabase]);
 
-  // --- 寿命 (虹の橋) 処理 ---
   const triggerRainbowBridge = async (targetPetId: string, currentGeneration: number) => {
     setShowRainbowBridge(true);
     setRainbowPhase(1);
 
     try {
-      // 殿堂入りカウントアップ
       const newHallOfFameCount = hallOfFameCount + 1;
       await supabase.from('user_profiles').update({ hall_of_fame_count: newHallOfFameCount }).eq('id', sessionUserId);
       setHallOfFameCount(newHallOfFameCount);
 
-      // ペットを卵に戻して引き継ぎボーナスを付与する (is_deceasedにせずループさせる仕様)
       await supabase.from('pets').update({
         is_egg: true,
         walk_distance_m: 0,
         level: 1,
-        exp: 300, // 300EXP引き継ぎ
-        affection_level: 50, // 愛情度引継ぎ
+        exp: 300, 
+        affection_level: 50, 
         sleeping_until: null,
         last_fed_at: null,
         custom_name: null,
@@ -432,7 +414,6 @@ function HomeAR() {
         generation: currentGeneration + 1
       }).eq('id', targetPetId);
 
-      // 演出フェーズの切り替え
       setTimeout(() => {
         setRainbowPhase(2);
       }, 4000);
@@ -444,7 +425,7 @@ function HomeAR() {
 
   const closeRainbowBridge = () => {
     setShowRainbowBridge(false);
-    window.location.reload(); // リセットされた状態でリロード
+    window.location.reload(); 
   };
 
   const getCurrentModelUrl = () => {
@@ -694,16 +675,13 @@ function HomeAR() {
     }
   };
 
-  // --- すれ違い通信をトリガーする関数 ---
   const triggerEncounter = async () => {
     if (!sessionUserId) return;
     const now = Date.now();
-    // 連続で発動しないようにする（例：5分=300000ms間隔）
     if (now - lastEncounterTime.current < 300000) return;
     lastEncounterTime.current = now;
 
     try {
-      // ぺたるの香りを付与
       let { data: item } = await supabase.from('item_masters').select('id').eq('name', 'ぺたるの香り').maybeSingle();
       if (item) {
         const { data: inventoryItem } = await supabase.from('user_inventory')
@@ -716,7 +694,6 @@ function HomeAR() {
         }
       }
       
-      // DBに通知を作成
       const newNotification = {
         user_id: sessionUserId,
         title: 'すれ違い通信',
@@ -724,7 +701,6 @@ function HomeAR() {
       };
       await supabase.from('user_notifications').insert(newNotification);
 
-      // フロントエンドのState更新
       setUserNotifications(prev => [newNotification, ...prev]);
       alert('📡 すれ違い通信が発生しました！お知らせを確認してください。');
       playSound('item');
@@ -747,7 +723,6 @@ function HomeAR() {
               setWalkDistance(newDistance);
               if (petId) await supabase.from('pets').update({ walk_distance_m: newDistance }).eq('id', petId);
 
-              // 移動中にランダム(10%の確率)ですれ違い通信を発生
               if (Math.random() < 0.10) {
                 triggerEncounter();
               }
@@ -769,7 +744,7 @@ function HomeAR() {
   }, [location, landmarks, viewMode]);
 
   useEffect(() => {
-    if (viewMode === 'mindar' && petId && !isEgg && !isSleeping) {
+    if (viewMode === 'mindar' && petId && !isEgg && !isSleeping && !isAuthChecking) {
       const petModel = document.querySelector('#pet-model');
       const handlePetTap = () => {
         if (petCondition === 'starving' || petCondition === 'sick') {
@@ -795,9 +770,8 @@ function HomeAR() {
       petModel?.addEventListener('click', handlePetTap);
       return () => petModel?.removeEventListener('click', handlePetTap);
     }
-  }, [viewMode, isClient, petId, supabase, isEgg, isSleeping, sceneKey, petCondition]);
+  }, [viewMode, isClient, petId, supabase, isEgg, isSleeping, sceneKey, petCondition, isAuthChecking]);
 
-  // 🌟 本番環境としての卵作成処理（サーバーアクション依存を排除しクライアントから直接DB操作）
   const handleCreateEgg = async () => {
     if (!sessionUserId) return;
     try {
@@ -1089,7 +1063,15 @@ function HomeAR() {
     }
   };
 
-  if (!isClient) return <div className="bg-black w-full h-full"></div>;
+  // 🌟 ここで未ログインやロード中ならUI・AR描画をブロックしてリダイレクトを待つ
+  if (!isClient || isAuthChecking) {
+    return (
+      <div className="bg-black w-full h-full flex flex-col items-center justify-center text-white">
+        <div className="w-10 h-10 border-4 border-gray-500 border-t-white rounded-full animate-spin mb-4"></div>
+        <p className="font-bold">起動中...</p>
+      </div>
+    );
+  }
 
   return (
     <div className="relative w-full h-full overflow-hidden bg-black">
@@ -1285,7 +1267,7 @@ function HomeAR() {
         </div>
       )}
 
-      {/* --- 🌟 本番環境用：地図でスポットを探すモーダル --- */}
+      {/* --- 地図でスポットを探すモーダル --- */}
       {isSpotMapOpen && (
         <div className="absolute inset-0 z-[120] bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl p-6 w-full max-w-sm shadow-2xl relative max-h-[90vh] flex flex-col">
@@ -1295,7 +1277,6 @@ function HomeAR() {
               <p className="text-center text-gray-500 my-10">GPS座標を取得中...</p>
             ) : (
               <div className="flex-1 overflow-y-auto pr-1">
-                {/* 🌟 実際のOpenStreetMapを埋め込んだ地図表示 */}
                 <div className="relative w-full aspect-square bg-gray-100 rounded-2xl overflow-hidden mb-4 shadow-inner border border-gray-300">
                   <iframe 
                     width="100%" 
@@ -1308,19 +1289,16 @@ function HomeAR() {
                     className="absolute inset-0 z-0 pointer-events-none"
                   ></iframe>
                   
-                  {/* 現在地のアイコン表示 */}
                   <div className="absolute inset-0 z-10 flex items-center justify-center pointer-events-none">
                      <div className="w-5 h-5 bg-red-500 rounded-full border-2 border-white shadow-md animate-pulse"></div>
                   </div>
                   
-                  {/* 周辺スポットのピン表示 */}
                   <div className="absolute inset-0 z-20 pointer-events-none">
                   {landmarks.map(spot => {
                      const master = spot.landmark_masters;
                      const facilityType = master?.facility_type && master.facility_type !== 'normal' ? master.facility_type : getFacilityType(spot.name);
                      const typeIcon = facilityType === 'hospital' ? '🏥' : facilityType === 'restaurant' ? '🍽️' : facilityType === 'hotel' ? '🏨' : '📍';
 
-                     // bboxの幅0.01度分（約1.1km）をコンテナ100%として計算
                      const topPercent = 50 - ((spot.latitude - location.lat) / 0.01) * 100;
                      const leftPercent = 50 + ((spot.longitude - location.lng) / 0.01) * 100;
                      
@@ -1333,7 +1311,6 @@ function HomeAR() {
                   </div>
                 </div>
                 
-                {/* スポットリスト */}
                 <div className="space-y-3">
                   {landmarks.map(spot => {
                     const dist = getDistance(location.lat, location.lng, spot.latitude, spot.longitude);
@@ -1411,7 +1388,6 @@ function HomeAR() {
           </div>
           
           <div className="space-y-4 max-h-[60vh] overflow-y-auto pr-1">
-            {/* 個別お知らせ (すれ違い通信など) */}
             {userNotifications.length > 0 && (
               <div className="mb-4">
                 <h4 className="font-bold text-sm text-gray-500 mb-2 border-l-4 border-pink-500 pl-2">あなたへのお知らせ</h4>
@@ -1427,7 +1403,6 @@ function HomeAR() {
               </div>
             )}
 
-            {/* 運営からのお知らせ */}
             <div>
               <h4 className="font-bold text-sm text-gray-500 mb-2 border-l-4 border-blue-500 pl-2">運営からのお知らせ</h4>
               {newsList.length === 0 ? ( <p className="text-gray-500 text-center py-4 text-sm">現在お知らせはありません</p> ) : (
@@ -1470,7 +1445,6 @@ function HomeAR() {
       {sessionUserId && viewMode !== 'report' && (
         <div className="absolute top-4 left-4 right-4 z-20 flex flex-col gap-3 pointer-events-none">
           <div className="flex justify-between items-end">
-            {/* 🌟 ヘッダーから殿堂入り表示を削除 */}
             <span className="text-white font-bold text-2xl drop-shadow-lg">{isEggUnregistered ? '' : displayName}</span>
             <span className={`${currentMood.color} text-white px-3 py-1.5 rounded-lg font-bold shadow-md text-sm transition-colors duration-300`}>{currentMood.text}</span>
           </div>
@@ -1572,7 +1546,7 @@ function HomeAR() {
         </div>
       )}
 
-      {/* --- 🌟 きろく（Report）画面 --- */}
+      {/* --- きろく（Report）画面 --- */}
       {viewMode === 'report' && (
         <div className="absolute inset-0 z-30 bg-black/90 text-white overflow-y-auto pb-32 pt-10 px-6 backdrop-blur-md">
           <h2 className="text-3xl font-bold mb-6 text-center text-purple-400">📊 育成とマインドフルネスの記録</h2>
@@ -1730,7 +1704,6 @@ function HomeAR() {
             {/* @ts-ignore */}
             <a-camera position="0 0 0" look-controls="enabled: false" cursor="rayOrigin: mouse;" raycaster="objects: .clickable"></a-camera>
             
-            {/* 🌟 tag_idから計算された activeTargetIndex のエンティティだけを生成・レンダリングしてトラッキング */}
             {/* @ts-ignore */}
             <a-entity mindar-image-target={`targetIndex: ${activeTargetIndex}`}>
               {/* @ts-ignore */}
@@ -1773,7 +1746,6 @@ function HomeAR() {
               )}
             </a-camera>
 
-            {/* スポットの実体は実際のGPS座標に配置 */}
             {activeLandmark && !isEgg && petId && (
               /* @ts-ignore */
               <a-entity gps-entity-place={`latitude: ${activeLandmark.latitude}; longitude: ${activeLandmark.longitude};`} gltf-model={activeLandmark.model_url ? "#landmark-asset-dynamic" : "/models/treasure.glb"} scale="5 5 5" position="0 2 0" animation="property: rotation; to: 0 360 0; loop: true; dur: 4000; easing: linear;"></a-entity>
@@ -1785,7 +1757,6 @@ function HomeAR() {
   );
 }
 
-// 🌟 buildエラー（Suspense境界なしでのuseSearchParams使用）を回避するためのラッパー
 export default function HomeARPage() {
   return (
     <Suspense fallback={<div className="bg-black w-full h-full text-white flex items-center justify-center">ARエンジンを起動中...</div>}>
