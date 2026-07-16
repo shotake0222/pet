@@ -61,7 +61,6 @@ export default function AdminDashboard() {
   const [petModelFile, setPetModelFile] = useState<File | null>(null);         
   const [petModelV2File, setPetModelV2File] = useState<File | null>(null);     
   const [petModelV3File, setPetModelV3File] = useState<File | null>(null);     
-  const [petMarkerFile, setPetMarkerFile] = useState<File | null>(null);
   const [selectedAttributeIds, setSelectedAttributeIds] = useState<number[]>([]);
   const [editingPetId, setEditingPetId] = useState<number | null>(null);
   
@@ -392,7 +391,6 @@ export default function AdminDashboard() {
   const handleSavePet = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!petModelFile && !editingPetId) return alert('必須項目が不足しています（第1形態モデル）');
-    if (!petMarkerFile && !editingPetId) return alert('必須項目が不足しています（マーカー）');
     if (!petName) return alert('名前が不足しています');
     
     setIsSubmitting(true);
@@ -400,20 +398,17 @@ export default function AdminDashboard() {
       let modelUrl: string | null = null;
       let modelV2Url: string | null = null;
       let modelV3Url: string | null = null;
-      let markerUrl: string | null = null;
 
       if (editingPetId) {
         const { data: existing } = await supabase.from('pet_masters').select('*').eq('id', editingPetId).single();
         modelUrl = existing?.model_url || null;
         modelV2Url = existing?.model_url_v2 || null;
         modelV3Url = existing?.model_url_v3 || null;
-        markerUrl = existing?.marker_url || null;
       }
 
       if (petModelFile) modelUrl = await uploadFile(petModelFile, 'models');
       if (petModelV2File) modelV2Url = await uploadFile(petModelV2File, 'models');
       if (petModelV3File) modelV3Url = await uploadFile(petModelV3File, 'models');
-      if (petMarkerFile) markerUrl = await uploadFile(petMarkerFile, 'markers');
 
       if (editingPetId) {
         const updatePayload: any = {
@@ -425,7 +420,6 @@ export default function AdminDashboard() {
         if (modelUrl) updatePayload.model_url = modelUrl;
         if (modelV2Url) updatePayload.model_url_v2 = modelV2Url;
         if (modelV3Url) updatePayload.model_url_v3 = modelV3Url;
-        if (markerUrl) updatePayload.marker_url = markerUrl;
 
         const { error: updateErr } = await supabase.from('pet_masters').update(updatePayload).eq('id', editingPetId);
         if (updateErr) throw updateErr;
@@ -440,13 +434,12 @@ export default function AdminDashboard() {
 
         alert(`ペット「${petName}」を更新しました`);
       } else {
-        if (!modelUrl || !markerUrl) throw new Error('モデルまたはマーカーのアップロードに失敗しました');
+        if (!modelUrl) throw new Error('モデルのアップロードに失敗しました');
         const { data: insertedPet, error: insertError } = await supabase.from('pet_masters').insert({
           name: petName,
           model_url: modelUrl,
           model_url_v2: modelV2Url,
           model_url_v3: modelV3Url,
-          marker_url: markerUrl,
           rarity: petRarity,
           egg_type: petEggType,
           drop_weight: parseInt(petWeight, 10)
@@ -463,7 +456,7 @@ export default function AdminDashboard() {
         alert(`ペット「${petName}」をガチャのラインナップに登録しました！`);
       }
 
-      setPetName(''); setPetModelFile(null); setPetModelV2File(null); setPetModelV3File(null); setPetMarkerFile(null);
+      setPetName(''); setPetModelFile(null); setPetModelV2File(null); setPetModelV3File(null);
       setPetEggType(eggsList.length > 0 ? eggsList[0].name : 'A');
       setSelectedAttributeIds([]);
       setEditingPetId(null);
@@ -680,12 +673,11 @@ export default function AdminDashboard() {
   //  削除・更新 (Delete / Update) アクション
   // ==========================================
 
-  const handleDeletePet = async (id: number, modelUrl: string, markerUrl: string, modelV2Url?: string, modelV3Url?: string) => {
+  const handleDeletePet = async (id: number, modelUrl: string, modelV2Url?: string, modelV3Url?: string) => {
     if (!window.confirm('本当に削除しますか？')) return;
     try {
       const filesToRemove = [
         extractFilePath(modelUrl), 
-        extractFilePath(markerUrl),
         extractFilePath(modelV2Url || null),
         extractFilePath(modelV3Url || null)
       ].filter(Boolean) as string[];
@@ -926,11 +918,6 @@ export default function AdminDashboard() {
                     </div>
                   </div>
 
-                  <div className="bg-purple-50 p-4 rounded-xl border border-purple-100">
-                    <label className="block text-sm font-bold text-purple-900 mb-2">認識マーカー (.mind) <span className="text-red-500">*</span></label>
-                    <input type="file" accept=".mind" onChange={e => setPetMarkerFile(e.target.files?.[0] || null)} className="w-full text-sm" required={!editingPetId} />
-                  </div>
-
                   <div className="flex gap-3">
                     <button disabled={isSubmitting} className="flex-1 bg-slate-900 text-white font-bold py-4 rounded-xl shadow-lg hover:bg-slate-800 disabled:bg-gray-400">
                       {isSubmitting ? '処理中...' : (editingPetId ? '変更を保存' : 'ペットを登録')}
@@ -939,7 +926,7 @@ export default function AdminDashboard() {
                       <button type="button" onClick={() => {
                         setEditingPetId(null);
                         setPetName(''); setPetEggType(eggsList.length > 0 ? eggsList[0].name : 'A'); setPetRarity('N'); setPetWeight('100'); setSelectedAttributeIds([]);
-                        setPetModelFile(null); setPetModelV2File(null); setPetModelV3File(null); setPetMarkerFile(null);
+                        setPetModelFile(null); setPetModelV2File(null); setPetModelV3File(null);
                       }} className="bg-gray-200 text-gray-700 font-bold py-4 px-4 rounded-xl">キャンセル</button>
                     )}
                   </div>
@@ -1330,7 +1317,6 @@ export default function AdminDashboard() {
                                   <a href={pet.model_url} target="_blank" rel="noreferrer" className="text-blue-500 hover:underline">V1モデル</a>
                                   {pet.model_url_v2 && <a href={pet.model_url_v2} target="_blank" rel="noreferrer" className="text-blue-500 hover:underline">V2モデル(Lv5)</a>}
                                   {pet.model_url_v3 && <a href={pet.model_url_v3} target="_blank" rel="noreferrer" className="text-blue-500 hover:underline">V3モデル(Lv10)</a>}
-                                  <a href={pet.marker_url} target="_blank" rel="noreferrer" className="text-blue-500 hover:underline">マーカー</a>
                                 </div>
                                 {pet.attributes && pet.attributes.length > 0 && (
                                   <div className="mt-2 flex flex-wrap gap-2">
@@ -1349,10 +1335,10 @@ export default function AdminDashboard() {
                                   setPetRarity(pet.rarity || 'N');
                                   setPetWeight(String(pet.drop_weight || 100));
                                   setSelectedAttributeIds((pet.attributes || []).map((a: any) => a.id));
-                                  setPetModelFile(null); setPetModelV2File(null); setPetModelV3File(null); setPetMarkerFile(null);
+                                  setPetModelFile(null); setPetModelV2File(null); setPetModelV3File(null);
                                 }} className="bg-blue-50 text-blue-600 font-bold px-4 py-2 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity hover:bg-blue-100 shadow-sm border border-blue-200">編集</button>
                                 <button 
-                                  onClick={() => handleDeletePet(pet.id, pet.model_url, pet.marker_url, pet.model_url_v2, pet.model_url_v3)}
+                                  onClick={() => handleDeletePet(pet.id, pet.model_url, pet.model_url_v2, pet.model_url_v3)}
                                   className="bg-red-50 text-red-600 font-bold px-4 py-2 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-100 shadow-sm border border-red-200"
                                 >
                                   削除

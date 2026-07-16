@@ -29,7 +29,8 @@ function HomeAR() {
   
   const [viewMode, setViewMode] = useState<'mindar' | 'gps' | 'report'>('mindar');
   const [isClient, setIsClient] = useState(false);
-  const [isAuthChecking, setIsAuthChecking] = useState(true); // 🌟 ログインチェック状態の追加
+  const [isAuthChecking, setIsAuthChecking] = useState(true);
+  const [isDataLoaded, setIsDataLoaded] = useState(false); // 🌟 データロード完了フラグ
   
   // --- セッション・ユーザー情報 ---
   const [sessionUserId, setSessionUserId] = useState<string | null>(null);
@@ -133,6 +134,10 @@ function HomeAR() {
   const [cameraFacing, setCameraFacing] = useState<'environment' | 'user'>('environment');
   const [sceneKey, setSceneKey] = useState(0);
   
+  // 🌟 追加したモーダル用State
+  const [isStatusModalOpen, setIsStatusModalOpen] = useState(false);
+  const [isDebugModalOpen, setIsDebugModalOpen] = useState(false);
+
   const lastEncounterTime = useRef(0);
 
   const targetDistanceToHatch = 1200;
@@ -145,17 +150,11 @@ function HomeAR() {
   useEffect(() => { setIsClient(true); }, []);
 
   useEffect(() => {
-    // ログイン確認が終わるまではカメラの初期化をしない
-    if (isAuthChecking) return;
-
+    // データロードが終わるまではカメラ再生成などをブロック
+    if (isAuthChecking || !isDataLoaded) return;
     setSceneKey(prev => prev + 1);
-    const hasGetUserMedia = typeof navigator !== 'undefined' && 'mediaDevices' in navigator && typeof navigator.mediaDevices.getUserMedia === 'function';
-    if (hasGetUserMedia) {
-      navigator.mediaDevices.getUserMedia({ video: true }).then(stream => {
-        stream.getTracks().forEach(track => track.stop());
-      }).catch(() => {});
-    }
-  }, [viewMode, isAuthChecking]);
+    // ※競合して画面を真っ暗にしていた getUserMedia のテスト処理を削除しました
+  }, [viewMode, isAuthChecking, isDataLoaded]);
 
   // ==========================================
   //  Auth & Profile チェック
@@ -164,7 +163,6 @@ function HomeAR() {
     const initAuthAndProfile = async () => {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) {
-        // 未ログイン時はここでリダイレクトをかけ、isAuthCheckingはtrueのままで処理を終える（AR画面を描画させない）
         const queryString = tagIdParam ? `?tag_id=${tagIdParam}` : '';
         router.push(`/login${queryString}`);
         return;
@@ -182,7 +180,6 @@ function HomeAR() {
         await checkLoginBonus(userId, profile);
       }
       
-      // セッションの確認とプロフィール取得が完了したらローディング解除
       setIsAuthChecking(false);
     };
     initAuthAndProfile();
@@ -321,7 +318,7 @@ function HomeAR() {
         .from('pets')
         .select(`
           id, owner_id, affection_level, sleeping_until, last_fed_at, 
-          is_egg, walk_distance_m, level, exp, custom_name, birthday, condition_status, generation, is_deceased,
+          is_egg, walk_distance_m, level, exp, custom_name, birthday, condition_status, generation, is_deceased, egg_master_id, pet_master_id,
           pet_masters(name, model_url, model_url_v2, model_url_v3, rarity, egg_type)
         `)
         .eq('owner_id', sessionUserId)
@@ -345,6 +342,19 @@ function HomeAR() {
           setShowConditionSOS(false);
         }
 
+        // 🌟 卵のモデルURL取得 (egg_mastersを参照する処理)
+        if (pet.egg_master_id) {
+          const { data: eggData } = await supabase.from('egg_masters').select('*').eq('id', pet.egg_master_id).maybeSingle();
+          if (eggData && eggData.model_url) {
+            setEggModelUrl(eggData.model_url);
+          } else {
+            setEggModelUrl('/models/eggs/egg_A.glb'); // フォールバック
+          }
+        } else {
+          setEggModelUrl('/models/eggs/egg_A.glb'); // フォールバック
+        }
+
+        // 🌟 ペットマスターのURL取得 (既に孵化済みなら設定されているはず)
         if (pet.pet_masters) { 
           const pm = (pet.pet_masters && pet.pet_masters[0] ? pet.pet_masters[0] : pet.pet_masters) || {};
           const rarityPm = (pm as any).rarity || '?';
@@ -355,9 +365,6 @@ function HomeAR() {
           setPetModelUrlV3((pm as any).model_url_v3 || `${fallbackBase}/v3.glb`);
           setPetMasterName((pm as any).name || '不明');
           setPetRarity(rarityPm);
-
-          const eggGroup = (pm as any).egg_type || 'A'; 
-          setEggModelUrl(`/models/eggs/egg_${eggGroup}.glb`);
         }
 
         const { data: inv } = await supabase.from('user_inventory').select('id, quantity, item_masters(*)').eq('user_id', sessionUserId).gt('quantity', 0);
@@ -387,6 +394,8 @@ function HomeAR() {
         setIsEgg(true); 
         setEggModelUrl('/models/eggs/egg_A.glb');
       }
+      
+      setIsDataLoaded(true); // データロード完了
     };
     fetchGameData();
   }, [sessionUserId, supabase]);
@@ -744,7 +753,7 @@ function HomeAR() {
   }, [location, landmarks, viewMode]);
 
   useEffect(() => {
-    if (viewMode === 'mindar' && petId && !isEgg && !isSleeping && !isAuthChecking) {
+    if (viewMode === 'mindar' && petId && !isEgg && !isSleeping && isDataLoaded) {
       const petModel = document.querySelector('#pet-model');
       const handlePetTap = () => {
         if (petCondition === 'starving' || petCondition === 'sick') {
@@ -770,21 +779,23 @@ function HomeAR() {
       petModel?.addEventListener('click', handlePetTap);
       return () => petModel?.removeEventListener('click', handlePetTap);
     }
-  }, [viewMode, isClient, petId, supabase, isEgg, isSleeping, sceneKey, petCondition, isAuthChecking]);
+  }, [viewMode, isClient, petId, supabase, isEgg, isSleeping, sceneKey, petCondition, isDataLoaded]);
 
+  // 🌟 卵の作成処理 (egg_masters を参照するように修正)
   const handleCreateEgg = async () => {
     if (!sessionUserId) return;
     try {
-      const { data: petMasters, error: fetchError } = await supabase.from('pet_masters').select('*');
-      if (fetchError || !petMasters || petMasters.length === 0) {
-        throw new Error('ペットのマスターデータが見つかりません。');
+      const { data: eggMasters, error: fetchError } = await supabase.from('egg_masters').select('*');
+      if (fetchError || !eggMasters || eggMasters.length === 0) {
+        throw new Error('卵のマスターデータが見つかりません。データベースに卵を登録してください。');
       }
       
-      const selectedMaster = petMasters[Math.floor(Math.random() * petMasters.length)];
+      const selectedEgg = eggMasters[Math.floor(Math.random() * eggMasters.length)];
       
       const { data: newPet, error: insertError } = await supabase.from('pets').insert({
         owner_id: sessionUserId,
-        pet_master_id: selectedMaster.id,
+        egg_master_id: selectedEgg.id, // 新設されたカラムに格納
+        pet_master_id: null,           // 孵化時に決定するため null
         is_egg: true,
         level: 1,
         exp: 0,
@@ -792,34 +803,18 @@ function HomeAR() {
         walk_distance_m: 0,
         condition_status: 'healthy',
         generation: 1
-      }).select('*, pet_masters(*)').single();
+      }).select('*').single();
 
       if (insertError) throw insertError;
       
-      const pet = newPet;
-      
-      setPetId(pet.id); setOwnerId(pet.owner_id); 
+      setPetId(newPet.id); setOwnerId(newPet.owner_id); 
       setIsEgg(true); setIsEggUnregistered(false); setWalkDistance(0); setFeedCount(0); setLandmarkVisitCount(0); setEventCount(0);
       setGameOverNotice(null); setGameOverHandled(false); setLastFedAt(null); setSleepingUntil(null); setHungerPercent(100); setMotivationPercent(100); setLevel(1); setExp(0); setAffection(0);
       
-      if (pet.pet_masters) {
-        const pm = pet.pet_masters;
-        const eggGroup = (pm as any).egg_type || 'A';
-        setEggModelUrl(`/models/eggs/egg_${eggGroup}.glb`);
-
-        const rarityRes = pm.rarity || '?';
-        const fallbackBase = `/models/pet/${rarityRes}`;
-        setPetModelUrlV1(pm.model_url || `${fallbackBase}/v1.glb`);
-        setPetModelUrlV2(pm.model_url_v2 || `${fallbackBase}/v2.glb`);
-        setPetModelUrlV3(pm.model_url_v3 || `${fallbackBase}/v3.glb`);
-        setPetMasterName(pm.name || '不明');
-        setPetRarity(rarityRes);
-      } else {
-        setEggModelUrl(`/models/eggs/egg_A.glb`);
-      }
+      setEggModelUrl(selectedEgg.model_url || '/models/eggs/egg_A.glb');
       
       playSound('item');
-      alert(`不思議な卵を拾った！\nさんぽ、給餌、ランドマーク、イベントの全てをこなして孵化させよう！`);
+      alert(`不思議な卵を発見した！\nさんぽ、給餌、ランドマーク、イベントの全てをこなして孵化させよう！`);
       
     } catch (err: any) { 
       console.error(err);
@@ -827,30 +822,60 @@ function HomeAR() {
     }
   };
 
-  const handleHatchEgg = async () => {
+  // 🌟 孵化処理 (ここで pet_masters を参照して中身を確定させる)
+  const handleHatchEgg = async (force = false) => {
     if (!petId) return;
-    if (!isHatchReady) {
+    if (!isHatchReady && !force) {
       return alert('まだ孵化条件が揃っていません。歩数・給餌・ランドマーク・イベントを全て満たしてから試してください。');
     }
-    playSound('hatch');
-    try {
-      await showHatchEffect(petRarity);
-    } catch (e) {
-    }
 
-    setIsEgg(false);
-    setSceneKey(prev => prev + 1);
-    setHatchAnimating(true);
-    if (petRarity === 'SR' || petRarity === 'UR') playSound('levelup');
-    
-    setTimeout(async () => {
-      const today = new Date().toISOString().split('T')[0];
-      setBirthday(today); setLastFedAt(new Date().toISOString());
-      await supabase.from('pets').update({ is_egg: false, last_fed_at: new Date().toISOString(), birthday: today }).eq('id', petId);
-      setHatchAnimating(false);
+    try {
+      // ここでガチャを引く
+      const { data: petMasters } = await supabase.from('pet_masters').select('*');
+      if (!petMasters || petMasters.length === 0) {
+        return alert('ペットのマスターデータが見つかりません。管理画面からペットを登録してください。');
+      }
+      const selectedMaster = petMasters[Math.floor(Math.random() * petMasters.length)];
       
-      setShowNamingScreen(true);
-    }, 900);
+      const rarityRes = selectedMaster.rarity || '?';
+      const fallbackBase = `/models/pet/${rarityRes}`;
+      const modelV1 = selectedMaster.model_url || `${fallbackBase}/v1.glb`;
+      const modelV2 = selectedMaster.model_url_v2 || `${fallbackBase}/v2.glb`;
+      const modelV3 = selectedMaster.model_url_v3 || `${fallbackBase}/v3.glb`;
+
+      setPetRarity(rarityRes);
+      setPetMasterName(selectedMaster.name || '不明');
+      setPetModelUrlV1(modelV1);
+      setPetModelUrlV2(modelV2);
+      setPetModelUrlV3(modelV3);
+
+      playSound('hatch');
+      await showHatchEffect(rarityRes);
+
+      setIsEgg(false);
+      setSceneKey(prev => prev + 1);
+      setHatchAnimating(true);
+      if (rarityRes === 'SR' || rarityRes === 'UR') playSound('levelup');
+      
+      setTimeout(async () => {
+        const today = new Date().toISOString().split('T')[0];
+        setBirthday(today); setLastFedAt(new Date().toISOString());
+        
+        // DBを更新して中身を確定
+        await supabase.from('pets').update({ 
+          is_egg: false, 
+          pet_master_id: selectedMaster.id,
+          last_fed_at: new Date().toISOString(), 
+          birthday: today 
+        }).eq('id', petId);
+        
+        setHatchAnimating(false);
+        setShowNamingScreen(true);
+      }, 900);
+    } catch (e) {
+      console.error("孵化エラー:", e);
+      alert("孵化処理中にエラーが発生しました。");
+    }
   };
 
   const handleFeed = async () => {
@@ -1063,12 +1088,23 @@ function HomeAR() {
     }
   };
 
-  // 🌟 ここで未ログインやロード中ならUI・AR描画をブロックしてリダイレクトを待つ
-  if (!isClient || isAuthChecking) {
+  // 🌟 デバッグ用アクション 🌟
+  const debugMaxHatchConditions = async () => {
+    if (!petId) return;
+    setWalkDistance(targetDistanceToHatch);
+    setFeedCount(targetFeedCount);
+    setLandmarkVisitCount(targetLandmarkVisits);
+    setEventCount(targetEventCount);
+    await supabase.from('pets').update({ walk_distance_m: targetDistanceToHatch }).eq('id', petId);
+    alert('孵化条件をMAXにしました');
+  };
+
+  // 🌟 ここで未ログインやロード中ならUI・AR描画を完全にブロック
+  if (!isClient || isAuthChecking || (sessionUserId && !isDataLoaded)) {
     return (
-      <div className="bg-black w-full h-full flex flex-col items-center justify-center text-white">
+      <div className="bg-black w-full h-full flex flex-col items-center justify-center text-white fixed inset-0 z-[9999]">
         <div className="w-10 h-10 border-4 border-gray-500 border-t-white rounded-full animate-spin mb-4"></div>
-        <p className="font-bold">起動中...</p>
+        <p className="font-bold">データ読み込み中...</p>
       </div>
     );
   }
@@ -1079,6 +1115,53 @@ function HomeAR() {
       <Script src="https://cdn.jsdelivr.net/gh/c-frame/aframe-extras@7.2.0/dist/aframe-extras.min.js" strategy="beforeInteractive" />
       <Script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-aframe.prod.js" strategy="beforeInteractive" />
       <Script src="https://raw.githack.com/AR-js-org/AR.js/master/aframe/build/aframe-ar-nft.js" strategy="beforeInteractive" />
+
+      {/* --- 左下デバッグボタン --- */}
+      <button 
+        onClick={() => setIsDebugModalOpen(true)} 
+        className="absolute bottom-24 left-4 z-50 bg-black/50 text-white p-3 rounded-full shadow-2xl active:scale-95 text-xl backdrop-blur-sm border border-gray-600"
+        aria-label="デバッグメニュー"
+      >
+        🐞
+      </button>
+
+      {/* --- デバッグモーダル --- */}
+      {isDebugModalOpen && (
+        <div className="absolute inset-0 z-[300] bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl p-6 w-full max-w-sm shadow-2xl space-y-4 max-h-[80vh] overflow-y-auto relative">
+            <div className="flex justify-between items-center mb-2 border-b pb-2">
+              <h2 className="text-xl font-bold text-red-600">🐞 デバッグメニュー</h2>
+              <button onClick={() => setIsDebugModalOpen(false)} className="text-gray-500 font-bold bg-gray-100 px-3 py-1 rounded">閉じる</button>
+            </div>
+
+            <div className="space-y-2">
+              <h3 className="font-bold text-sm bg-gray-200 p-1 rounded">🥚 卵の検証</h3>
+              <button onClick={handleCreateEgg} className="w-full bg-yellow-500 text-white font-bold py-2 rounded-lg shadow text-sm">新しい卵を取得する</button>
+              <button onClick={debugMaxHatchConditions} className="w-full bg-orange-500 text-white font-bold py-2 rounded-lg shadow text-sm">孵化条件をすべてMAXにする</button>
+              <button onClick={() => handleHatchEgg(true)} className="w-full bg-pink-500 text-white font-bold py-2 rounded-lg shadow text-sm">条件無視で強制孵化させる</button>
+            </div>
+
+            <div className="space-y-2 mt-4">
+              <h3 className="font-bold text-sm bg-gray-200 p-1 rounded">🐕 ペットの検証</h3>
+              <button onClick={() => addExperience(1000)} className="w-full bg-blue-500 text-white font-bold py-2 rounded-lg shadow text-sm">経験値 +1000 (レベルアップ)</button>
+              <button onClick={() => {
+                const newDist = walkDistance + 1000;
+                setWalkDistance(newDist);
+                supabase.from('pets').update({ walk_distance_m: newDist }).eq('id', petId);
+              }} className="w-full bg-green-500 text-white font-bold py-2 rounded-lg shadow text-sm">歩行距離 +1000m</button>
+              <button onClick={() => {
+                setPetCondition('sick'); setShowConditionSOS(true);
+                supabase.from('pets').update({ condition_status: 'sick' }).eq('id', petId);
+              }} className="w-full bg-purple-500 text-white font-bold py-2 rounded-lg shadow text-sm">強制的に「病気」にする</button>
+              <button onClick={() => {
+                setPetCondition('starving'); setShowConditionSOS(true); setHungerPercent(10);
+                supabase.from('pets').update({ condition_status: 'starving' }).eq('id', petId);
+              }} className="w-full bg-red-500 text-white font-bold py-2 rounded-lg shadow text-sm">強制的に「空腹(餓死寸前)」にする</button>
+              <button onClick={() => triggerRainbowBridge(petId!, generation)} className="w-full bg-black text-white font-bold py-2 rounded-lg shadow text-sm">🌈 寿命(虹の橋)テスト</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* --- レベルアップエフェクトオーバーレイ --- */}
       {levelUpOverlay?.active && (
@@ -1421,9 +1504,71 @@ function HomeAR() {
         </div>
       )}
 
+      {/* --- ステータスモーダル (画面に一瞬映る問題を解決) --- */}
+      {isStatusModalOpen && (
+        <div className="absolute inset-0 z-[150] bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="bg-gray-900 border border-gray-700 rounded-3xl p-6 w-full max-w-sm shadow-2xl relative text-white space-y-4">
+            <div className="flex justify-between items-center border-b border-gray-700 pb-3">
+              <h2 className="text-xl font-bold text-white">📊 ステータス詳細</h2>
+              <button onClick={() => setIsStatusModalOpen(false)} className="text-gray-400 hover:text-white font-bold px-3 py-1 bg-gray-800 rounded-full">閉じる</button>
+            </div>
+
+            {(isEgg && !isEggUnregistered) && (
+              <div className="space-y-3">
+                <div className="flex justify-between text-xs font-bold text-yellow-400">
+                  <span>🥚 孵化条件 <span className="ml-2 text-gray-400">第{generation}世代</span></span>
+                  <span>{isHatchReady ? '準備完了！' : 'あと少し...'}</span>
+                </div>
+                <div className="space-y-2 text-xs">
+                  <div className="flex justify-between"><span>🚶 歩行 {Math.floor(walkDistance)} / {targetDistanceToHatch}m</span><span>{Math.floor(hatchProgress.distance * 100)}%</span></div>
+                  <div className="w-full h-3 bg-gray-800 rounded-full overflow-hidden"><div className="h-full bg-yellow-400" style={{ width: `${Math.min(100, hatchProgress.distance * 100)}%` }}></div></div>
+                  <div className="flex justify-between"><span>🍚 給餌 {feedCount} / {targetFeedCount}回</span><span>{Math.floor(hatchProgress.feed * 100)}%</span></div>
+                  <div className="w-full h-3 bg-gray-800 rounded-full overflow-hidden"><div className="h-full bg-orange-400" style={{ width: `${Math.min(100, hatchProgress.feed * 100)}%` }}></div></div>
+                  <div className="flex justify-between"><span>📍 ランドマーク {landmarkVisitCount} / {targetLandmarkVisits}回</span><span>{Math.floor(hatchProgress.landmark * 100)}%</span></div>
+                  <div className="w-full h-3 bg-gray-800 rounded-full overflow-hidden"><div className="h-full bg-cyan-400" style={{ width: `${Math.min(100, hatchProgress.landmark * 100)}%` }}></div></div>
+                  <div className="flex justify-between"><span>✨ イベント {eventCount} / {targetEventCount}回</span><span>{Math.floor(hatchProgress.event * 100)}%</span></div>
+                  <div className="w-full h-3 bg-gray-800 rounded-full overflow-hidden"><div className="h-full bg-pink-400" style={{ width: `${Math.min(100, hatchProgress.event * 100)}%` }}></div></div>
+                </div>
+              </div>
+            )}
+
+            {(!isEgg && !isEggUnregistered && petId) && (
+              <>
+                <div className="space-y-4">
+                  <div>
+                    <div className="flex justify-between text-xs font-bold text-gray-300 mb-1"><span>🍖 体力</span><span>{hungerPercent}%</span></div>
+                    <div className="w-full h-3 bg-gray-800 rounded-full overflow-hidden"><div className={`h-full ${hungerPercent < 30 ? 'bg-red-500' : 'bg-green-500'}`} style={{ width: `${hungerPercent}%` }}></div></div>
+                  </div>
+                  <div>
+                    <div className="flex justify-between text-xs font-bold text-gray-300 mb-1"><span>💖 ごきげん</span><span>{motivationPercent}%</span></div>
+                    <div className="w-full h-3 bg-gray-800 rounded-full overflow-hidden"><div className="h-full bg-gradient-to-r from-pink-400 to-pink-600" style={{ width: `${motivationPercent}%` }}></div></div>
+                  </div>
+                  <div>
+                    <div className="flex justify-between text-xs font-bold text-blue-300 mb-1"><span>🌟 Lv.{level} <span className="text-[10px] text-gray-500 ml-1">第{generation}世代</span></span><span>EXP: {exp} / {expNeededForNextLevel}</span></div>
+                    <div className="w-full h-3 bg-gray-800 rounded-full overflow-hidden"><div className="h-full bg-blue-500" style={{ width: `${(exp / expNeededForNextLevel) * 100}%` }}></div></div>
+                  </div>
+                </div>
+
+                <div className="border-t border-gray-700 pt-4 mt-2 space-y-3 text-xs text-gray-300">
+                  <div className="font-bold text-indigo-300 mb-2">🔜 次のレベルアップ条件</div>
+                  <div className="flex justify-between"><span>🚶 歩行 {Math.floor(walkDistance)} / {nextLevelRequirements.distance}m</span><span>{Math.floor(Math.min(100, (walkDistance / nextLevelRequirements.distance) * 100))}%</span></div>
+                  <div className="w-full h-2 bg-gray-800 rounded-full overflow-hidden"><div className="h-full bg-indigo-400" style={{ width: `${Math.min(100, (walkDistance / nextLevelRequirements.distance) * 100)}%` }}></div></div>
+                  <div className="flex justify-between"><span>🍚 給餌 {feedCount} / {nextLevelRequirements.feed}回</span><span>{Math.floor(Math.min(100, (feedCount / nextLevelRequirements.feed) * 100))}%</span></div>
+                  <div className="w-full h-2 bg-gray-800 rounded-full overflow-hidden"><div className="h-full bg-orange-400" style={{ width: `${Math.min(100, (feedCount / nextLevelRequirements.feed) * 100)}%` }}></div></div>
+                  <div className="flex justify-between"><span>📍 ランドマーク {landmarkVisitCount} / {nextLevelRequirements.landmark}回</span><span>{Math.floor(Math.min(100, (landmarkVisitCount / nextLevelRequirements.landmark) * 100))}%</span></div>
+                  <div className="w-full h-2 bg-gray-800 rounded-full overflow-hidden"><div className="h-full bg-cyan-400" style={{ width: `${Math.min(100, (landmarkVisitCount / nextLevelRequirements.landmark) * 100)}%` }}></div></div>
+                  <div className="flex justify-between"><span>✨ イベント {eventCount} / {nextLevelRequirements.event}回</span><span>{Math.floor(Math.min(100, (eventCount / nextLevelRequirements.event) * 100))}%</span></div>
+                  <div className="w-full h-2 bg-gray-800 rounded-full overflow-hidden"><div className="h-full bg-pink-400" style={{ width: `${Math.min(100, (eventCount / nextLevelRequirements.event) * 100)}%` }}></div></div>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* --- 状態異常SOS モーダル --- */}
       {showConditionSOS && !isEgg && petCondition !== 'healthy' && (
-        <div className="absolute top-36 left-4 right-4 z-[100] animate-bounce">
+        <div className="absolute top-24 left-4 right-4 z-[100] animate-bounce">
           <div className={`p-4 rounded-2xl shadow-2xl border-4 flex items-start gap-4 ${petCondition === 'sick' ? 'bg-purple-100 border-purple-400 text-purple-900' : 'bg-red-100 border-red-400 text-red-900'}`}>
             <div className="text-4xl">{petCondition === 'sick' ? '🏥' : '🍽️'}</div>
             <div className="flex-1">
@@ -1441,71 +1586,27 @@ function HomeAR() {
         </div>
       )}
 
-      {/* --- UIレイヤー (ヘッダー) --- */}
+      {/* --- UIレイヤー (ヘッダー: スッキリ化) --- */}
       {sessionUserId && viewMode !== 'report' && (
         <div className="absolute top-4 left-4 right-4 z-20 flex flex-col gap-3 pointer-events-none">
           <div className="flex justify-between items-end">
-            <span className="text-white font-bold text-2xl drop-shadow-lg">{isEggUnregistered ? '' : displayName}</span>
-            <span className={`${currentMood.color} text-white px-3 py-1.5 rounded-lg font-bold shadow-md text-sm transition-colors duration-300`}>{currentMood.text}</span>
+            <span className="text-white font-bold text-3xl drop-shadow-lg bg-black/30 px-3 py-1 rounded-xl backdrop-blur-sm">{isEggUnregistered ? '' : displayName}</span>
+            <span className={`${currentMood.color} text-white px-4 py-2 rounded-xl font-bold shadow-xl text-md transition-colors duration-300 border border-white/20`}>{currentMood.text}</span>
           </div>
-
-          {(isEgg && !isEggUnregistered) && (
-            <div className="bg-black/80 p-4 rounded-xl backdrop-blur-sm shadow-lg pointer-events-auto border border-yellow-500 space-y-3">
-              <div className="flex justify-between text-xs font-bold text-yellow-400">
-                <span>🥚 孵化条件 <span className="ml-2 text-gray-300">第{generation}世代</span></span>
-                <span>{isHatchReady ? '準備完了！' : 'あと少し...'}</span>
-              </div>
-              <div className="space-y-2 text-xs text-white">
-                <div className="flex justify-between">
-                  <span>🚶 歩行 {Math.floor(walkDistance)} / {targetDistanceToHatch}m <span className="text-[10px] text-gray-300 ml-1">(約{stepCount}歩)</span></span>
-                  <span>{Math.floor(hatchProgress.distance * 100)}%</span>
-                </div>
-                <div className="w-full h-3 bg-gray-800 rounded-full overflow-hidden"><div className="h-full bg-yellow-400 transition-all duration-500" style={{ width: `${Math.min(100, hatchProgress.distance * 100)}%` }}></div></div>
-                <div className="flex justify-between"><span>🍚 給餌 {feedCount} / {targetFeedCount}回</span><span>{Math.floor(hatchProgress.feed * 100)}%</span></div>
-                <div className="w-full h-3 bg-gray-800 rounded-full overflow-hidden"><div className="h-full bg-orange-400 transition-all duration-500" style={{ width: `${Math.min(100, hatchProgress.feed * 100)}%` }}></div></div>
-                <div className="flex justify-between"><span>📍 ランドマーク {landmarkVisitCount} / {targetLandmarkVisits}回</span><span>{Math.floor(hatchProgress.landmark * 100)}%</span></div>
-                <div className="w-full h-3 bg-gray-800 rounded-full overflow-hidden"><div className="h-full bg-cyan-400 transition-all duration-500" style={{ width: `${Math.min(100, hatchProgress.landmark * 100)}%` }}></div></div>
-                <div className="flex justify-between"><span>✨ イベント {eventCount} / {targetEventCount}回</span><span>{Math.floor(hatchProgress.event * 100)}%</span></div>
-                <div className="w-full h-3 bg-gray-800 rounded-full overflow-hidden"><div className="h-full bg-pink-400 transition-all duration-500" style={{ width: `${Math.min(100, hatchProgress.event * 100)}%` }}></div></div>
-              </div>
-            </div>
-          )}
-
-          {(!isEgg && !isEggUnregistered && petId) && (
-            <>
-              <div className="bg-black/60 p-2.5 rounded-xl backdrop-blur-sm shadow-lg pointer-events-auto border border-gray-700">
-                <div className="flex justify-between text-xs font-bold text-white mb-1.5"><span>🍖 体力</span><span>{hungerPercent}%</span></div>
-                <div className="w-full h-2.5 bg-gray-800 rounded-full overflow-hidden shadow-inner"><div className={`h-full transition-all duration-1000 ${hungerPercent < 30 ? 'bg-red-500' : 'bg-green-500'}`} style={{ width: `${hungerPercent}%` }}></div></div>
-              </div>
-              <div className="bg-black/60 p-2.5 rounded-xl backdrop-blur-sm shadow-lg pointer-events-auto border border-gray-700">
-                <div className="flex justify-between text-xs font-bold text-white mb-1.5"><span>💖 ごきげん</span><span>{motivationPercent}%</span></div>
-                <div className="w-full h-2.5 bg-gray-800 rounded-full overflow-hidden shadow-inner"><div className="h-full bg-gradient-to-r from-pink-400 to-pink-600 transition-all duration-1000" style={{ width: `${motivationPercent}%` }}></div></div>
-              </div>
-              <div className="bg-black/60 p-2.5 rounded-xl backdrop-blur-sm shadow-lg pointer-events-auto border border-blue-500">
-                <div className="flex justify-between text-xs font-bold text-blue-200 mb-1.5"><span>🌟 Lv.{level} <span className="text-[10px] text-gray-400 ml-1">第{generation}世代</span></span><span>EXP: {exp} / {expNeededForNextLevel}</span></div>
-                <div className="w-full h-2 bg-gray-800 rounded-full overflow-hidden shadow-inner"><div className="h-full bg-blue-500 transition-all duration-500" style={{ width: `${(exp / expNeededForNextLevel) * 100}%` }}></div></div>
-              </div>
-              <div className="bg-black/70 p-3 rounded-xl shadow-lg pointer-events-auto border border-indigo-500 space-y-3 text-xs text-white">
-                <div className="flex justify-between">
-                  <span>🚶 次の条件 {Math.floor(walkDistance)} / {nextLevelRequirements.distance}m <span className="text-[10px] text-gray-300 ml-1">(約{stepCount}歩)</span></span>
-                  <span>{Math.floor(Math.min(100, (walkDistance / nextLevelRequirements.distance) * 100))}%</span>
-                </div>
-                <div className="w-full h-3 bg-gray-800 rounded-full overflow-hidden"><div className="h-full bg-indigo-400 transition-all duration-500" style={{ width: `${Math.min(100, (walkDistance / nextLevelRequirements.distance) * 100)}%` }}></div></div>
-                <div className="flex justify-between"><span>🍚 給餌</span><span>{feedCount} / {nextLevelRequirements.feed}</span></div>
-                <div className="w-full h-3 bg-gray-800 rounded-full overflow-hidden"><div className="h-full bg-orange-400 transition-all duration-500" style={{ width: `${Math.min(100, (feedCount / nextLevelRequirements.feed) * 100)}%` }}></div></div>
-                <div className="flex justify-between"><span>📍 ランドマーク</span><span>{landmarkVisitCount} / {nextLevelRequirements.landmark}</span></div>
-                <div className="w-full h-3 bg-gray-800 rounded-full overflow-hidden"><div className="h-full bg-cyan-400 transition-all duration-500" style={{ width: `${Math.min(100, (landmarkVisitCount / nextLevelRequirements.landmark) * 100)}%` }}></div></div>
-                <div className="flex justify-between"><span>✨ イベント</span><span>{eventCount} / {nextLevelRequirements.event}</span></div>
-                <div className="w-full h-3 bg-gray-800 rounded-full overflow-hidden"><div className="h-full bg-pink-400 transition-all duration-500" style={{ width: `${Math.min(100, (eventCount / nextLevelRequirements.event) * 100)}%` }}></div></div>
-              </div>
-            </>
-          )}
         </div>
       )}
 
       {/* --- 右上ボタン群 --- */}
       {viewMode !== 'report' && (
-        <div className="absolute top-48 right-4 z-40 flex flex-col gap-4 pointer-events-auto mt-4">
+        <div className="absolute top-20 right-4 z-40 flex flex-col gap-4 pointer-events-auto">
+          {/* ステータス確認ボタン (追加) */}
+          {(!isEggUnregistered) && (
+            <button onClick={() => { setIsStatusModalOpen(true); playSound('tap'); }} className="bg-white/90 p-3 rounded-full shadow-2xl border border-gray-200 active:scale-90 flex items-center justify-center w-14 h-14 relative" aria-label="ステータス">
+              <span className="text-2xl">📊</span>
+              {(isEgg && isHatchReady) && <span className="absolute top-0 right-0 w-4 h-4 bg-yellow-400 rounded-full border-2 border-white animate-pulse"></span>}
+            </button>
+          )}
+          
           <button onClick={() => { setIsNewsOpen(true); playSound('tap'); }} className="bg-white/90 p-3 rounded-full shadow-2xl border border-gray-200 active:scale-90 flex items-center justify-center w-14 h-14 relative" aria-label="お知らせ">
             <span className="text-2xl">📢</span>{(newsList.length > 0 || userNotifications.length > 0) && <span className="absolute top-0 right-0 w-4 h-4 bg-red-500 rounded-full border-2 border-white"></span>}
           </button>
@@ -1642,7 +1743,7 @@ function HomeAR() {
         )}
 
         {viewMode === 'mindar' && isEgg && !isEggUnregistered && isHatchReady && petId && (
-          <button onClick={handleHatchEgg} className="bg-gradient-to-r from-pink-400 to-red-500 text-white p-4 rounded-2xl font-bold shadow-lg w-full animate-bounce text-lg border-4 border-pink-200">✨ 卵が割れそうだ！<br/><span className="text-sm">タップして孵化させる</span></button>
+          <button onClick={() => handleHatchEgg(false)} className="bg-gradient-to-r from-pink-400 to-red-500 text-white p-4 rounded-2xl font-bold shadow-lg w-full animate-bounce text-lg border-4 border-pink-200">✨ 卵が割れそうだ！<br/><span className="text-sm">タップして孵化させる</span></button>
         )}
 
         {viewMode === 'mindar' && !isEgg && !isEggUnregistered && petId && (
@@ -1690,11 +1791,11 @@ function HomeAR() {
       </div>
 
       {/* --- 背面：ARレイヤー --- */}
-      <div className="absolute top-0 left-0 w-full h-full z-0">
+      <div className="absolute top-0 left-0 w-full h-full z-0 pointer-events-none">
         
-        {viewMode === 'mindar' && sessionUserId && (
+        {viewMode === 'mindar' && sessionUserId && isDataLoaded && (
           /* @ts-ignore */
-          <a-scene embedded key={`mindar-${sceneKey}-${petMarkerUrl}-${activeTargetIndex}`} style={{ height: '100%', width: '100%' }} mindar-image={`imageTargetSrc: ${petMarkerUrl}; autoStart: true; uiLoading: no; uiError: no; maxTrack: 1;`} renderer="preserveDrawingBuffer: true; colorManagement: true; physicallyCorrectLights: true;" color-space="sRGB" vr-mode-ui="enabled: false" device-orientation-permission-ui="enabled: false">
+          <a-scene embedded key={`mindar-${sceneKey}-${petMarkerUrl}-${activeTargetIndex}`} style={{ height: '100%', width: '100%', pointerEvents: 'auto' }} mindar-image={`imageTargetSrc: ${petMarkerUrl}; autoStart: true; uiLoading: no; uiError: no; maxTrack: 1;`} renderer="preserveDrawingBuffer: true; colorManagement: true; physicallyCorrectLights: true;" color-space="sRGB" vr-mode-ui="enabled: false" device-orientation-permission-ui="enabled: false">
             {/* @ts-ignore */}
             <a-assets><a-asset-item id="pet-asset" src={activeModelUrl}></a-asset-item></a-assets>
             {/* @ts-ignore */}
@@ -1722,9 +1823,9 @@ function HomeAR() {
           </a-scene>
         )}
 
-        {viewMode === 'gps' && location && (
+        {viewMode === 'gps' && location && isDataLoaded && (
           /* @ts-ignore */
-          <a-scene embedded key={`gps-${sceneKey}-${cameraFacing}`} style={{ height: '100%', width: '100%' }} vr-mode-ui="enabled: false" renderer="preserveDrawingBuffer: true; colorManagement: true;" arjs={`sourceType: webcam; videoTexture: true; debugUIEnabled: false; facingMode: ${cameraFacing};`}>
+          <a-scene embedded key={`gps-${sceneKey}-${cameraFacing}`} style={{ height: '100%', width: '100%', pointerEvents: 'auto' }} vr-mode-ui="enabled: false" renderer="preserveDrawingBuffer: true; colorManagement: true;" arjs={`sourceType: webcam; videoTexture: true; debugUIEnabled: false; facingMode: ${cameraFacing};`}>
             {/* @ts-ignore */}
             <a-assets><a-asset-item id="pet-asset-gps" src={activeModelUrl}></a-asset-item>{activeLandmark && activeLandmark.model_url && (<a-asset-item id="landmark-asset-dynamic" src={activeLandmark.model_url}></a-asset-item>)}</a-assets>
             {/* @ts-ignore */}
