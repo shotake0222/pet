@@ -1470,8 +1470,8 @@ function HomeAR() {
       {sessionUserId && viewMode !== 'report' && (
         <div className="absolute top-4 left-4 right-4 z-20 flex flex-col gap-3 pointer-events-none">
           <div className="flex justify-between items-end">
-            {/* 🌟 謎のNFCタグという文言を削除し、未登録時は名前を空表示に */}
-            <span className="text-white font-bold text-2xl drop-shadow-lg">{isEggUnregistered ? '' : displayName} <span className="text-xs ml-1 text-gray-300">(殿堂: {hallOfFameCount})</span></span>
+            {/* 🌟 ヘッダーから殿堂入り表示を削除 */}
+            <span className="text-white font-bold text-2xl drop-shadow-lg">{isEggUnregistered ? '' : displayName}</span>
             <span className={`${currentMood.color} text-white px-3 py-1.5 rounded-lg font-bold shadow-md text-sm transition-colors duration-300`}>{currentMood.text}</span>
           </div>
 
