@@ -68,6 +68,7 @@ export default function AdminDashboard() {
   // --- 設定用State: 卵 / レアリティ / 属性 ---
   const [newEggName, setNewEggName] = useState('');
   const [newEggWeight, setNewEggWeight] = useState('100'); // 🌟 卵の排出ウェイト
+  const [newEggModelFile, setNewEggModelFile] = useState<File | null>(null); // 🌟 卵のモデルファイル
   const [newRarityCode, setNewRarityCode] = useState('');
   const [newRarityLabel, setNewRarityLabel] = useState('');
   const [newRarityColor, setNewRarityColor] = useState('#ffffff');
@@ -128,6 +129,16 @@ export default function AdminDashboard() {
   // --- お知らせ用State ---
   const [newsTitle, setNewsTitle] = useState('');
   const [newsContent, setNewsContent] = useState('');
+
+  // --- 共通: Storageアップロード関数 ---
+  const uploadFile = async (file: File, folder: string) => {
+    const fileExt = file.name.split('.').pop();
+    const fileName = `${folder}/${Date.now()}_${Math.random().toString(36).substring(7)}.${fileExt}`;
+    const { error: uploadError } = await supabase.storage.from('ar_assets').upload(fileName, file);
+    if (uploadError) throw uploadError;
+    const { data: { publicUrl } } = supabase.storage.from('ar_assets').getPublicUrl(fileName);
+    return publicUrl;
+  };
 
   // --- データの取得（一覧表示用） ---
   const fetchData = async () => {
@@ -203,14 +214,19 @@ export default function AdminDashboard() {
   const handleAddEgg = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newEggName) return alert('卵の名前を入力してください');
+    if (!newEggModelFile) return alert('卵の3Dモデル（.glb）を選択してください');
     setIsSubmitting(true);
     try {
+      // 🌟 卵のモデルをアップロード
+      const modelUrl = await uploadFile(newEggModelFile, 'models');
+
       const { error } = await supabase.from('egg_masters').insert({ 
         name: newEggName, 
-        drop_weight: parseInt(newEggWeight, 10) 
+        drop_weight: parseInt(newEggWeight, 10),
+        model_url: modelUrl // 🌟 URLを保存
       });
       if (error) throw error;
-      setNewEggName(''); setNewEggWeight('100');
+      setNewEggName(''); setNewEggWeight('100'); setNewEggModelFile(null);
       await fetchData(); // 🌟 await にして確実な反映
       alert('卵を追加しました');
     } catch (e: any) {
@@ -236,9 +252,15 @@ export default function AdminDashboard() {
     }
   };
 
-  const handleDeleteEgg = async (id: number) => {
+  const handleDeleteEgg = async (id: number, modelUrl: string | null) => {
     if (!window.confirm('この卵を削除しますか？既存のペットに影響が出る可能性があります')) return;
     try {
+      // 🌟 卵のモデルをストレージから削除
+      const modelPath = extractFilePath(modelUrl);
+      if (modelPath) {
+        await supabase.storage.from('ar_assets').remove([modelPath]);
+      }
+
       const { error } = await supabase.from('egg_masters').delete().eq('id', id);
       if (error) throw error;
       await fetchData();
@@ -361,16 +383,6 @@ export default function AdminDashboard() {
     } catch (e: any) {
       alert(`エラー: ${e.message}`);
     }
-  };
-
-  // --- 共通: Storageアップロード関数 ---
-  const uploadFile = async (file: File, folder: string) => {
-    const fileExt = file.name.split('.').pop();
-    const fileName = `${folder}/${Date.now()}_${Math.random().toString(36).substring(7)}.${fileExt}`;
-    const { error: uploadError } = await supabase.storage.from('ar_assets').upload(fileName, file);
-    if (uploadError) throw uploadError;
-    const { data: { publicUrl } } = supabase.storage.from('ar_assets').getPublicUrl(fileName);
-    return publicUrl;
   };
 
   // ==========================================
@@ -1666,15 +1678,17 @@ export default function AdminDashboard() {
               <div className="bg-orange-50 p-4 rounded-xl border border-orange-100">
                 <h3 className="font-bold mb-3 text-orange-900">卵を追加</h3>
                 <form onSubmit={handleAddEgg} className="space-y-3 bg-white p-4 rounded-lg border shadow-sm">
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="text-xs font-bold text-gray-600 block mb-1">卵の名前 (例: レア卵)</label>
-                      <input value={newEggName} onChange={e => setNewEggName(e.target.value)} className="w-full border p-2 rounded text-sm" required />
-                    </div>
-                    <div>
-                      <label className="text-xs font-bold text-orange-700 block mb-1">排出ウェイト 🌟</label>
-                      <input type="number" value={newEggWeight} onChange={e => setNewEggWeight(e.target.value)} className="w-full border p-2 rounded text-sm bg-orange-50 focus:ring-orange-500" required />
-                    </div>
+                  <div>
+                    <label className="text-xs font-bold text-gray-600 block mb-1">卵の名前 (例: レア卵)</label>
+                    <input value={newEggName} onChange={e => setNewEggName(e.target.value)} className="w-full border p-2 rounded text-sm" required />
+                  </div>
+                  <div>
+                    <label className="text-xs font-bold text-orange-700 block mb-1">排出ウェイト 🌟</label>
+                    <input type="number" value={newEggWeight} onChange={e => setNewEggWeight(e.target.value)} className="w-full border p-2 rounded text-sm bg-orange-50 focus:ring-orange-500" required />
+                  </div>
+                  <div className="bg-orange-100 p-3 rounded-lg border border-orange-200">
+                    <label className="text-xs font-bold text-orange-900 block mb-1">卵の3Dモデル (.glb) <span className="text-red-500">*</span></label>
+                    <input type="file" accept=".glb" onChange={e => setNewEggModelFile(e.target.files?.[0] || null)} className="w-full text-sm bg-white p-1 rounded" required />
                   </div>
                   <button disabled={isSubmitting} className="w-full bg-slate-900 text-white font-bold py-2 rounded hover:bg-slate-800 shadow mt-2">
                     追加する
@@ -1705,19 +1719,24 @@ export default function AdminDashboard() {
                                 ウェイト変更
                               </button>
                               <button 
-                                onClick={() => handleDeleteEgg(egg.id)} 
+                                onClick={() => handleDeleteEgg(egg.id, egg.model_url)} 
                                 className="text-xs font-bold text-red-600 bg-red-50 border border-red-200 px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-100"
                               >
                                 削除
                               </button>
                             </div>
                           </div>
-                          <div className="flex items-center justify-between bg-orange-50 px-3 py-2 rounded text-sm">
+                          <div className="flex items-center justify-between bg-orange-50 px-3 py-2 rounded text-sm mb-2">
                             <span className="font-bold text-gray-700">ウェイト: <span className="text-orange-700 text-base">{egg.drop_weight || 0}</span></span>
                             <span className="font-bold text-orange-600 bg-white px-2 py-0.5 rounded border border-orange-200">
                               排出率: {dropPercentage}%
                             </span>
                           </div>
+                          {egg.model_url && (
+                            <div className="text-xs text-right">
+                              <a href={egg.model_url} target="_blank" rel="noreferrer" className="text-blue-500 hover:underline">モデルを確認 (.glb)</a>
+                            </div>
+                          )}
                         </div>
                       );
                     })}
