@@ -185,7 +185,9 @@ function HomeAR() {
 
     setIsSwitchingMode(true);
     setCameraReady(mode === 'report');
-    releaseCameraResources();
+    if (viewMode !== 'report') {
+      releaseCameraResources();
+    }
 
     setViewMode(mode);
     const tagQuery = tagIdParam ? `&tag_id=${tagIdParam}` : '';
@@ -211,8 +213,14 @@ function HomeAR() {
   useEffect(() => {
     if (isAuthChecking || !isDataLoaded) return;
     setCameraReady(viewMode === 'report');
-    setSceneKey(prev => prev + 1);
   }, [viewMode, isAuthChecking, isDataLoaded]);
+
+  // モード切替がまれに固まるケースへの保険
+  useEffect(() => {
+    if (!isSwitchingMode) return;
+    const timer = window.setTimeout(() => setIsSwitchingMode(false), 1500);
+    return () => window.clearTimeout(timer);
+  }, [isSwitchingMode]);
 
   // --- 追加: videoの準備完了待ち ---
   useEffect(() => {
@@ -1349,6 +1357,11 @@ function HomeAR() {
           width: 100% !important;
           height: 100% !important;
         }
+        a-scene {
+          position: fixed !important;
+          inset: 0 !important;
+          z-index: 1 !important;
+        }
         video {
           position: fixed !important;
           top: 0 !important;
@@ -1363,6 +1376,10 @@ function HomeAR() {
         }
         .mindar-ui-overlay {
           display: none !important;
+          z-index: 1 !important;
+        }
+        .arjs-loader {
+          z-index: 1 !important;
         }
       `}</style>
 
@@ -1383,7 +1400,7 @@ function HomeAR() {
       {/* --- 左下デバッグボタン --- */}
       <button
         onClick={() => setIsDebugModalOpen(true)}
-        className='absolute bottom-24 left-4 z-50 bg-black/50 text-white p-3 rounded-full shadow-2xl active:scale-95 text-xl backdrop-blur-sm border border-gray-600'
+        className='absolute bottom-24 left-4 z-[120] bg-black/50 text-white p-3 rounded-full shadow-2xl active:scale-95 text-xl backdrop-blur-sm border border-gray-600'
         aria-label='デバッグメニュー'
       >
         🐞
@@ -1973,7 +1990,7 @@ function HomeAR() {
 
       {/* --- 右上ボタン群 --- */}
       {viewMode !== 'report' && (
-        <div className='absolute top-20 right-4 z-40 flex flex-col gap-4 pointer-events-auto'>
+        <div className='absolute top-20 right-4 z-[140] flex flex-col gap-4 pointer-events-auto'>
           {/* ステータス確認ボタン (追加) */}
           {!isEggUnregistered && (
             <button onClick={() => { setIsStatusModalOpen(true); playSound('tap'); }} className='bg-white/90 p-3 rounded-full shadow-2xl border border-gray-200 active:scale-90 flex items-center justify-center w-14 h-14 relative' aria-label='ステータス'>
@@ -2083,7 +2100,7 @@ function HomeAR() {
       )}
 
         {/* --- UIレイヤー (ボトム) --- */}
-      <div className='fixed bottom-0 left-0 right-0 z-[40] p-4 flex flex-col gap-4 pointer-events-auto'>
+      <div className='fixed bottom-0 left-0 right-0 z-[130] p-4 flex flex-col gap-4 pointer-events-auto'>
         {isShopOpen && (
           <div className='absolute bottom-24 left-4 right-4 bg-white/95 p-5 rounded-3xl shadow-2xl backdrop-blur-md z-50 border border-gray-200'>
             <div className='flex justify-between items-center mb-4 border-b pb-3'>
@@ -2235,10 +2252,10 @@ function HomeAR() {
       {/* --- 背面：ARレイヤー（1回だけ） --- */}
       <div className='fixed inset-0 z-[1] pointer-events-none'>
         {viewMode === 'mindar' && sessionUserId && isDataLoaded && scriptsReadyForMindar && !isSwitchingMode && (
-          <div key={`mindar-container-${sceneKey}`} className='fixed inset-0 pointer-events-auto'>
+          <div key={`mindar-container-${sceneKey}`} className='fixed inset-0 pointer-events-none'>
             <a-scene
               embedded
-              style={{ height: '100%', width: '100%', pointerEvents: 'auto' }}
+              style={{ height: '100%', width: '100%', pointerEvents: 'none' }}
               mindar-image={`imageTargetSrc: ${petMarkerUrl}; autoStart: true; uiLoading: no; uiError: no; maxTrack: 1;`}
               renderer='preserveDrawingBuffer: true; colorManagement: true; physicallyCorrectLights: true;'
               color-space='sRGB'
@@ -2269,10 +2286,10 @@ function HomeAR() {
           </div>
         )}
         {viewMode === 'gps' && location && isDataLoaded && scriptsReadyForGps && !isSwitchingMode && (
-          <div key={`gps-container-${sceneKey}-${cameraFacing}`} className='fixed inset-0 pointer-events-auto'>
+          <div key={`gps-container-${sceneKey}-${cameraFacing}`} className='fixed inset-0 pointer-events-none'>
             <a-scene
               embedded
-              style={{ height: '100%', width: '100%', pointerEvents: 'auto' }}
+              style={{ height: '100%', width: '100%', pointerEvents: 'none' }}
               vr-mode-ui='enabled: false'
               renderer='preserveDrawingBuffer: true; colorManagement: true;'
               arjs={`sourceType: webcam; videoTexture: true; debugUIEnabled: false; facingMode: ${cameraFacing};`}
