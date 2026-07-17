@@ -135,6 +135,7 @@ function HomeAR() {
 
   const [location, setLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [prevLocation, setPrevLocation] = useState<{ lat: number; lng: number } | null>(null);
+  const prevLocationRef = useRef<{ lat: number; lng: number } | null>(null);
   const [landmarks, setLandmarks] = useState<any[]>([]);
   const [activeLandmark, setActiveLandmark] = useState<any | null>(null);
   const [isSpotMapOpen, setIsSpotMapOpen] = useState(false);
@@ -860,31 +861,41 @@ function HomeAR() {
   };
 
   useEffect(() => {
-    if (viewMode === 'gps' && navigator.geolocation) {
-      const watchId = navigator.geolocation.watchPosition(
-        async position => {
-          const newLoc = { lat: position.coords.latitude, lng: position.coords.longitude };
-          setLocation(newLoc);
-          if (prevLocation) {
-            const dist = getDistance(prevLocation.lat, prevLocation.lng, newLoc.lat, newLoc.lng);
-            if (dist > 2 && dist < 50) {
-              const newDistance = walkDistance + dist;
-              setWalkDistance(newDistance);
-              if (petId) await supabase.from('pets').update({ walk_distance_m: newDistance }).eq('id', petId);
+    if (viewMode !== 'gps' || !navigator.geolocation) return;
 
-              if (Math.random() < 0.1) {
-                triggerEncounter();
+    const watchId = navigator.geolocation.watchPosition(
+      async position => {
+        const newLoc = { lat: position.coords.latitude, lng: position.coords.longitude };
+        const lastLoc = prevLocationRef.current;
+
+        setLocation(newLoc);
+        setPrevLocation(newLoc);
+
+        if (lastLoc) {
+          const dist = getDistance(lastLoc.lat, lastLoc.lng, newLoc.lat, newLoc.lng);
+          if (dist > 2 && dist < 50) {
+            setWalkDistance(prev => {
+              const newDistance = prev + dist;
+              if (petId) {
+                void supabase.from('pets').update({ walk_distance_m: newDistance }).eq('id', petId);
               }
+              return newDistance;
+            });
+
+            if (Math.random() < 0.1) {
+              void triggerEncounter();
             }
           }
-          setPrevLocation(newLoc);
-        },
-        error => console.error('GPSエラー', error),
-        { enableHighAccuracy: true, maximumAge: 0 },
-      );
-      return () => navigator.geolocation.clearWatch(watchId);
-    }
-  }, [viewMode, prevLocation, walkDistance, isEgg, petId, supabase]);
+        }
+
+        prevLocationRef.current = newLoc;
+      },
+      error => console.error('GPSエラー', error),
+      { enableHighAccuracy: true, maximumAge: 0 },
+    );
+
+    return () => navigator.geolocation.clearWatch(watchId);
+  }, [viewMode, petId, supabase]);
 
   useEffect(() => {
     if (viewMode === 'gps' && location && landmarks.length > 0) {
@@ -1399,6 +1410,12 @@ function HomeAR() {
             <div className='w-10 h-10 border-4 border-gray-500 border-t-white rounded-full animate-spin mx-auto mb-3'></div>
             <p className='font-bold'>カメラを起動しています...</p>
           </div>
+        </div>
+      )}
+
+      {viewMode === 'gps' && !location && !isSwitchingMode && (
+        <div className='absolute top-20 left-1/2 -translate-x-1/2 z-[180] bg-black/60 text-white text-xs px-3 py-2 rounded-full backdrop-blur-sm'>
+          GPSを取得中です... そのまま少しお待ちください
         </div>
       )}
 
@@ -2290,7 +2307,7 @@ function HomeAR() {
             </a-scene>
           </div>
         )}
-        {viewMode === 'gps' && location && isDataLoaded && scriptsReadyForGps && !isSwitchingMode && (
+        {viewMode === 'gps' && isDataLoaded && scriptsReadyForGps && !isSwitchingMode && (
           <div key={`gps-container-${sceneKey}-${cameraFacing}`} className='fixed inset-0 pointer-events-none'>
             <a-scene
               embedded
