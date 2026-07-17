@@ -1710,9 +1710,16 @@ function HomeAR() {
 
       {/* --- 地図でスポットを探すモーダル --- */}
       {isSpotMapOpen && (
-        <div className='absolute inset-0 z-[120] bg-black/80 backdrop-blur-md flex items-center justify-center p-4'>
-          <div className='bg-white rounded-3xl p-6 w-full max-w-sm shadow-2xl relative max-h-[90vh] flex flex-col'>
+        <div className='absolute inset-0 z-[320] bg-black/80 backdrop-blur-md flex items-center justify-center p-4' onClick={() => setIsSpotMapOpen(false)}>
+          <div className='bg-white rounded-3xl p-6 w-full max-w-sm shadow-2xl relative max-h-[90vh] flex flex-col' onClick={e => e.stopPropagation()}>
             <h2 className='text-xl font-bold text-center border-b pb-3 mb-4 text-slate-800'>🗺️ 周辺のスポット</h2>
+            <button
+              onClick={() => setIsSpotMapOpen(false)}
+              className='absolute top-3 right-3 w-9 h-9 rounded-full bg-gray-100 text-gray-700 font-bold flex items-center justify-center active:scale-95'
+              aria-label='地図を閉じる'
+            >
+              ✕
+            </button>
 
             {!location ? (
               <p className='text-center text-gray-500 my-10'>GPS座標を取得中...</p>
