@@ -194,7 +194,8 @@ function HomeAR() {
 
     setIsSwitchingMode(true);
     setCameraReady(mode === 'report');
-    if (mode === 'report') {
+    const isArToArSwitch = (viewMode === 'mindar' || viewMode === 'gps') && (mode === 'mindar' || mode === 'gps');
+    if (mode === 'report' || isArToArSwitch) {
       releaseCameraResources();
     }
 
