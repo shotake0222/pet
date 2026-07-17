@@ -1029,14 +1029,68 @@ function HomeAR() {
     addExperience(100);
   };
 
+  // 🌟 ここから写真撮影機能を強化 🌟
   const takeSnapshot = () => {
     playSound('camera');
-    const video = document.querySelector('video'); const aframeCanvas = document.querySelector('.a-canvas') as HTMLCanvasElement;
-    if (!video || !aframeCanvas) return alert('カメラの準備ができていません');
-    const canvas = document.createElement('canvas'); canvas.width = video.videoWidth || window.innerWidth; canvas.height = video.videoHeight || window.innerHeight;
-    const ctx = canvas.getContext('2d'); if (!ctx) return;
-    ctx.drawImage(video, 0, 0, canvas.width, canvas.height); ctx.drawImage(aframeCanvas, 0, 0, canvas.width, canvas.height);
-    const link = document.createElement('a'); link.download = `straid-ar-snap-${Date.now()}.png`; link.href = canvas.toDataURL('image/png'); link.click();
+    
+    // 1. 要素をより広く、柔軟に探す（フォールバックを追加）
+    const video = document.querySelector('video');
+    const aframeCanvas = document.querySelector('canvas.a-canvas') || document.querySelector('a-scene')?.canvas || document.querySelector('canvas');
+    
+    // どちらも完全に無い場合のみ弾く
+    if (!video && !aframeCanvas) {
+      return alert('カメラ映像とAR画面の両方が見つかりません。少し待ってから再度お試しください。');
+    }
+
+    try {
+      // 合成用のキャンバスを作成
+      const canvas = document.createElement('canvas');
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return alert('画像処理エンジンの起動に失敗しました。');
+
+      // 2. カメラ映像 (video) が存在し、データが読み込まれている場合のみ描画
+      if (video && video.readyState >= 2) {
+         const videoRatio = video.videoWidth / video.videoHeight;
+         const canvasRatio = canvas.width / canvas.height;
+         let drawWidth, drawHeight, startX, startY;
+
+         // object-fit: cover と同じ比率計算で全画面にトリミング
+         if (videoRatio > canvasRatio) {
+           drawHeight = canvas.height;
+           drawWidth = canvas.height * videoRatio;
+           startX = (canvas.width - drawWidth) / 2;
+           startY = 0;
+         } else {
+           drawWidth = canvas.width;
+           drawHeight = canvas.width / videoRatio;
+           startX = 0;
+           startY = (canvas.height - drawHeight) / 2;
+         }
+         ctx.drawImage(video, startX, startY, drawWidth, drawHeight);
+      } else if (!video) {
+         console.warn('背景のカメラ映像(Video要素)が取得できませんでした');
+      }
+
+      // 3. ARの3Dモデル (Canvas) が存在する場合は上から重ねて描画
+      if (aframeCanvas) {
+         ctx.drawImage(aframeCanvas as HTMLCanvasElement, 0, 0, canvas.width, canvas.height);
+      } else {
+         console.warn('ARモデル(Canvas要素)が取得できませんでした');
+      }
+
+      // 4. 画像化してダウンロード実行
+      const link = document.createElement('a');
+      link.download = `straid-ar-snap-${Date.now()}.png`;
+      link.href = canvas.toDataURL('image/png');
+      link.click();
+
+    } catch (e: any) {
+      console.error('Snapshot Error:', e);
+      // iOS Safariなどのセキュリティ制約 (CORSエラー) で画像化がブロックされた場合のエラー表示
+      alert('写真の生成中にセキュリティエラー等が発生しました。\n詳細: ' + (e?.message || '不明なエラー'));
+    }
   };
 
   const handleProfileSubmit = async (e: React.FormEvent) => {
