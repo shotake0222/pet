@@ -179,6 +179,42 @@ function HomeAR() {
     } catch {}
   }, []);
 
+  // ARライブラリが注入するDOMの重なり順を固定して、UIが隠れるのを防ぐ
+  const normalizeArLayers = useCallback(() => {
+    try {
+      const videos = document.querySelectorAll('video');
+      videos.forEach(v => {
+        const el = v as HTMLVideoElement;
+        el.style.position = 'fixed';
+        el.style.top = '0';
+        el.style.left = '0';
+        el.style.width = '100vw';
+        el.style.height = '100vh';
+        el.style.objectFit = 'cover';
+        el.style.zIndex = '0';
+        el.style.pointerEvents = 'none';
+      });
+
+      const canvases = document.querySelectorAll('canvas');
+      canvases.forEach(c => {
+        const el = c as HTMLCanvasElement;
+        el.style.position = 'fixed';
+        el.style.inset = '0';
+        el.style.zIndex = '1';
+        el.style.pointerEvents = 'none';
+      });
+
+      const scenes = document.querySelectorAll('a-scene');
+      scenes.forEach(s => {
+        const el = s as HTMLElement;
+        el.style.position = 'fixed';
+        el.style.inset = '0';
+        el.style.zIndex = '1';
+        el.style.pointerEvents = 'none';
+      });
+    } catch {}
+  }, []);
+
   // 🌟 修正: フルリロードをやめて安全にモード切替
   const handleModeChange = (mode: 'mindar' | 'gps' | 'report') => {
     playSound('tap');
@@ -212,6 +248,7 @@ function HomeAR() {
     window.setTimeout(() => {
       setSceneKey(prev => prev + 1);
       setIsSwitchingMode(false);
+      normalizeArLayers();
     }, 180);
   };
 
@@ -225,6 +262,21 @@ function HomeAR() {
       releaseCameraResources();
     };
   }, [releaseCameraResources]);
+
+  // モード遷移直後はARライブラリがDOMを差し替えるため、短時間だけ複数回正規化する
+  useEffect(() => {
+    if (viewMode === 'report') return;
+    normalizeArLayers();
+    let count = 0;
+    const timer = window.setInterval(() => {
+      normalizeArLayers();
+      count += 1;
+      if (count >= 16) {
+        window.clearInterval(timer);
+      }
+    }, 250);
+    return () => window.clearInterval(timer);
+  }, [viewMode, sceneKey, isSwitchingMode, normalizeArLayers]);
 
   useEffect(() => {
     if (isAuthChecking || !isDataLoaded) return;
