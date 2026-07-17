@@ -1526,7 +1526,7 @@ function HomeAR() {
   // 🌟 ここで未ログインやロード中ならUI・AR描画を完全にブロック
   if (!isClient || isAuthChecking || (sessionUserId && !isDataLoaded)) {
     return (
-      <div className='bg-black w-full h-full flex flex-col items-center justify-center text-white fixed inset-0 z-[9999]' style={{ width: '100vw', height: '100dvh' }}>
+      <div className='bg-black w-full h-full flex flex-col items-center justify-center text-white fixed inset-0 z-[9999]' style={{ width: '100vw', height: '100vh' }}>
         <div className='w-10 h-10 border-4 border-gray-500 border-t-white rounded-full animate-spin mb-4'></div>
         <p className='font-bold'>データ読み込み中...</p>
       </div>
@@ -1535,8 +1535,8 @@ function HomeAR() {
 
   return (
     <div
-      className='relative isolate h-[100dvh] min-h-0 w-full min-w-0 max-w-full overflow-hidden bg-black text-white'
-      style={{ width: '100vw', maxWidth: '100vw' }}
+      className='relative isolate min-h-0 w-full min-w-0 max-w-full overflow-hidden bg-black text-white'
+      style={{ width: '100vw', height: '100vh' }}
     >
       {/* 🌟 画面が左側に潰れる問題(親コンテナ幅依存の暴走)を根本から防ぐ強制CSS */}
       <style jsx global>{`
@@ -1547,14 +1547,12 @@ function HomeAR() {
           max-width: 100vw !important;
           min-width: 0 !important;
           height: 100vh !important;
-          height: 100dvh !important;
           margin: 0 !important;
           padding: 0 !important;
           overflow: hidden !important;
           overscroll-behavior: none;
         }
-        /* Pages Router 用の保険（App Routerでは何にもマッチせず無害）。
-           カメラ(video)を巻き込まないよう、対象は #__next のみに限定する。 */
+        /* Pages Router 用（App Routerでは無視される） */
         #__next {
           background-color: transparent !important;
           width: 100%;
@@ -2587,7 +2585,7 @@ function HomeAR() {
 
 export default function HomeARPage() {
   return (
-    <Suspense fallback={<div className='bg-black w-full h-full text-white flex items-center justify-center' style={{ width: '100vw', height: '100dvh' }}>ARエンジンを起動中...</div>}>
+    <Suspense fallback={<div className='bg-black w-full h-full text-white flex items-center justify-center' style={{ width: '100vw', height: '100vh' }}>ARエンジンを起動中...</div>}>
       <HomeAR />
     </Suspense>
   );
