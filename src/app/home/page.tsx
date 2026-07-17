@@ -1526,7 +1526,7 @@ function HomeAR() {
   // 🌟 ここで未ログインやロード中ならUI・AR描画を完全にブロック
   if (!isClient || isAuthChecking || (sessionUserId && !isDataLoaded)) {
     return (
-      <div className='bg-black w-full h-full flex flex-col items-center justify-center text-white fixed inset-0 z-[9999]'>
+      <div className='bg-black w-full h-full flex flex-col items-center justify-center text-white fixed inset-0 z-[9999]' style={{ width: '100vw', height: '100dvh' }}>
         <div className='w-10 h-10 border-4 border-gray-500 border-t-white rounded-full animate-spin mb-4'></div>
         <p className='font-bold'>データ読み込み中...</p>
       </div>
@@ -1534,26 +1534,38 @@ function HomeAR() {
   }
 
   return (
-    <div className='relative isolate h-[100dvh] min-h-0 w-full min-w-0 max-w-full overflow-hidden bg-black text-white'>
-      {/* 🌟 画面真っ暗問題を解決する強制CSS */}
+    <div
+      className='relative isolate h-[100dvh] min-h-0 w-full min-w-0 max-w-full overflow-hidden bg-black text-white'
+      style={{ width: '100vw', maxWidth: '100vw' }}
+    >
+      {/* 🌟 画面が左側に潰れる問題(親コンテナ幅依存の暴走)を根本から防ぐ強制CSS */}
       <style jsx global>{`
         html,
         body {
           background-color: transparent !important;
-          width: 100%;
-          max-width: 100%;
-          height: 100%;
-          margin: 0;
-          padding: 0;
+          width: 100vw !important;
+          max-width: 100vw !important;
+          min-width: 0 !important;
+          height: 100vh !important;
+          height: 100dvh !important;
+          margin: 0 !important;
+          padding: 0 !important;
           overflow: hidden !important;
           overscroll-behavior: none;
         }
-        #__next {
+        /* Next.js App Router / Pages Router どちらのルートラッパーにも保険をかける。
+           #__next は Pages Router 専用IDのため、App Router では body 直下の
+           ラッパー div 群にも同じ幅指定を当てる。 */
+        #__next,
+        body > div,
+        body > div > div,
+        body > next-route-announcer + div {
           background-color: transparent !important;
-          width: 100%;
-          max-width: 100%;
-          height: 100%;
-          overflow: hidden;
+          width: 100% !important;
+          max-width: 100% !important;
+          min-width: 0 !important;
+          height: 100% !important;
+          overflow: hidden !important;
         }
         .ar-camera-viewport {
           position: absolute;
@@ -2580,7 +2592,7 @@ function HomeAR() {
 
 export default function HomeARPage() {
   return (
-    <Suspense fallback={<div className='bg-black w-full h-full text-white flex items-center justify-center'>ARエンジンを起動中...</div>}>
+    <Suspense fallback={<div className='bg-black w-full h-full text-white flex items-center justify-center' style={{ width: '100vw', height: '100dvh' }}>ARエンジンを起動中...</div>}>
       <HomeAR />
     </Suspense>
   );
