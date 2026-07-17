@@ -60,26 +60,58 @@ function HomeAR() {
 
   const [hatchOverlay, setHatchOverlay] = useState<{ active: boolean; particles: any[]; rarity: string } | null>(null);
 
-  const petMarkerUrl = '/markers/pet.mind';
-  const activeTargetIndex = 0;
+  // 🌟 4体分のマーカーを1つの.mindファイルにまとめてコンパイルしたもの（targetIndex: 0〜3）。
+  // MindARは<a-scene>ごとに.mindを1つしかロードできないため、複数マーカーは
+  // 1ファイルにまとめてtargetIndexで区別するのが正しい運用です。
+  const petMarkerUrl = '/markers/targets.mind';
+
+  // targetIndex(0〜3)ごとに表示する卵モデル。パスは実際のファイル名に合わせて調整してください。
+  const MARKER_EGG_MODELS = [
+    '/models/eggs/egg_A.glb', // targetIndex: 0
+    '/models/eggs/egg_B.glb', // targetIndex: 1
+    '/models/eggs/egg_C.glb', // targetIndex: 2
+    '/models/eggs/egg_D.glb', // targetIndex: 3
+  ];
+
+  // 現在カメラが検出しているマーカーのtargetIndex（未検出時はnull）
+  const [detectedTargetIndex, setDetectedTargetIndex] = useState<number | null>(null);
+
+  // 🌟 サウンドファイルは毎回new Audio()せず使い回す（パフォーマンス改善 & 
+  //    ファイル欠損時の挙動を安定させるため）。ここに書かれている7種類が
+  //    /public/sounds/ 以下に実在している必要がある。
+  const SOUND_SOURCES: Record<string, string> = {
+    tap: '/sounds/tap.mp3',
+    eat: '/sounds/eat.mp3',
+    item: '/sounds/item.mp3',
+    levelup: '/sounds/levelup.mp3',
+    hatch: '/sounds/hatch.mp3',
+    camera: '/sounds/camera.mp3',
+    error: '/sounds/error.mp3',
+  };
+  const audioPoolRef = useRef<Record<string, HTMLAudioElement>>({});
 
   const playSound = useCallback((name: string) => {
     try {
-      const map: Record<string, string> = {
-        tap: '/sounds/tap.mp3',
-        eat: '/sounds/eat.mp3',
-        item: '/sounds/item.mp3',
-        levelup: '/sounds/levelup.mp3',
-        hatch: '/sounds/hatch.mp3',
-        camera: '/sounds/camera.mp3',
-        error: '/sounds/error.mp3',
-      };
-      const src = map[name];
+      const src = SOUND_SOURCES[name];
       if (!src) return;
-      const audio = new Audio(src);
-      audio.volume = 0.7;
-      void audio.play();
-    } catch {}
+
+      let audio = audioPoolRef.current[name];
+      if (!audio) {
+        audio = new Audio(src);
+        audio.preload = 'auto';
+        audio.volume = 0.7;
+        audioPoolRef.current[name] = audio;
+      }
+      // 連打しても再生できるよう毎回頭出しする
+      audio.currentTime = 0;
+      audio.play().catch(err => {
+        // ファイル欠損(416等)やブラウザの自動再生制限で失敗しても、
+        // アプリの動作自体は止めない。コンソールにだけ残す。
+        console.warn(`サウンド再生に失敗しました (${name}):`, err);
+      });
+    } catch (err) {
+      console.warn('playSound error:', err);
+    }
   }, []);
 
   const getDistance = (lat1: number, lon1: number, lat2: number, lon2: number) => {
@@ -724,7 +756,13 @@ function HomeAR() {
   };
 
   const getCurrentModelUrl = () => {
-    if (isEgg || isEggUnregistered) return eggModelUrl;
+    if (isEgg || isEggUnregistered) {
+      // マーカーを検出中はそのマーカーに対応する卵モデルを優先表示する
+      if (detectedTargetIndex !== null && MARKER_EGG_MODELS[detectedTargetIndex]) {
+        return MARKER_EGG_MODELS[detectedTargetIndex];
+      }
+      return eggModelUrl;
+    }
     if (level >= 10 && petModelUrlV3) return petModelUrlV3;
     if (level >= 5 && petModelUrlV2) return petModelUrlV2;
     return petModelUrlV1;
@@ -1065,7 +1103,6 @@ function HomeAR() {
 
   useEffect(() => {
     if (viewMode === 'mindar' && petId && !isEgg && !isSleeping && isDataLoaded) {
-      const petModel = document.querySelector('#pet-model');
       const handlePetTap = () => {
         if (petCondition === 'starving' || petCondition === 'sick') {
           playSound('error');
@@ -1091,10 +1128,33 @@ function HomeAR() {
 
         addExperience(5);
       };
-      petModel?.addEventListener('click', handlePetTap);
-      return () => petModel?.removeEventListener('click', handlePetTap);
+      // マーカーが4つに増えたため、どのマーカー上のペットモデルがタップされても反応するようにする
+      const petModels = MARKER_EGG_MODELS.map((_, i) => document.querySelector(`#pet-model-${i}`)).filter(Boolean) as Element[];
+      petModels.forEach(el => el.addEventListener('click', handlePetTap));
+      return () => petModels.forEach(el => el.removeEventListener('click', handlePetTap));
     }
   }, [viewMode, isClient, petId, supabase, isEgg, isSleeping, sceneKey, petCondition, isDataLoaded]);
+
+  // 4つのマーカーのうち、現在どれが検出されているかをtargetFound/targetLostイベントで追跡する
+  useEffect(() => {
+    if (viewMode !== 'mindar' || !(aframeLoaded && extrasLoaded && mindarLoaded) || isSwitchingMode) return;
+
+    const cleanups: Array<() => void> = [];
+    MARKER_EGG_MODELS.forEach((_, i) => {
+      const el = document.querySelector(`#marker-target-${i}`);
+      if (!el) return;
+      const onFound = () => setDetectedTargetIndex(i);
+      const onLost = () => setDetectedTargetIndex(prev => (prev === i ? null : prev));
+      el.addEventListener('targetFound', onFound);
+      el.addEventListener('targetLost', onLost);
+      cleanups.push(() => {
+        el.removeEventListener('targetFound', onFound);
+        el.removeEventListener('targetLost', onLost);
+      });
+    });
+
+    return () => cleanups.forEach(fn => fn());
+  }, [viewMode, aframeLoaded, extrasLoaded, mindarLoaded, isSwitchingMode, sceneKey]);
 
   const handleCreateEgg = async () => {
     if (!sessionUserId) return;
@@ -1147,6 +1207,8 @@ function HomeAR() {
 
       playSound('item');
       alert(`不思議な卵を発見した！\nさんぽ、給餌、ランドマーク、イベントの全てをこなして孵化させよう！`);
+      setNamingInput('');
+      setShowNamingScreen(true);
     } catch (err: any) {
       console.error(err);
       alert(`エラーが発生しました: ${err.message}`);
@@ -1202,7 +1264,10 @@ function HomeAR() {
           .eq('id', petId);
 
         setHatchAnimating(false);
-        setShowNamingScreen(true);
+        if (!customName) {
+          setNamingInput('');
+          setShowNamingScreen(true);
+        }
       }, 900);
     } catch (e) {
       console.error('孵化エラー:', e);
@@ -1518,7 +1583,11 @@ function HomeAR() {
       setCustomName(namingInput.trim());
       setShowNamingScreen(false);
       playSound('levelup');
-      alert(`これからよろしくね、${namingInput.trim()}！\n（誕生日は今日の日付で記録されました）`);
+      if (isEgg) {
+        alert(`「${namingInput.trim()}」と名付けました！\n大切に育ててあげよう！`);
+      } else {
+        alert(`これからよろしくね、${namingInput.trim()}！\n（誕生日は今日の日付で記録されました）`);
+      }
     } catch (err) {
       console.error('名付けエラー', err);
       alert('エラーが発生しました。');
@@ -1839,15 +1908,25 @@ function HomeAR() {
       {showNamingScreen && (
         <div className='absolute inset-0 z-[125] bg-black/80 backdrop-blur-md flex items-center justify-center p-4'>
           <form onSubmit={handleNamingSubmit} className='bg-white rounded-3xl p-6 w-full max-w-sm shadow-2xl space-y-5 relative'>
-            <h2 className='text-2xl font-bold text-center border-b pb-3 text-slate-800'>✨ 誕生おめでとう！</h2>
+            <h2 className='text-2xl font-bold text-center border-b pb-3 text-slate-800'>{isEgg ? '🥚 その卵に名前をつけよう！' : '✨ 誕生おめでとう！'}</h2>
             <p className='text-sm text-gray-600 text-center mb-4'>
-              新しく生まれたペットに
-              <br />
-              名前をつけてあげましょう
+              {isEgg ? (
+                <>
+                  「名無し」のままだと寂しいので
+                  <br />
+                  拾った卵に名前をつけてあげましょう
+                </>
+              ) : (
+                <>
+                  新しく生まれたペットに
+                  <br />
+                  名前をつけてあげましょう
+                </>
+              )}
             </p>
 
             <div>
-              <label className='block text-sm font-bold text-gray-700 mb-1'>ペットの名前</label>
+              <label className='block text-sm font-bold text-gray-700 mb-1'>{isEgg ? '卵の名前' : 'ペットの名前'}</label>
               <input type='text' value={namingInput} onChange={e => setNamingInput(e.target.value)} placeholder='例: ポチ' className='w-full border p-3 rounded-xl bg-gray-50 focus:ring-2 focus:ring-pink-500 text-black' required />
             </div>
 
@@ -2004,7 +2083,7 @@ function HomeAR() {
       {/* --- ウィークリーログインボーナス モーダル --- */}
       {loginBonusState.showModal && (
         <div className='absolute inset-0 z-[110] bg-black/80 backdrop-blur-md flex items-center justify-center p-4'>
-          <div className='bg-white rounded-3xl p-6 w-full max-w-sm shadow-2xl flex flex-col items-center animate-bounce text-black'>
+          <div className='bg-white rounded-3xl p-6 w-full max-w-sm shadow-2xl flex flex-col items-center text-black'>
             <h2 className='text-xl font-bold text-center mb-2 text-slate-800'>🎁 ログインボーナス</h2>
             <p className='text-sm text-gray-600 mb-6 text-center'>毎日ログインしてアイテムをゲットしよう！</p>
 
@@ -2414,11 +2493,17 @@ function HomeAR() {
         )}
 
         {viewMode === 'mindar' && isEggUnregistered && sessionUserId && (
-          <button onClick={handleCreateEgg} className='bg-gradient-to-r from-yellow-400 to-orange-500 text-white p-4 rounded-2xl font-bold shadow-lg w-full animate-pulse text-lg border-4 border-yellow-200'>
-            🥚 不思議な卵を発見！
-            <br />
-            <span className='text-sm'>タップして拾い上げる</span>
-          </button>
+          detectedTargetIndex !== null ? (
+            <button onClick={handleCreateEgg} className='bg-gradient-to-r from-yellow-400 to-orange-500 text-white p-4 rounded-2xl font-bold shadow-lg w-full animate-pulse text-lg border-4 border-yellow-200'>
+              🥚 不思議な卵を発見！
+              <br />
+              <span className='text-sm'>タップして拾い上げる</span>
+            </button>
+          ) : (
+            <div className='bg-gray-800/80 text-white p-4 rounded-2xl font-bold text-center text-sm shadow-lg w-full border-2 border-gray-600'>
+              📷 マーカーにカメラを向けてください
+            </div>
+          )
         )}
 
         {viewMode === 'mindar' && isEgg && !isEggUnregistered && isHatchReady && petId && (
@@ -2538,9 +2623,48 @@ function HomeAR() {
               <a-light type='directional' color='#ffffff' intensity='1.5' position='-1 2 1' castShadow='true'></a-light>
               <a-camera position='0 0 0' look-controls='enabled: false' cursor='rayOrigin: mouse;' raycaster='objects: .clickable'></a-camera>
 
-              <a-entity mindar-image-target={`targetIndex: ${activeTargetIndex}`}>
+              <a-entity mindar-image-target='targetIndex: 0' id='marker-target-0'>
                 <a-gltf-model
-                  id='pet-model'
+                  id='pet-model-0'
+                  class={(!isEgg && !isSleeping) ? 'clickable' : ''}
+                  rotation='0 0 0'
+                  position='0 0 0'
+                  scale={hatchAnimating ? '0.1 0.1 0.1' : '0.5 0.5 0.5'}
+                  src={activeModelUrl}
+                  shadow='cast: true; receive: true'
+                  animation-mixer={isEgg ? '' : `clip: ${actionAnim || currentMood.clip}; loop: ${actionAnim ? 'once' : 'repeat'}; crossFadeDuration: 0.3;`}
+                  animation={hatchAnimating ? 'property: scale; to: 0.5 0.5 0.5; dur: 800; easing: easeOutElastic;' : undefined}
+                ></a-gltf-model>
+              </a-entity>
+              <a-entity mindar-image-target='targetIndex: 1' id='marker-target-1'>
+                <a-gltf-model
+                  id='pet-model-1'
+                  class={(!isEgg && !isSleeping) ? 'clickable' : ''}
+                  rotation='0 0 0'
+                  position='0 0 0'
+                  scale={hatchAnimating ? '0.1 0.1 0.1' : '0.5 0.5 0.5'}
+                  src={activeModelUrl}
+                  shadow='cast: true; receive: true'
+                  animation-mixer={isEgg ? '' : `clip: ${actionAnim || currentMood.clip}; loop: ${actionAnim ? 'once' : 'repeat'}; crossFadeDuration: 0.3;`}
+                  animation={hatchAnimating ? 'property: scale; to: 0.5 0.5 0.5; dur: 800; easing: easeOutElastic;' : undefined}
+                ></a-gltf-model>
+              </a-entity>
+              <a-entity mindar-image-target='targetIndex: 2' id='marker-target-2'>
+                <a-gltf-model
+                  id='pet-model-2'
+                  class={(!isEgg && !isSleeping) ? 'clickable' : ''}
+                  rotation='0 0 0'
+                  position='0 0 0'
+                  scale={hatchAnimating ? '0.1 0.1 0.1' : '0.5 0.5 0.5'}
+                  src={activeModelUrl}
+                  shadow='cast: true; receive: true'
+                  animation-mixer={isEgg ? '' : `clip: ${actionAnim || currentMood.clip}; loop: ${actionAnim ? 'once' : 'repeat'}; crossFadeDuration: 0.3;`}
+                  animation={hatchAnimating ? 'property: scale; to: 0.5 0.5 0.5; dur: 800; easing: easeOutElastic;' : undefined}
+                ></a-gltf-model>
+              </a-entity>
+              <a-entity mindar-image-target='targetIndex: 3' id='marker-target-3'>
+                <a-gltf-model
+                  id='pet-model-3'
                   class={(!isEgg && !isSleeping) ? 'clickable' : ''}
                   rotation='0 0 0'
                   position='0 0 0'
