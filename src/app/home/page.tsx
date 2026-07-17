@@ -145,6 +145,22 @@ function HomeAR() {
   // MindAR / AR.js が生成する video・canvas・a-scene を、このUI内に閉じ込めるための親要素。
   const arViewportRef = useRef<HTMLDivElement>(null);
 
+  // Android Chromeは読み込み中にアドレスバーの状態が確定しておらず、
+  // dvh/svhの計算がジャンプすることがあるため、実測した高さをCSS変数として
+  // 直接DOMへ書き込む（Reactのstateは使わず再レンダリングを起こさない）。
+  useEffect(() => {
+    const setAppHeight = () => {
+      document.documentElement.style.setProperty('--app-height', `${window.innerHeight}px`);
+    };
+    setAppHeight();
+    window.addEventListener('resize', setAppHeight);
+    window.addEventListener('orientationchange', setAppHeight);
+    return () => {
+      window.removeEventListener('resize', setAppHeight);
+      window.removeEventListener('orientationchange', setAppHeight);
+    };
+  }, []);
+
   // 🌟 追加したモーダル用State
   const [isStatusModalOpen, setIsStatusModalOpen] = useState(false);
   const [isDebugModalOpen, setIsDebugModalOpen] = useState(false);
