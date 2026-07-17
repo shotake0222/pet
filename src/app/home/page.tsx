@@ -1033,14 +1033,19 @@ function HomeAR() {
   const takeSnapshot = () => {
     playSound('camera');
     
-    // 1. 要素をより広く、柔軟に探す（フォールバックを追加）
+    // 1. 要素をより広く、柔軟に探す（型アサーションを追加）
     const video = document.querySelector('video');
-    const aframeCanvas = document.querySelector('canvas.a-canvas') || document.querySelector('a-scene')?.canvas || document.querySelector('canvas');
+    
+    // a-scene要素を取得し、型を 'any' にキャストして .canvas にアクセスできるようにする
+    const aScene = document.querySelector('a-scene') as any;
+    const aframeCanvas = document.querySelector('canvas.a-canvas') || aScene?.canvas || document.querySelector('canvas');
     
     // どちらも完全に無い場合のみ弾く
     if (!video && !aframeCanvas) {
       return alert('カメラ映像とAR画面の両方が見つかりません。少し待ってから再度お試しください。');
     }
+    
+    // ... 以下、try {...} の中身は同じです
 
     try {
       // 合成用のキャンバスを作成
