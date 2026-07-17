@@ -10,15 +10,13 @@ function HomeAR() {
   const searchParams = useSearchParams();
   const supabase = useMemo(() => createClient(), []);
 
-  const modeParam = searchParams.get('mode');
+  const rawModeParam = searchParams.get('mode');
+  const modeParam = rawModeParam === 'minder' ? 'mindar' : rawModeParam;
   const tagIdParam = searchParams.get('tag_id');
 
   const [isClient, setIsClient] = useState(false);
   const [isAuthChecking, setIsAuthChecking] = useState(true);
   const [isDataLoaded, setIsDataLoaded] = useState(false);
-
-  // 管理者権限フラグ
-  const [isAdmin, setIsAdmin] = useState(false);
 
   const [sessionUserId, setSessionUserId] = useState<string | null>(null);
   const [ownerId, setOwnerId] = useState<string | null>(null);
@@ -52,6 +50,7 @@ function HomeAR() {
   const [mindarLoaded, setMindarLoaded] = useState(false);
   const [arjsLoaded, setArjsLoaded] = useState(false);
   const [cameraReady, setCameraReady] = useState(false);
+  const [isSwitchingMode, setIsSwitchingMode] = useState(false);
 
   const [feedCount, setFeedCount] = useState(0);
   const [eventCount, setEventCount] = useState(0);
@@ -93,6 +92,7 @@ function HomeAR() {
   };
 
   const [hatchAnimating, setHatchAnimating] = useState(false);
+
   const [levelUpOverlay, setLevelUpOverlay] = useState<{ active: boolean; particles: any[]; level: number; isMilestone: boolean } | null>(null);
 
   const [inventory, setInventory] = useState<any[]>([]);
@@ -142,7 +142,10 @@ function HomeAR() {
   const [isSpotMapOpen, setIsSpotMapOpen] = useState(false);
   const [cameraFacing, setCameraFacing] = useState<'environment' | 'user'>('environment');
   const [sceneKey, setSceneKey] = useState(0);
+  // MindAR / AR.js が生成する video・canvas・a-scene を、このUI内に閉じ込めるための親要素。
+  const arViewportRef = useRef<HTMLDivElement>(null);
 
+  // 🌟 追加したモーダル用State
   const [isStatusModalOpen, setIsStatusModalOpen] = useState(false);
   const [isDebugModalOpen, setIsDebugModalOpen] = useState(false);
 
@@ -155,101 +158,224 @@ function HomeAR() {
 
   const stepCount = Math.floor(walkDistance / 0.75);
 
-  // 🌟 修正: カメラリソースと、Reactの管理外で追加されたDOM（video, UIなど）を完全に破棄してレイアウト崩れを防ぐ
+  // このゲームのARコンテナ内だけを解放する。ページ上の他の video / canvas には触れない。
   const releaseCameraResources = useCallback(() => {
     try {
-      const videos = document.querySelectorAll('video');
-      videos.forEach(v => {
-        if (v.srcObject) {
-          const tracks = (v.srcObject as MediaStream).getTracks();
+      const viewport = arViewportRef.current;
+      if (!viewport) return;
+
+      const videos = viewport.querySelectorAll('video');
+      videos.forEach(video => {
+        if (video.srcObject) {
+          const tracks = (video.srcObject as MediaStream).getTracks();
           tracks.forEach(track => track.stop());
-          v.srcObject = null;
-        }
-        if (v.parentNode) {
-          v.parentNode.removeChild(v);
+          video.srcObject = null;
         }
       });
 
-      const scenes = document.querySelectorAll('a-scene') as NodeListOf<any>;
+      const scenes = viewport.querySelectorAll('a-scene') as NodeListOf<any>;
       scenes.forEach(scene => {
         try {
-          if (scene?.systems?.['mindar-image-system']) {
-            scene.systems['mindar-image-system'].stop?.();
-          }
+          scene.systems?.['mindar-image-system']?.stop?.();
           scene.renderer?.dispose?.();
         } catch {}
       });
-
-      // MindARやAR.jsが勝手にbody直下に追加する不要な要素を全削除
-      const arElements = document.querySelectorAll('.mindar-ui-overlay, .mindar-ui-scanning, .arjs-loader, .a-enter-vr');
-      arElements.forEach(el => {
-        if (el.parentNode) {
-          el.parentNode.removeChild(el);
-        }
-      });
-
-      // html, bodyに付与された余分なスタイルをリセット
-      document.documentElement.style.removeProperty('overflow');
-      document.body.style.removeProperty('overflow');
-    } catch (e) {
-      console.error('releaseCameraResources error', e);
-    }
+    } catch {}
   }, []);
 
-  // 🌟 修正: 404エラーを防ぐため router.push を使用し、遷移前に確実にカメラリソースを掃除する
+  // MindAR / AR.js が非同期で追加するDOMを、AR表示用コンテナの座標系に固定する。
+  // fixed / 100vw / 100vh を使わないため、UIカードやスマホ幅の親要素からはみ出さない。
+  const normalizeArLayers = useCallback(() => {
+    try {
+      const viewport = arViewportRef.current;
+      if (!viewport) return;
+
+      // AR.js の実装差分によっては camera video が document.body 直下へ追加される。
+      // このゲームの起動中に作られたライブカメラだけを、表示用コンテナへ移動する。
+      const detachedCameraVideos = Array.from(document.querySelectorAll('video')).filter(video => {
+        return !viewport.contains(video) && Boolean(video.srcObject) && (video.autoplay || video.playsInline);
+      });
+      detachedCameraVideos.forEach(video => viewport.prepend(video));
+
+      const videos = viewport.querySelectorAll('video');
+      videos.forEach(video => {
+        const el = video as HTMLVideoElement;
+        el.style.position = 'absolute';
+        el.style.inset = '0';
+        el.style.display = 'block';
+        el.style.width = '100%';
+        el.style.height = '100%';
+        el.style.objectFit = 'cover';
+        el.style.zIndex = '0';
+        el.style.pointerEvents = 'none';
+      });
+
+      const scenes = viewport.querySelectorAll('a-scene') as NodeListOf<any>;
+      scenes.forEach(scene => {
+        const el = scene as HTMLElement;
+        el.style.position = 'absolute';
+        el.style.inset = '0';
+        el.style.display = 'block';
+        el.style.width = '100%';
+        el.style.height = '100%';
+        el.style.zIndex = '1';
+        el.style.pointerEvents = 'none';
+      });
+
+      const canvases = viewport.querySelectorAll('canvas');
+      canvases.forEach(canvas => {
+        const el = canvas as HTMLCanvasElement;
+        el.style.position = 'absolute';
+        el.style.inset = '0';
+        el.style.display = 'block';
+        el.style.width = '100%';
+        el.style.height = '100%';
+        el.style.zIndex = '1';
+        el.style.pointerEvents = 'none';
+      });
+
+      const { width, height } = viewport.getBoundingClientRect();
+      if (width <= 0 || height <= 0) return;
+
+      scenes.forEach(scene => {
+        try {
+          scene.resize?.();
+          scene.renderer?.setSize?.(width, height, false);
+          if (scene.camera) {
+            scene.camera.aspect = width / height;
+            scene.camera.updateProjectionMatrix?.();
+          }
+        } catch {}
+      });
+    } catch {}
+  }, []);
+
+  // 🌟 修正: フルリロードをやめて安全にモード切替
   const handleModeChange = (mode: 'mindar' | 'gps' | 'report') => {
     playSound('tap');
     if (mode === viewMode) return;
 
-    // 前のモードのゴミを完全に削除してレイアウト崩れを防ぐ
+    // モード遷移時に残留しやすい前面UIを閉じる
+    setIsSpotMapOpen(false);
+    setIsNewsOpen(false);
+    setIsInventoryOpen(false);
+    setIsShopOpen(false);
+    setIsStatusModalOpen(false);
+    setIsDebugModalOpen(false);
+
+    setIsSwitchingMode(true);
+    setCameraReady(mode === 'report');
+    // report -> mindar でも残留videoがあるため、モード遷移時は毎回解放する
     releaseCameraResources();
-    setCameraReady(false);
 
+    setViewMode(mode);
     const nextParams = new URLSearchParams(searchParams.toString());
-    
-    if (mode === 'mindar') {
-      nextParams.delete('mode');
-    } else {
-      nextParams.set('mode', mode);
-    }
-
+    nextParams.set('mode', mode);
     if (tagIdParam) {
       nextParams.set('tag_id', tagIdParam);
     }
-
     const query = nextParams.toString();
-    const nextUrl = query ? `/?${query}` : '/';
+    const nextUrl = query ? `${window.location.pathname}?${query}` : window.location.pathname;
+    window.history.replaceState(window.history.state, '', nextUrl);
 
-    // Next.js のルーターを使って遷移する
-    router.push(nextUrl);
+    window.setTimeout(() => {
+      setSceneKey(prev => prev + 1);
+      setIsSwitchingMode(false);
+      normalizeArLayers();
+    }, 180);
   };
 
   useEffect(() => {
     setIsClient(true);
   }, []);
 
+  // URLの誤パラメータ (?mode=minder など) を正規化して遷移バグを防ぐ
+  useEffect(() => {
+    if (!rawModeParam) return;
+    const isValid = rawModeParam === 'mindar' || rawModeParam === 'gps' || rawModeParam === 'report';
+    if (isValid) return;
+
+    const nextParams = new URLSearchParams(searchParams.toString());
+    nextParams.set('mode', 'mindar');
+    if (tagIdParam) {
+      nextParams.set('tag_id', tagIdParam);
+    }
+    const query = nextParams.toString();
+    const nextUrl = query ? `${window.location.pathname}?${query}` : window.location.pathname;
+    window.history.replaceState(window.history.state, '', nextUrl);
+  }, [rawModeParam, searchParams, tagIdParam]);
+
+  // --- 追加: アンマウント時のみ解放 ---
   useEffect(() => {
     return () => {
       releaseCameraResources();
     };
   }, [releaseCameraResources]);
 
+  // モード遷移直後はARライブラリがDOMを差し替えるため、短時間だけ複数回正規化する。
+  useEffect(() => {
+    if (viewMode === 'report') return;
+    normalizeArLayers();
+    let count = 0;
+    const timer = window.setInterval(() => {
+      normalizeArLayers();
+      count += 1;
+      if (count >= 16) {
+        window.clearInterval(timer);
+      }
+    }, 250);
+    return () => window.clearInterval(timer);
+  }, [viewMode, sceneKey, isSwitchingMode, normalizeArLayers]);
+
+  // 回転・アドレスバーの出入り・親UIのリサイズ後も、カメラとA-Frame canvasを同じ枠に合わせる。
+  useEffect(() => {
+    if (viewMode === 'report') return;
+    const viewport = arViewportRef.current;
+    if (!viewport || typeof ResizeObserver === 'undefined') return;
+
+    const sync = () => {
+      normalizeArLayers();
+      window.requestAnimationFrame(normalizeArLayers);
+    };
+    const observer = new ResizeObserver(sync);
+    observer.observe(viewport);
+
+    // AR.js が video を body 直下へ追加するケースでも、追加直後にコンテナへ収める。
+    const bodyObserver = new MutationObserver(sync);
+    bodyObserver.observe(document.body, { childList: true });
+    sync();
+
+    return () => {
+      observer.disconnect();
+      bodyObserver.disconnect();
+    };
+  }, [viewMode, sceneKey, isSwitchingMode, normalizeArLayers]);
+
   useEffect(() => {
     if (isAuthChecking || !isDataLoaded) return;
     setCameraReady(viewMode === 'report');
   }, [viewMode, isAuthChecking, isDataLoaded]);
 
+  // モード切替がまれに固まるケースへの保険
+  useEffect(() => {
+    if (!isSwitchingMode) return;
+    const timer = window.setTimeout(() => setIsSwitchingMode(false), 1500);
+    return () => window.clearTimeout(timer);
+  }, [isSwitchingMode]);
+
+  // --- 追加: videoの準備完了待ち ---
   useEffect(() => {
     if (viewMode === 'report') {
       setCameraReady(true);
       return;
     }
-    if (!isClient || isAuthChecking || !isDataLoaded) return;
+    if (!isClient || isAuthChecking || !isDataLoaded || isSwitchingMode) return;
 
     let tries = 0;
-    const maxTries = 40; 
+    const maxTries = 40; // 8秒
     const timer = window.setInterval(() => {
-      const videos = Array.from(document.querySelectorAll('video')) as HTMLVideoElement[];
+      const viewport = arViewportRef.current;
+      const videos = Array.from(viewport?.querySelectorAll('video') ?? []) as HTMLVideoElement[];
       const ready = videos.some(v => v.readyState >= 2 && v.videoWidth > 0 && v.videoHeight > 0);
 
       if (ready) {
@@ -266,7 +392,7 @@ function HomeAR() {
     }, 200);
 
     return () => window.clearInterval(timer);
-  }, [viewMode, isClient, isAuthChecking, isDataLoaded, sceneKey]);
+  }, [viewMode, isClient, isAuthChecking, isDataLoaded, isSwitchingMode, sceneKey]);
 
   // ==========================================
   //  Auth & Profile チェック
@@ -291,11 +417,6 @@ function HomeAR() {
         if (!profile || !profile.birth_year) {
           setShowProfileSetup(true);
         } else {
-          // デバッグボタンを見せるための管理者判定
-          if (profile.role === 'admin' || profile.is_admin === true) {
-            setIsAdmin(true);
-          }
-          
           setHallOfFameCount(profile.hall_of_fame_count || 0);
           await checkLoginBonus(userId, profile);
         }
@@ -538,6 +659,7 @@ function HomeAR() {
       } catch (error) {
         console.error('fetchGameData error', error);
       } finally {
+        // データ取得失敗時でもロード画面で固まらないようにする
         setIsDataLoaded(true);
       }
     };
@@ -608,6 +730,7 @@ function HomeAR() {
   };
   const isHatchReady = !isEggUnregistered && isEgg && petId && hatchProgress.distance >= 1 && hatchProgress.feed >= 1 && hatchProgress.landmark >= 1 && hatchProgress.event >= 1;
   const nextLevelRequirements = getLevelRequirement(level);
+  const isNextLevelReady = !isEgg && petId && walkDistance >= nextLevelRequirements.distance && feedCount >= nextLevelRequirements.feed && landmarkVisitCount >= nextLevelRequirements.landmark && eventCount >= nextLevelRequirements.event;
   const expNeededForNextLevel = level * 150;
 
   const resetPetToEgg = async (reason: string) => {
@@ -760,6 +883,7 @@ function HomeAR() {
     return new Promise<void>(resolve => {
       const isMilestone = newLevel % 5 === 0;
       const count = isMilestone ? 150 : 50;
+
       const colors = isMilestone ? ['#FFD700', '#FF73FA', '#7CF0FF', '#FF9F1C', '#FFFFFF'] : ['#60A5FA', '#34D399', '#FBBF24'];
 
       const particles = Array.from({ length: count }).map((_, i) => {
@@ -776,6 +900,7 @@ function HomeAR() {
       });
 
       setLevelUpOverlay({ active: true, particles, level: newLevel, isMilestone });
+
       setTimeout(() => {
         setLevelUpOverlay(prev => (prev ? { ...prev, particles: prev.particles.map(p => ({ ...p, launched: true })) } : prev));
       }, 40);
@@ -814,7 +939,8 @@ function HomeAR() {
       } else {
         setExp(newExp);
         await supabase.from('pets').update({ exp: newExp }).eq('id', petId);
-        return alert(`🌱 もうすぐレベルアップ！ でもまだ条件が揃っていません。\n必要: 歩行 ${nextRequirements.distance}m / 給餌 ${nextRequirements.feed}回 / ランドマーク ${nextRequirements.landmark}回 / イベント ${nextRequirements.event}回`);
+        return alert(`🌱 もうすぐレベルアップ！ でもまだ条件が揃っていません。
+必要: 歩行 ${nextRequirements.distance}m / 給餌 ${nextRequirements.feed}回 / ランドマーク ${nextRequirements.landmark}回 / イベント ${nextRequirements.event}回`);
       }
     }
     setExp(newExp);
@@ -912,6 +1038,7 @@ function HomeAR() {
     }
   }, [location, landmarks, viewMode]);
 
+  // GPS以外へ遷移したら地図モーダルを必ず閉じる
   useEffect(() => {
     if (viewMode !== 'gps') {
       setIsSpotMapOpen(false);
@@ -1090,7 +1217,6 @@ function HomeAR() {
     const item = invItem.item_masters;
     setIsInventoryOpen(false);
     playSound('item');
-    
     setInventory(prev => prev.map(i => (i.id === invItem.id ? { ...i, quantity: i.quantity - 1 } : i)).filter(i => i.quantity > 0));
     await supabase.from('user_inventory').update({ quantity: invItem.quantity - 1 }).eq('id', invItem.id);
 
@@ -1220,18 +1346,24 @@ function HomeAR() {
   const takeSnapshot = () => {
     playSound('camera');
 
-    const video = document.querySelector('video');
-    const aScene = document.querySelector('a-scene') as any;
-    const aframeCanvas = document.querySelector('canvas.a-canvas') || aScene?.canvas || document.querySelector('canvas');
+    const viewport = arViewportRef.current;
+    if (!viewport) {
+      return alert('AR表示領域が見つかりません。少し待ってから再度お試しください。');
+    }
+
+    const video = viewport.querySelector('video');
+    const aScene = viewport.querySelector('a-scene') as any;
+    const aframeCanvas = viewport.querySelector('canvas.a-canvas') || aScene?.canvas || viewport.querySelector('canvas');
 
     if (!video && !aframeCanvas) {
       return alert('カメラ映像とAR画面の両方が見つかりません。少し待ってから再度お試しください。');
     }
 
     try {
+      const rect = viewport.getBoundingClientRect();
       const canvas = document.createElement('canvas');
-      canvas.width = window.innerWidth;
-      canvas.height = window.innerHeight;
+      canvas.width = Math.max(1, Math.round(rect.width));
+      canvas.height = Math.max(1, Math.round(rect.height));
       const ctx = canvas.getContext('2d');
       if (!ctx) return alert('画像処理エンジンの起動に失敗しました。');
 
@@ -1344,6 +1476,7 @@ function HomeAR() {
     }
   };
 
+  // 🌟 デバッグ用アクション 🌟
   const debugMaxHatchConditions = async () => {
     if (!petId) return;
     setWalkDistance(targetDistanceToHatch);
@@ -1357,6 +1490,7 @@ function HomeAR() {
   const scriptsReadyForMindar = aframeLoaded && extrasLoaded && mindarLoaded;
   const scriptsReadyForGps = aframeLoaded && arjsLoaded;
 
+  // 🌟 ここで未ログインやロード中ならUI・AR描画を完全にブロック
   if (!isClient || isAuthChecking || (sessionUserId && !isDataLoaded)) {
     return (
       <div className='bg-black w-full h-full flex flex-col items-center justify-center text-white fixed inset-0 z-[9999]'>
@@ -1367,7 +1501,8 @@ function HomeAR() {
   }
 
   return (
-    <div className='relative w-full h-full overflow-hidden text-white'>
+    <div className='relative isolate h-[100dvh] w-full overflow-hidden bg-black text-white'>
+      {/* 🌟 画面真っ暗問題を解決する強制CSS */}
       <style jsx global>{`
         html,
         body {
@@ -1378,37 +1513,39 @@ function HomeAR() {
         #__next {
           background-color: transparent !important;
         }
-        .a-canvas {
-          z-index: 1 !important;
+        .ar-camera-viewport {
+          position: absolute;
+          inset: 0;
+          overflow: hidden;
+          isolation: isolate;
+          contain: layout paint;
+          background: #000;
+        }
+        .ar-camera-viewport a-scene,
+        .ar-camera-viewport .a-canvas,
+        .ar-camera-viewport video {
           position: absolute !important;
-          top: 0;
-          left: 0;
+          inset: 0 !important;
+          display: block !important;
           width: 100% !important;
           height: 100% !important;
+          max-width: none !important;
+          max-height: none !important;
+          pointer-events: none !important;
         }
-        a-scene {
-          position: fixed !important;
-          inset: 0 !important;
+        .ar-camera-viewport a-scene,
+        .ar-camera-viewport .a-canvas {
           z-index: 1 !important;
+          background: transparent !important;
         }
-        video {
-          position: fixed !important;
-          top: 0 !important;
-          left: 0 !important;
-          width: 100vw !important;
-          height: 100vh !important;
-          object-fit: cover !important;
+        .ar-camera-viewport video {
           z-index: 0 !important;
+          object-fit: cover !important;
         }
-        .a-enter-vr {
+        .ar-camera-viewport .a-enter-vr,
+        .ar-camera-viewport .mindar-ui-overlay,
+        .ar-camera-viewport .arjs-loader {
           display: none !important;
-        }
-        .mindar-ui-overlay {
-          display: none !important;
-          z-index: 1 !important;
-        }
-        .arjs-loader {
-          z-index: 1 !important;
         }
       `}</style>
 
@@ -1426,22 +1563,22 @@ function HomeAR() {
         </div>
       )}
 
-      {viewMode === 'gps' && !location && (
+      {viewMode === 'gps' && !location && !isSwitchingMode && (
         <div className='absolute top-20 left-1/2 -translate-x-1/2 z-[180] bg-black/60 text-white text-xs px-3 py-2 rounded-full backdrop-blur-sm'>
           GPSを取得中です... そのまま少しお待ちください
         </div>
       )}
 
-      {isAdmin && (
-        <button
-          onClick={() => setIsDebugModalOpen(true)}
-          className='absolute bottom-28 left-4 z-[260] bg-black/50 text-white p-3 rounded-full shadow-2xl active:scale-95 text-xl backdrop-blur-sm border border-gray-600'
-          aria-label='デバッグメニュー'
-        >
-          🐞
-        </button>
-      )}
+      {/* --- 左下デバッグボタン --- */}
+      <button
+        onClick={() => setIsDebugModalOpen(true)}
+        className='absolute bottom-24 left-4 z-[260] bg-black/50 text-white p-3 rounded-full shadow-2xl active:scale-95 text-xl backdrop-blur-sm border border-gray-600'
+        aria-label='デバッグメニュー'
+      >
+        🐞
+      </button>
 
+      {/* --- デバッグモーダル --- */}
       {isDebugModalOpen && (
         <div className='absolute inset-0 z-[300] bg-black/80 backdrop-blur-md flex items-center justify-center p-4'>
           <div className='bg-white rounded-3xl p-6 w-full max-w-sm shadow-2xl space-y-4 max-h-[80vh] overflow-y-auto relative'>
@@ -1509,6 +1646,7 @@ function HomeAR() {
         </div>
       )}
 
+      {/* --- レベルアップエフェクトオーバーレイ --- */}
       {levelUpOverlay?.active && (
         <div className='pointer-events-none fixed inset-0 z-[140] overflow-hidden flex items-center justify-center'>
           {levelUpOverlay.particles.map((p: any) => (
@@ -1537,6 +1675,7 @@ function HomeAR() {
         </div>
       )}
 
+      {/* --- 孵化エフェクトオーバーレイ --- */}
       {hatchOverlay?.active && (
         <div className='pointer-events-none fixed inset-0 z-[130] overflow-hidden'>
           {hatchOverlay.particles.map((p: any) => (
@@ -1562,6 +1701,7 @@ function HomeAR() {
         </div>
       )}
 
+      {/* --- 虹の橋（寿命）エフェクトオーバーレイ --- */}
       {showRainbowBridge && (
         <div className='fixed inset-0 z-[200] bg-black flex flex-col items-center justify-center p-6 text-center text-white transition-opacity duration-1000'>
           {rainbowPhase === 1 && (
@@ -1598,6 +1738,7 @@ function HomeAR() {
         </div>
       )}
 
+      {/* --- 初回プロフィール設定モーダル --- */}
       {showProfileSetup && (
         <div className='absolute inset-0 z-[120] bg-black/80 backdrop-blur-md flex items-center justify-center p-4'>
           <form onSubmit={handleProfileSubmit} className='bg-white rounded-3xl p-6 w-full max-w-sm shadow-2xl space-y-5 relative'>
@@ -1626,6 +1767,7 @@ function HomeAR() {
         </div>
       )}
 
+      {/* --- 名付け設定モーダル（孵化直後） --- */}
       {showNamingScreen && (
         <div className='absolute inset-0 z-[125] bg-black/80 backdrop-blur-md flex items-center justify-center p-4'>
           <form onSubmit={handleNamingSubmit} className='bg-white rounded-3xl p-6 w-full max-w-sm shadow-2xl space-y-5 relative'>
@@ -1648,6 +1790,7 @@ function HomeAR() {
         </div>
       )}
 
+      {/* --- マインドフルネス機能 モーダル --- */}
       {showMindfulness && (
         <div className='absolute inset-0 z-[160] bg-black/90 backdrop-blur-xl flex flex-col items-center justify-center p-6 text-white text-center'>
           {mindPhase === 'intro' && (
@@ -1700,10 +1843,18 @@ function HomeAR() {
         </div>
       )}
 
+      {/* --- 地図でスポットを探すモーダル --- */}
       {isSpotMapOpen && (
-        <div className='absolute inset-0 z-[120] bg-black/80 backdrop-blur-md flex items-center justify-center p-4'>
-          <div className='bg-white rounded-3xl p-6 w-full max-w-sm shadow-2xl relative max-h-[90vh] flex flex-col'>
+        <div className='absolute inset-0 z-[320] bg-black/80 backdrop-blur-md flex items-center justify-center p-4' onClick={() => setIsSpotMapOpen(false)}>
+          <div className='bg-white rounded-3xl p-6 w-full max-w-sm shadow-2xl relative max-h-[90vh] flex flex-col' onClick={e => e.stopPropagation()}>
             <h2 className='text-xl font-bold text-center border-b pb-3 mb-4 text-slate-800'>🗺️ 周辺のスポット</h2>
+            <button
+              onClick={() => setIsSpotMapOpen(false)}
+              className='absolute top-3 right-3 w-9 h-9 rounded-full bg-gray-100 text-gray-700 font-bold flex items-center justify-center active:scale-95'
+              aria-label='地図を閉じる'
+            >
+              ✕
+            </button>
 
             {!location ? (
               <p className='text-center text-gray-500 my-10'>GPS座標を取得中...</p>
@@ -1782,6 +1933,7 @@ function HomeAR() {
         </div>
       )}
 
+      {/* --- ウィークリーログインボーナス モーダル --- */}
       {loginBonusState.showModal && (
         <div className='absolute inset-0 z-[110] bg-black/80 backdrop-blur-md flex items-center justify-center p-4'>
           <div className='bg-white rounded-3xl p-6 w-full max-w-sm shadow-2xl flex flex-col items-center animate-bounce text-black'>
@@ -1816,6 +1968,7 @@ function HomeAR() {
         </div>
       )}
 
+      {/* --- お知らせ(News) モーダル --- */}
       {isNewsOpen && (
         <div className='absolute top-20 left-4 right-4 bg-white/95 p-5 rounded-3xl shadow-2xl backdrop-blur-md z-50 border border-gray-200'>
           <div className='flex justify-between items-center mb-4 border-b pb-3'>
@@ -1861,6 +2014,7 @@ function HomeAR() {
         </div>
       )}
 
+      {/* --- ステータスモーダル (画面に一瞬映る問題を解決) --- */}
       {isStatusModalOpen && (
         <div className='absolute inset-0 z-[150] bg-black/80 backdrop-blur-md flex items-center justify-center p-4'>
           <div className='bg-gray-900 border border-gray-700 rounded-3xl p-6 w-full max-w-sm shadow-2xl relative text-white space-y-4'>
@@ -1985,6 +2139,7 @@ function HomeAR() {
         </div>
       )}
 
+      {/* --- 状態異常SOS モーダル --- */}
       {showConditionSOS && !isEgg && petCondition !== 'healthy' && (
         <div className='absolute top-24 left-4 right-4 z-[100] animate-bounce'>
           <div className={`p-4 rounded-2xl shadow-2xl border-4 flex items-start gap-4 ${petCondition === 'sick' ? 'bg-purple-100 border-purple-400 text-purple-900' : 'bg-red-100 border-red-400 text-red-900'}`}>
@@ -2002,6 +2157,7 @@ function HomeAR() {
         </div>
       )}
 
+      {/* --- UIレイヤー (ヘッダー: スッキリ化) --- */}
       {sessionUserId && viewMode !== 'report' && (
         <div className='absolute top-4 left-4 right-4 z-20 flex flex-col gap-3 pointer-events-none'>
           <div className='flex justify-between items-end'>
@@ -2011,8 +2167,10 @@ function HomeAR() {
         </div>
       )}
 
+      {/* --- 右上ボタン群 --- */}
       {viewMode !== 'report' && (
         <div className='absolute top-20 right-4 z-[140] flex flex-col gap-4 pointer-events-auto'>
+          {/* ステータス確認ボタン (追加) */}
           {!isEggUnregistered && (
             <button onClick={() => { setIsStatusModalOpen(true); playSound('tap'); }} className='bg-white/90 p-3 rounded-full shadow-2xl border border-gray-200 active:scale-90 flex items-center justify-center w-14 h-14 relative' aria-label='ステータス'>
               <span className='text-2xl'>📊</span>
@@ -2064,6 +2222,7 @@ function HomeAR() {
         </div>
       )}
 
+      {/* --- きろく（Report）画面 --- */}
       {viewMode === 'report' && (
         <div className='absolute inset-0 z-30 bg-black/90 text-white overflow-y-auto pb-32 pt-10 px-6 backdrop-blur-md'>
           <h2 className='text-3xl font-bold mb-6 text-center text-purple-400'>📊 育成とマインドフルネスの記録</h2>
@@ -2119,8 +2278,8 @@ function HomeAR() {
         </div>
       )}
 
-      {/* --- UIレイヤー (ボトム) --- */}
-      <div className='fixed bottom-0 left-0 right-0 z-[130] p-4 flex flex-col gap-4 pointer-events-auto'>
+        {/* --- UIレイヤー (ボトム) --- */}
+      <div className='absolute bottom-0 left-0 right-0 z-[130] p-4 flex flex-col gap-4 pointer-events-auto'>
         {isShopOpen && (
           <div className='absolute bottom-24 left-4 right-4 bg-white/95 p-5 rounded-3xl shadow-2xl backdrop-blur-md z-50 border border-gray-200'>
             <div className='flex justify-between items-center mb-4 border-b pb-3'>
@@ -2200,9 +2359,21 @@ function HomeAR() {
         )}
 
         {viewMode === 'mindar' && !isEgg && !isEggUnregistered && petId && (
-          <div className='flex w-full'>
-            <button onClick={handleFeed} disabled={isSleeping || hungerPercent === 100 || petCondition === 'sick'} className={`w-full text-white py-3 rounded-2xl font-bold shadow-lg transition-all ${(isSleeping || hungerPercent === 100 || petCondition === 'sick') ? 'bg-gray-400 opacity-80' : 'bg-gradient-to-br from-orange-400 to-orange-600 active:scale-95'}`}>
-              🍚<br /><span className='text-xs'>ごはんをあげる</span>
+          <div className='flex gap-2 w-full'>
+            <button onClick={handleFeed} disabled={isSleeping || hungerPercent === 100 || petCondition === 'sick'} className={`flex-[2] text-white py-3 rounded-2xl font-bold shadow-lg transition-all ${(isSleeping || hungerPercent === 100 || petCondition === 'sick') ? 'bg-gray-400 opacity-80' : 'bg-gradient-to-br from-orange-400 to-orange-600 active:scale-95'}`}>
+              🍚
+              <br />
+              <span className='text-xs'>ごはん</span>
+            </button>
+            <button onClick={() => { setIsInventoryOpen(true); setIsShopOpen(false); setIsNewsOpen(false); playSound('tap'); }} className='flex-1 bg-gradient-to-br from-blue-500 to-blue-700 text-white py-3 rounded-2xl font-bold shadow-lg active:scale-95 transition-all flex flex-col items-center justify-center'>
+              🎒
+              <br />
+              <span className='text-xs'>もちもの</span>
+            </button>
+            <button onClick={() => { setIsShopOpen(true); setIsInventoryOpen(false); setIsNewsOpen(false); playSound('tap'); }} className='flex-1 bg-gradient-to-br from-green-500 to-green-700 text-white py-3 rounded-2xl font-bold shadow-lg active:scale-95 transition-all flex flex-col items-center justify-center'>
+              🛒
+              <br />
+              <span className='text-xs'>おみせ</span>
             </button>
           </div>
         )}
@@ -2244,34 +2415,26 @@ function HomeAR() {
         <div className='flex justify-around bg-white p-3 rounded-2xl shadow-xl border border-gray-100'>
           <button onClick={() => handleModeChange('mindar')} className={`font-bold flex flex-col items-center gap-1 ${viewMode === 'mindar' ? 'text-blue-600' : 'text-gray-400'}`}>
             <span className='text-xl'>🏠</span>
-            <span className='text-[10px]'>おうち</span>
+            <span className='text-xs'>おうち</span>
           </button>
           <button onClick={() => handleModeChange('gps')} className={`font-bold flex flex-col items-center gap-1 ${viewMode === 'gps' ? 'text-green-600' : 'text-gray-400'}`}>
             <span className='text-xl'>🚶</span>
-            <span className='text-[10px]'>さんぽ</span>
-          </button>
-          <button onClick={() => { setIsInventoryOpen(true); setIsShopOpen(false); setIsNewsOpen(false); setIsSpotMapOpen(false); playSound('tap'); }} className={`font-bold flex flex-col items-center gap-1 ${isInventoryOpen ? 'text-blue-600' : 'text-gray-400'}`}>
-            <span className='text-xl'>🎒</span>
-            <span className='text-[10px]'>もちもの</span>
-          </button>
-          <button onClick={() => { setIsShopOpen(true); setIsInventoryOpen(false); setIsNewsOpen(false); setIsSpotMapOpen(false); playSound('tap'); }} className={`font-bold flex flex-col items-center gap-1 ${isShopOpen ? 'text-green-600' : 'text-gray-400'}`}>
-            <span className='text-xl'>🛒</span>
-            <span className='text-[10px]'>おみせ</span>
+            <span className='text-xs'>さんぽ</span>
           </button>
           <button onClick={() => handleModeChange('report')} className={`font-bold flex flex-col items-center gap-1 ${viewMode === 'report' ? 'text-purple-600' : 'text-gray-400'}`}>
             <span className='text-xl'>📊</span>
-            <span className='text-[10px]'>きろく</span>
+            <span className='text-xs'>きろく</span>
           </button>
         </div>
       </div>
 
-      {/* --- 背面：ARレイヤー --- */}
-      <div className='fixed inset-0 z-[1] pointer-events-none'>
-        {viewMode === 'mindar' && sessionUserId && isDataLoaded && scriptsReadyForMindar && (
-          <div key={`mindar-container-${sceneKey}`} className='fixed inset-0 pointer-events-none'>
+      {/* --- 背面：ARレイヤー。refの範囲内でのみカメラを表示する。 --- */}
+      <div ref={arViewportRef} className='ar-camera-viewport absolute inset-0 z-[1] pointer-events-none'>
+        {viewMode === 'mindar' && sessionUserId && isDataLoaded && scriptsReadyForMindar && !isSwitchingMode && (
+          <div key={`mindar-container-${sceneKey}`} className='absolute inset-0 pointer-events-none'>
             <a-scene
               embedded
-              style={{ height: '100%', width: '100%', pointerEvents: 'none' }}
+              style={{ position: 'absolute', inset: 0, height: '100%', width: '100%', pointerEvents: 'none' }}
               mindar-image={`imageTargetSrc: ${petMarkerUrl}; autoStart: true; uiLoading: no; uiError: no; maxTrack: 1;`}
               renderer='preserveDrawingBuffer: true; colorManagement: true; physicallyCorrectLights: true;'
               color-space='sRGB'
@@ -2301,11 +2464,11 @@ function HomeAR() {
             </a-scene>
           </div>
         )}
-        {viewMode === 'gps' && isDataLoaded && scriptsReadyForGps && (
-          <div key={`gps-container-${sceneKey}-${cameraFacing}`} className='fixed inset-0 pointer-events-none'>
+        {viewMode === 'gps' && isDataLoaded && scriptsReadyForGps && !isSwitchingMode && (
+          <div key={`gps-container-${sceneKey}-${cameraFacing}`} className='absolute inset-0 pointer-events-none'>
             <a-scene
               embedded
-              style={{ height: '100%', width: '100%', pointerEvents: 'none' }}
+              style={{ position: 'absolute', inset: 0, height: '100%', width: '100%', pointerEvents: 'none' }}
               vr-mode-ui='enabled: false'
               renderer='preserveDrawingBuffer: true; colorManagement: true;'
               arjs={`sourceType: webcam; videoTexture: true; debugUIEnabled: false; facingMode: ${cameraFacing};`}
