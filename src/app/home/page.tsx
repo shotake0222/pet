@@ -2168,7 +2168,7 @@ function HomeAR() {
           </div>
         )}
 
-        {viewMode === 'gps' && (
+                {viewMode === 'gps' && (
           <>
             <div className='bg-green-600/90 text-white p-3 rounded-xl font-bold shadow-lg w-full text-center text-sm backdrop-blur-sm'>
               {location ? `🚶‍♂️ 現在地周辺を散歩中... ${petId ? `(歩行: ${Math.floor(walkDistance)}m / 約${stepCount}歩)` : ''}` : '📡 GPSを探索中...'}
@@ -2177,7 +2177,13 @@ function HomeAR() {
               <button
                 onClick={handleCheckIn}
                 className={`p-4 rounded-2xl font-bold shadow-2xl w-full border-4 animate-bounce text-lg text-white 
-                  ${(activeLandmark.landmark_masters?.facility_type || getFacilityType(activeLandmark.name)) === 'hospital' ? 'bg-gradient-to-br from-purple-400 to-purple-600 border-purple-200' : (activeLandmark.landmark_masters?.facility_type || getFacilityType(activeLandmark.name)) === 'restaurant' ? 'bg-gradient-to-br from-red-400 to-red-600 border-red-200' : (activeLandmark.landmark_masters?.facility_type || getFacilityType(activeLandmark.name)) === 'hotel' ? 'bg-gradient-to-br from-blue-400 to-blue-600 border-blue-200' : 'bg-gradient-to-br from-yellow-400 to-yellow-600 border-yellow-200 text-yellow-900'}`}
+                  ${(activeLandmark.landmark_masters?.facility_type || getFacilityType(activeLandmark.name)) === 'hospital'
+                    ? 'bg-gradient-to-br from-purple-400 to-purple-600 border-purple-200'
+                    : (activeLandmark.landmark_masters?.facility_type || getFacilityType(activeLandmark.name)) === 'restaurant'
+                    ? 'bg-gradient-to-br from-red-400 to-red-600 border-red-200'
+                    : (activeLandmark.landmark_masters?.facility_type || getFacilityType(activeLandmark.name)) === 'hotel'
+                    ? 'bg-gradient-to-br from-blue-400 to-blue-600 border-blue-200'
+                    : 'bg-gradient-to-br from-yellow-400 to-yellow-600 border-yellow-200 text-yellow-900'}`}
               >
                 ✨ 【{activeLandmark.name}】を発見！
                 <br />
@@ -2187,128 +2193,123 @@ function HomeAR() {
           </>
         )}
 
+        {viewMode !== 'report' && (
+          <button
+            onClick={() => {
+              setIsSpotMapOpen(true);
+              playSound('tap');
+            }}
+            className='bg-gradient-to-r from-teal-400 to-teal-600 text-white p-3 rounded-2xl font-bold shadow-lg w-full flex justify-center items-center gap-2 border-2 border-teal-300 active:scale-95 transition-transform text-lg'
+          >
+            🗺️ 地図でスポットを探す
+          </button>
+        )}
+
+        <div className='flex justify-around bg-white p-3 rounded-2xl shadow-xl border border-gray-100'>
+          <button onClick={() => handleModeChange('mindar')} className={`font-bold flex flex-col items-center gap-1 ${viewMode === 'mindar' ? 'text-blue-600' : 'text-gray-400'}`}>
+            <span className='text-xl'>🏠</span>
+            <span className='text-xs'>おうち</span>
+          </button>
+          <button onClick={() => handleModeChange('gps')} className={`font-bold flex flex-col items-center gap-1 ${viewMode === 'gps' ? 'text-green-600' : 'text-gray-400'}`}>
+            <span className='text-xl'>🚶</span>
+            <span className='text-xs'>さんぽ</span>
+          </button>
+          <button onClick={() => handleModeChange('report')} className={`font-bold flex flex-col items-center gap-1 ${viewMode === 'report' ? 'text-purple-600' : 'text-gray-400'}`}>
+            <span className='text-xl'>📊</span>
+            <span className='text-xs'>きろく</span>
+          </button>
+        </div>
+      </div>
+
       {/* --- 背面：ARレイヤー --- */}
-<div className='absolute top-0 left-0 w-full h-full z-0 pointer-events-none'>
-  {viewMode === 'mindar' && sessionUserId && isDataLoaded && scriptsReadyForMindar && !isSwitchingMode && (
-    <div key={`mindar-container-${sceneKey}`} className='absolute inset-0 z-0 pointer-events-auto'>
-      <a-scene
-        embedded
-        style={{ height: '100%', width: '100%', pointerEvents: 'auto' }}
-        mindar-image={`imageTargetSrc: ${petMarkerUrl}; autoStart: true; uiLoading: no; uiError: no; maxTrack: 1;`}
-        renderer="preserveDrawingBuffer: true; colorManagement: true; physicallyCorrectLights: true;"
-        color-space="sRGB"
-        vr-mode-ui="enabled: false"
-        device-orientation-permission-ui="enabled: false"
-      >
-        <a-assets>
-          <a-asset-item id="pet-asset" src={activeModelUrl}></a-asset-item>
-        </a-assets>
+      <div className='absolute top-0 left-0 w-full h-full z-0 pointer-events-none'>
+        {viewMode === 'mindar' && sessionUserId && isDataLoaded && scriptsReadyForMindar && !isSwitchingMode && (
+          <div key={`mindar-container-${sceneKey}`} className='absolute inset-0 z-0 pointer-events-auto'>
+            <a-scene
+              embedded
+              style={{ height: '100%', width: '100%', pointerEvents: 'auto' }}
+              mindar-image={`imageTargetSrc: ${petMarkerUrl}; autoStart: true; uiLoading: no; uiError: no; maxTrack: 1;`}
+              renderer='preserveDrawingBuffer: true; colorManagement: true; physicallyCorrectLights: true;'
+              color-space='sRGB'
+              vr-mode-ui='enabled: false'
+              device-orientation-permission-ui='enabled: false'
+            >
+              <a-assets>
+                <a-asset-item id='pet-asset' src={activeModelUrl}></a-asset-item>
+              </a-assets>
+              <a-light type='ambient' color='#ffffff' intensity='0.5'></a-light>
+              <a-light type='directional' color='#ffffff' intensity='1.5' position='-1 2 1' castShadow='true'></a-light>
+              <a-camera position='0 0 0' look-controls='enabled: false' cursor='rayOrigin: mouse;' raycaster='objects: .clickable'></a-camera>
 
-        <a-light type="ambient" color="#ffffff" intensity="0.5"></a-light>
-        <a-light type="directional" color="#ffffff" intensity="1.5" position="-1 2 1" castShadow="true"></a-light>
-        <a-camera
-          position="0 0 0"
-          look-controls="enabled: false"
-          cursor="rayOrigin: mouse;"
-          raycaster="objects: .clickable"
-        ></a-camera>
+              <a-entity mindar-image-target={`targetIndex: ${activeTargetIndex}`}>
+                <a-gltf-model
+                  id='pet-model'
+                  class={(!isEgg && !isSleeping) ? 'clickable' : ''}
+                  rotation='0 0 0'
+                  position='0 0 0'
+                  scale={hatchAnimating ? '0.1 0.1 0.1' : '0.5 0.5 0.5'}
+                  src={activeModelUrl}
+                  shadow='cast: true; receive: true'
+                  animation-mixer={isEgg ? '' : `clip: ${actionAnim || currentMood.clip}; loop: ${actionAnim ? 'once' : 'repeat'}; crossFadeDuration: 0.3;`}
+                  animation={hatchAnimating ? 'property: scale; to: 0.5 0.5 0.5; dur: 800; easing: easeOutElastic;' : undefined}
+                ></a-gltf-model>
+              </a-entity>
+            </a-scene>
+          </div>
+        )}
 
-        <a-entity mindar-image-target={`targetIndex: ${activeTargetIndex}`}>
-          <a-gltf-model
-            id="pet-model"
-            class={(!isEgg && !isSleeping) ? "clickable" : ""}
-            rotation="0 0 0"
-            position="0 0 0"
-            scale={hatchAnimating ? "0.1 0.1 0.1" : "0.5 0.5 0.5"}
-            src={activeModelUrl}
-            shadow="cast: true; receive: true"
-            animation-mixer={isEgg ? "" : `clip: ${actionAnim || currentMood.clip}; loop: ${actionAnim ? 'once' : 'repeat'}; crossFadeDuration: 0.3;`}
-            animation={hatchAnimating ? `property: scale; to: 0.5 0.5 0.5; dur: 800; easing: easeOutElastic;` : undefined}
-          ></a-gltf-model>
-        </a-entity>
-      </a-scene>
+        {viewMode === 'gps' && location && isDataLoaded && scriptsReadyForGps && !isSwitchingMode && (
+          <div key={`gps-container-${sceneKey}-${cameraFacing}`} className='absolute inset-0 z-0 pointer-events-auto'>
+            <a-scene
+              embedded
+              style={{ height: '100%', width: '100%', pointerEvents: 'auto' }}
+              vr-mode-ui='enabled: false'
+              renderer='preserveDrawingBuffer: true; colorManagement: true;'
+              arjs={`sourceType: webcam; videoTexture: true; debugUIEnabled: false; facingMode: ${cameraFacing};`}
+            >
+              <a-assets>
+                <a-asset-item id='pet-asset-gps' src={activeModelUrl}></a-asset-item>
+                {activeLandmark && activeLandmark.model_url && (
+                  <a-asset-item id='landmark-asset-dynamic' src={activeLandmark.model_url}></a-asset-item>
+                )}
+              </a-assets>
+
+              <a-light type='ambient' color='#ffffff' intensity='0.7'></a-light>
+              <a-light type='directional' color='#ffffff' intensity='1.5' position='0 5 0'></a-light>
+
+              <a-camera gps-camera rotation-reader>
+                {!isEgg && petId && (
+                  <a-entity
+                    gltf-model={activeModelUrl}
+                    scale='1.5 1.5 1.5'
+                    position={`0 -1.5 ${cameraFacing === 'user' ? '-2' : '-4'}`}
+                    rotation='0 180 0'
+                    animation-mixer={`clip: ${petCondition !== 'healthy' ? 'Sad' : 'Walk'}; loop: repeat; crossFadeDuration: 0.3;`}
+                  ></a-entity>
+                )}
+              </a-camera>
+
+              {activeLandmark && !isEgg && petId && (
+                <a-entity
+                  gps-entity-place={`latitude: ${activeLandmark.latitude}; longitude: ${activeLandmark.longitude};`}
+                  gltf-model={activeLandmark.model_url ? '#landmark-asset-dynamic' : '/models/treasure.glb'}
+                  scale='5 5 5'
+                  position='0 2 0'
+                  animation='property: rotation; to: 0 360 0; loop: true; dur: 4000; easing: linear;'
+                ></a-entity>
+              )}
+            </a-scene>
+          </div>
+        )}
+      </div>
     </div>
-  )}
-</div>
-        {/* --- 背面：ARレイヤー --- */}
-  <div className='absolute top-0 left-0 w-full h-full z-0 pointer-events-none'>
-    {viewMode === 'mindar' && sessionUserId && isDataLoaded && scriptsReadyForMindar && !isSwitchingMode && (
-      <div key={`mindar-container-${sceneKey}`} className='absolute inset-0 z-0 pointer-events-auto'>
-        <a-scene
-          embedded
-          style={{ height: '100%', width: '100%', pointerEvents: 'auto' }}
-          mindar-image={`imageTargetSrc: ${petMarkerUrl}; autoStart: true; uiLoading: no; uiError: no; maxTrack: 1;`}
-          renderer="preserveDrawingBuffer: true; colorManagement: true; physicallyCorrectLights: true;"
-          color-space="sRGB"
-          vr-mode-ui="enabled: false"
-          device-orientation-permission-ui="enabled: false"
-        >
-          <a-assets>
-            <a-asset-item id='pet-asset' src={activeModelUrl}></a-asset-item>
-          </a-assets>
-          <a-light type='ambient' color='#ffffff' intensity='0.5'></a-light>
-          <a-light type='directional' color='#ffffff' intensity='1.5' position='-1 2 1' castShadow='true'></a-light>
-          <a-camera position='0 0 0' look-controls='enabled: false' cursor='rayOrigin: mouse;' raycaster='objects: .clickable'></a-camera>
+  );
+}
 
-          <a-entity mindar-image-target={`targetIndex: ${activeTargetIndex}`}>
-            <a-gltf-model
-              id='pet-model'
-              class={(!isEgg && !isSleeping) ? 'clickable' : ''}
-              rotation='0 0 0'
-              position='0 0 0'
-              scale={hatchAnimating ? '0.1 0.1 0.1' : '0.5 0.5 0.5'}
-              src={activeModelUrl}
-              shadow='cast: true; receive: true'
-              animation-mixer={isEgg ? '' : `clip: ${actionAnim || currentMood.clip}; loop: ${actionAnim ? 'once' : 'repeat'}; crossFadeDuration: 0.3;`}
-              animation={hatchAnimating ? 'property: scale; to: 0.5 0.5 0.5; dur: 800; easing: easeOutElastic;' : undefined}
-            ></a-gltf-model>
-          </a-entity>
-        </a-scene>
-      </div>
-    )}
-
-    {viewMode === 'gps' && location && isDataLoaded && scriptsReadyForGps && !isSwitchingMode && (
-      <div key={`gps-container-${sceneKey}-${cameraFacing}`} className='absolute inset-0 z-0 pointer-events-auto'>
-        <a-scene
-          embedded
-          style={{ height: '100%', width: '100%', pointerEvents: 'auto' }}
-          vr-mode-ui='enabled: false'
-          renderer='preserveDrawingBuffer: true; colorManagement: true;'
-          arjs={`sourceType: webcam; videoTexture: true; debugUIEnabled: false; facingMode: ${cameraFacing};`}
-        >
-          <a-assets>
-            <a-asset-item id='pet-asset-gps' src={activeModelUrl}></a-asset-item>
-            {activeLandmark && activeLandmark.model_url && (
-              <a-asset-item id='landmark-asset-dynamic' src={activeLandmark.model_url}></a-asset-item>
-            )}
-          </a-assets>
-
-          <a-light type='ambient' color='#ffffff' intensity='0.7'></a-light>
-          <a-light type='directional' color='#ffffff' intensity='1.5' position='0 5 0'></a-light>
-
-          <a-camera gps-camera rotation-reader>
-            {!isEgg && petId && (
-              <a-entity
-                gltf-model={activeModelUrl}
-                scale='1.5 1.5 1.5'
-                position={`0 -1.5 ${cameraFacing === 'user' ? '-2' : '-4'}`}
-                rotation='0 180 0'
-                animation-mixer={`clip: ${petCondition !== 'healthy' ? 'Sad' : 'Walk'}; loop: repeat; crossFadeDuration: 0.3;`}
-              ></a-entity>
-            )}
-          </a-camera>
-
-          {activeLandmark && !isEgg && petId && (
-            <a-entity
-              gps-entity-place={`latitude: ${activeLandmark.latitude}; longitude: ${activeLandmark.longitude};`}
-              gltf-model={activeLandmark.model_url ? '#landmark-asset-dynamic' : '/models/treasure.glb'}
-              scale='5 5 5'
-              position='0 2 0'
-              animation='property: rotation; to: 0 360 0; loop: true; dur: 4000; easing: linear;'
-            ></a-entity>
-          )}
-        </a-scene>
-      </div>
-    )}
-  </div>
-</div>
+export default function HomeARPage() {
+  return (
+    <Suspense fallback={<div className='bg-black w-full h-full text-white flex items-center justify-center'>ARエンジンを起動中...</div>}>
+      <HomeAR />
+    </Suspense>
+  );
+}
