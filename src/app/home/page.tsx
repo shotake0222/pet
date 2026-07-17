@@ -2076,8 +2076,8 @@ function HomeAR() {
         </div>
       )}
 
-      {/* --- UIレイヤー (ボトム) --- */}
-      <div className='absolute z-40 bottom-0 w-full p-4 flex flex-col gap-4 pointer-events-auto'>
+        {/* --- UIレイヤー (ボトム) --- */}
+      <div className='fixed bottom-0 left-0 right-0 z-[40] p-4 flex flex-col gap-4 pointer-events-auto'>
         {isShopOpen && (
           <div className='absolute bottom-24 left-4 right-4 bg-white/95 p-5 rounded-3xl shadow-2xl backdrop-blur-md z-50 border border-gray-200'>
             <div className='flex justify-between items-center mb-4 border-b pb-3'>
@@ -2092,7 +2092,11 @@ function HomeAR() {
               <div className='grid grid-cols-2 gap-3 max-h-80 overflow-y-auto pr-1'>
                 {shopItems.map(item => (
                   <div key={item.id} className='bg-white border rounded-2xl p-3 flex flex-col shadow-sm'>
-                    {item.image_url ? <img src={item.image_url} alt={item.name} className='w-full h-24 object-cover rounded-xl mb-2 bg-gray-100' /> : <div className='w-full h-24 bg-blue-50 rounded-xl mb-2 flex items-center justify-center text-3xl'>🎁</div>}
+                    {item.image_url ? (
+                      <img src={item.image_url} alt={item.name} className='w-full h-24 object-cover rounded-xl mb-2 bg-gray-100' />
+                    ) : (
+                      <div className='w-full h-24 bg-blue-50 rounded-xl mb-2 flex items-center justify-center text-3xl'>🎁</div>
+                    )}
                     <h4 className='font-bold text-gray-800 text-sm leading-tight mb-1'>{item.name}</h4>
                     <span className='text-[10px] text-gray-500 mb-2 line-clamp-2 leading-tight'>{item.description}</span>
                     <div className='mt-auto flex items-center justify-between'>
@@ -2122,7 +2126,11 @@ function HomeAR() {
               <div className='flex gap-4 overflow-x-auto pb-2'>
                 {inventory.map(invItem => (
                   <button key={invItem.id} onClick={() => handleUseItem(invItem)} className='flex-shrink-0 bg-white border border-blue-100 rounded-2xl p-3 w-32 flex flex-col text-left shadow-sm active:scale-95 transition-transform'>
-                    {invItem.item_masters.image_url ? <img src={invItem.item_masters.image_url} className='w-full h-16 object-cover rounded-lg mb-2' /> : <div className='w-full h-16 bg-blue-50 rounded-lg mb-2 flex items-center justify-center text-2xl'>📦</div>}
+                    {invItem.item_masters.image_url ? (
+                      <img src={invItem.item_masters.image_url} className='w-full h-16 object-cover rounded-lg mb-2' />
+                    ) : (
+                      <div className='w-full h-16 bg-blue-50 rounded-lg mb-2 flex items-center justify-center text-2xl'>📦</div>
+                    )}
                     <div className='font-bold text-blue-900 text-sm truncate'>{invItem.item_masters.name}</div>
                     <div className='mt-auto text-right text-xs font-bold text-blue-600 pt-2'>所持: {invItem.quantity}</div>
                   </button>
@@ -2168,7 +2176,7 @@ function HomeAR() {
           </div>
         )}
 
-                       {viewMode === 'gps' && (
+        {viewMode === 'gps' && (
           <>
             <div className='bg-green-600/90 text-white p-3 rounded-xl font-bold shadow-lg w-full text-center text-sm backdrop-blur-sm'>
               {location ? `🚶‍♂️ 現在地周辺を散歩中... ${petId ? `(歩行: ${Math.floor(walkDistance)}m / 約${stepCount}歩)` : ''}` : '📡 GPSを探索中...'}
@@ -2195,10 +2203,7 @@ function HomeAR() {
 
         {viewMode !== 'report' && (
           <button
-            onClick={() => {
-              setIsSpotMapOpen(true);
-              playSound('tap');
-            }}
+            onClick={() => { setIsSpotMapOpen(true); playSound('tap'); }}
             className='bg-gradient-to-r from-teal-400 to-teal-600 text-white p-3 rounded-2xl font-bold shadow-lg w-full flex justify-center items-center gap-2 border-2 border-teal-300 active:scale-95 transition-transform text-lg'
           >
             🗺️ 地図でスポットを探す
@@ -2221,10 +2226,10 @@ function HomeAR() {
         </div>
       </div>
 
-      {/* --- 背面：ARレイヤー --- */}
-      <div className='absolute inset-0 z-0 pointer-events-none'>
+      {/* --- 背面：ARレイヤー（1回だけ） --- */}
+      <div className='fixed inset-0 z-[1] pointer-events-none'>
         {viewMode === 'mindar' && sessionUserId && isDataLoaded && scriptsReadyForMindar && !isSwitchingMode && (
-          <div key={`mindar-container-${sceneKey}`} className='absolute inset-0 z-0 pointer-events-auto'>
+          <div key={`mindar-container-${sceneKey}`} className='fixed inset-0 pointer-events-auto'>
             <a-scene
               embedded
               style={{ height: '100%', width: '100%', pointerEvents: 'auto' }}
@@ -2259,7 +2264,7 @@ function HomeAR() {
         )}
 
         {viewMode === 'gps' && location && isDataLoaded && scriptsReadyForGps && !isSwitchingMode && (
-          <div key={`gps-container-${sceneKey}-${cameraFacing}`} className='absolute inset-0 z-0 pointer-events-auto'>
+          <div key={`gps-container-${sceneKey}-${cameraFacing}`} className='fixed inset-0 pointer-events-auto'>
             <a-scene
               embedded
               style={{ height: '100%', width: '100%', pointerEvents: 'auto' }}
