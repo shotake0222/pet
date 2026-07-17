@@ -208,8 +208,10 @@ function HomeAR() {
 
       // AR.js の実装差分によっては camera video が document.body 直下へ追加される。
       // このゲームの起動中に作られたライブカメラだけを、表示用コンテナへ移動する。
+      // (autoplay/playsInline属性の有無に関わらず、srcObjectが設定済みのvideoは
+      //  すべて対象にすることで、Android端末での検出漏れ＝カメラが左に寄る不具合を防ぐ)
       const detachedCameraVideos = Array.from(document.querySelectorAll('video')).filter(video => {
-        return !viewport.contains(video) && Boolean(video.srcObject) && (video.autoplay || video.playsInline);
+        return !viewport.contains(video) && Boolean(video.srcObject);
       });
       detachedCameraVideos.forEach(video => viewport.prepend(video));
 
@@ -2347,7 +2349,7 @@ function HomeAR() {
         {/* --- UIレイヤー (ボトム) --- */}
       <div
         className='absolute bottom-0 left-0 right-0 z-[130] p-4 flex flex-col gap-4 pointer-events-auto'
-        style={{ paddingBottom: 'calc(1rem + env(safe-area-inset-bottom, 16px))' }}
+        style={{ paddingBottom: 'calc(1rem + env(safe-area-inset-bottom, 24px))' }}
       >
         {isShopOpen && (
           <div className='absolute bottom-24 left-4 right-4 bg-white/95 p-5 rounded-3xl shadow-2xl backdrop-blur-md z-50 border border-gray-200'>
