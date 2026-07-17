@@ -182,14 +182,21 @@ function HomeAR() {
   // 直接DOMへ書き込む（Reactのstateは使わず再レンダリングを起こさない）。
   useEffect(() => {
     const setAppHeight = () => {
-      document.documentElement.style.setProperty('--app-height', `${window.innerHeight}px`);
+      const h = window.visualViewport?.height ?? window.innerHeight;
+      document.documentElement.style.setProperty('--app-height', `${h}px`);
     };
     setAppHeight();
     window.addEventListener('resize', setAppHeight);
     window.addEventListener('orientationchange', setAppHeight);
+    // Android Chromeのアドレスバー開閉は通常のresizeイベントが発火しないことがあるため、
+    // visualViewportのresizeも合わせて監視する（Reactのstateは使わないのでガタつきは起きない）
+    window.visualViewport?.addEventListener('resize', setAppHeight);
+    window.visualViewport?.addEventListener('scroll', setAppHeight);
     return () => {
       window.removeEventListener('resize', setAppHeight);
       window.removeEventListener('orientationchange', setAppHeight);
+      window.visualViewport?.removeEventListener('resize', setAppHeight);
+      window.visualViewport?.removeEventListener('scroll', setAppHeight);
     };
   }, []);
 
@@ -2615,6 +2622,13 @@ function HomeAR() {
               color-space='sRGB'
               vr-mode-ui='enabled: false'
               device-orientation-permission-ui='enabled: false'
+              onLoad={(e: any) => {
+                // .mindファイルの読み込み失敗やカメラ起動失敗をコンソールで確認できるようにする
+                const sceneEl = e?.target;
+                sceneEl?.addEventListener?.('arError', (err: any) => {
+                  console.error('MindAR起動エラー:', err?.detail || err);
+                });
+              }}
             >
               <a-assets>
                 <a-asset-item id='pet-asset' src={activeModelUrl}></a-asset-item>
