@@ -2262,7 +2262,98 @@ function HomeAR() {
             </a-scene>
           </div>
         )}
+      {/* --- 前面UIレイヤー復活 --- */}
+      <div className='fixed inset-0 z-[30] pointer-events-none'>
+        {/* 右上ボタン群 */}
+        {viewMode !== 'report' && (
+          <div className='absolute top-20 right-4 flex flex-col gap-4 pointer-events-auto'>
+            {!isEggUnregistered && (
+              <button
+                onClick={() => {
+                  setIsStatusModalOpen(true);
+                  playSound('tap');
+                }}
+                className='bg-white/90 p-3 rounded-full shadow-2xl border border-gray-200 active:scale-90 w-14 h-14 flex items-center justify-center relative'
+                aria-label='ステータス'
+              >
+                <span className='text-2xl'>📊</span>
+                {(isEgg && isHatchReady) && (
+                  <span className='absolute top-0 right-0 w-4 h-4 bg-yellow-400 rounded-full border-2 border-white animate-pulse'></span>
+                )}
+              </button>
+            )}
 
+            <button
+              onClick={() => {
+                setIsNewsOpen(true);
+                playSound('tap');
+              }}
+              className='bg-white/90 p-3 rounded-full shadow-2xl border border-gray-200 active:scale-90 w-14 h-14 flex items-center justify-center relative'
+              aria-label='お知らせ'
+            >
+              <span className='text-2xl'>📢</span>
+              {(newsList.length > 0 || userNotifications.length > 0) && (
+                <span className='absolute top-0 right-0 w-4 h-4 bg-red-500 rounded-full border-2 border-white'></span>
+              )}
+            </button>
+
+            {(viewMode === 'mindar' || (viewMode === 'gps' && activeLandmark)) && (
+              <button
+                onClick={takeSnapshot}
+                className='bg-white/90 p-3 rounded-full shadow-2xl border border-gray-200 active:scale-90 w-14 h-14 flex items-center justify-center'
+                aria-label='写真を撮る'
+              >
+                <span className='text-2xl'>📸</span>
+              </button>
+            )}
+          </div>
+        )}
+
+        {/* ヘッダー表示 */}
+        {sessionUserId && viewMode !== 'report' && (
+          <div className='absolute top-4 left-4 right-4 pointer-events-none'>
+            <div className='flex justify-between items-end'>
+              <span className='text-white font-bold text-3xl drop-shadow-lg bg-black/30 px-3 py-1 rounded-xl backdrop-blur-sm'>
+                {isEggUnregistered ? '' : displayName}
+              </span>
+              <span className={`${currentMood.color} text-white px-4 py-2 rounded-xl font-bold shadow-xl text-md border border-white/20`}>
+                {currentMood.text}
+              </span>
+            </div>
+          </div>
+        )}
+
+        {/* ボトムUI */}
+        <div className='absolute bottom-0 left-0 right-0 p-4 flex flex-col gap-4 pointer-events-auto'>
+          {viewMode !== 'report' && (
+            <button
+              onClick={() => {
+                setIsSpotMapOpen(true);
+                playSound('tap');
+              }}
+              className='bg-gradient-to-r from-teal-400 to-teal-600 text-white p-3 rounded-2xl font-bold shadow-lg w-full flex justify-center items-center gap-2 border-2 border-teal-300 active:scale-95 transition-transform text-lg'
+            >
+              🗺️ 地図でスポットを探す
+            </button>
+          )}
+
+          <div className='flex justify-around bg-white p-3 rounded-2xl shadow-xl border border-gray-100'>
+            <button onClick={() => handleModeChange('mindar')} className={`font-bold flex flex-col items-center gap-1 ${viewMode === 'mindar' ? 'text-blue-600' : 'text-gray-400'}`}>
+              <span className='text-xl'>🏠</span>
+              <span className='text-xs'>おうち</span>
+            </button>
+            <button onClick={() => handleModeChange('gps')} className={`font-bold flex flex-col items-center gap-1 ${viewMode === 'gps' ? 'text-green-600' : 'text-gray-400'}`}>
+              <span className='text-xl'>🚶</span>
+              <span className='text-xs'>さんぽ</span>
+            </button>
+            <button onClick={() => handleModeChange('report')} className={`font-bold flex flex-col items-center gap-1 ${viewMode === 'report' ? 'text-purple-600' : 'text-gray-400'}`}>
+              <span className='text-xl'>📊</span>
+              <span className='text-xs'>きろく</span>
+            </button>
+          </div>
+        </div>
+      </div>
+      
         {viewMode === 'gps' && location && isDataLoaded && scriptsReadyForGps && !isSwitchingMode && (
           <div key={`gps-container-${sceneKey}-${cameraFacing}`} className='fixed inset-0 pointer-events-auto'>
             <a-scene
