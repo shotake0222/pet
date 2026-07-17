@@ -263,17 +263,8 @@ function HomeAR() {
         el.style.width = '100%';
         el.style.height = '100%';
         el.style.objectFit = 'cover';
-        el.style.objectPosition = 'center';
         el.style.zIndex = '0';
         el.style.pointerEvents = 'none';
-        // AR.js/MindARが独自に付与するtransform/margin/top/leftが残っていると、
-        // このコンテナへ移動した後も古い位置指定が効いてカメラ映像が左右にズレるため、明示的にリセットする
-        el.style.transform = 'none';
-        el.style.margin = '0';
-        el.style.top = '0';
-        el.style.left = '0';
-        el.style.right = '';
-        el.style.bottom = '';
       });
 
       const scenes = viewport.querySelectorAll('a-scene') as NodeListOf<any>;
@@ -286,8 +277,6 @@ function HomeAR() {
         el.style.height = '100%';
         el.style.zIndex = '1';
         el.style.pointerEvents = 'none';
-        el.style.transform = 'none';
-        el.style.margin = '0';
       });
 
       const canvases = viewport.querySelectorAll('canvas');
@@ -300,8 +289,6 @@ function HomeAR() {
         el.style.height = '100%';
         el.style.zIndex = '1';
         el.style.pointerEvents = 'none';
-        el.style.transform = 'none';
-        el.style.margin = '0';
       });
 
       const { width, height } = viewport.getBoundingClientRect();
