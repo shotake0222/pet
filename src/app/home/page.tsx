@@ -17,7 +17,7 @@ function HomeAR() {
   const [isAuthChecking, setIsAuthChecking] = useState(true);
   const [isDataLoaded, setIsDataLoaded] = useState(false);
 
-  // 🌟 追加: 管理者権限フラグ
+  // 管理者権限フラグ
   const [isAdmin, setIsAdmin] = useState(false);
 
   const [sessionUserId, setSessionUserId] = useState<string | null>(null);
@@ -155,6 +155,7 @@ function HomeAR() {
 
   const stepCount = Math.floor(walkDistance / 0.75);
 
+  // 🌟 修正: カメラリソースと、Reactの管理外で追加されたDOM（video, UIなど）を完全に破棄してレイアウト崩れを防ぐ
   const releaseCameraResources = useCallback(() => {
     try {
       const videos = document.querySelectorAll('video');
@@ -163,6 +164,9 @@ function HomeAR() {
           const tracks = (v.srcObject as MediaStream).getTracks();
           tracks.forEach(track => track.stop());
           v.srcObject = null;
+        }
+        if (v.parentNode) {
+          v.parentNode.removeChild(v);
         }
       });
 
@@ -175,17 +179,34 @@ function HomeAR() {
           scene.renderer?.dispose?.();
         } catch {}
       });
-    } catch {}
+
+      // MindARやAR.jsが勝手にbody直下に追加する不要な要素を全削除
+      const arElements = document.querySelectorAll('.mindar-ui-overlay, .mindar-ui-scanning, .arjs-loader, .a-enter-vr');
+      arElements.forEach(el => {
+        if (el.parentNode) {
+          el.parentNode.removeChild(el);
+        }
+      });
+
+      // html, bodyに付与された余分なスタイルをリセット
+      document.documentElement.style.removeProperty('overflow');
+      document.body.style.removeProperty('overflow');
+    } catch (e) {
+      console.error('releaseCameraResources error', e);
+    }
   }, []);
 
-  // 🌟 修正: ARエンジンの「カメラだけになる」バグを回避するため、モード変更時はフルリロードでコンテキストをリセット
+  // 🌟 修正: 404エラーを防ぐため router.push を使用し、遷移前に確実にカメラリソースを掃除する
   const handleModeChange = (mode: 'mindar' | 'gps' | 'report') => {
     playSound('tap');
     if (mode === viewMode) return;
 
+    // 前のモードのゴミを完全に削除してレイアウト崩れを防ぐ
+    releaseCameraResources();
+    setCameraReady(false);
+
     const nextParams = new URLSearchParams(searchParams.toString());
     
-    // 🌟 修正: おうちに戻る時は ?mode=mindar を消す
     if (mode === 'mindar') {
       nextParams.delete('mode');
     } else {
@@ -199,9 +220,8 @@ function HomeAR() {
     const query = nextParams.toString();
     const nextUrl = query ? `/?${query}` : '/';
 
-    // A-Frame/AR.js/MindARはSPAのルーティングによるDOMの書き換えでWebRTC/WebGLがバグりやすいため
-    // 強制的にフルリロードを行うことで「画面がカメラだけになる」状態を完全に防ぎます
-    window.location.href = nextUrl;
+    // Next.js のルーターを使って遷移する
+    router.push(nextUrl);
   };
 
   useEffect(() => {
@@ -271,7 +291,7 @@ function HomeAR() {
         if (!profile || !profile.birth_year) {
           setShowProfileSetup(true);
         } else {
-          // 🌟 追加: デバッグボタンを見せるための管理者判定
+          // デバッグボタンを見せるための管理者判定
           if (profile.role === 'admin' || profile.is_admin === true) {
             setIsAdmin(true);
           }
@@ -1071,7 +1091,6 @@ function HomeAR() {
     setIsInventoryOpen(false);
     playSound('item');
     
-    // UI上ですぐに減らす
     setInventory(prev => prev.map(i => (i.id === invItem.id ? { ...i, quantity: i.quantity - 1 } : i)).filter(i => i.quantity > 0));
     await supabase.from('user_inventory').update({ quantity: invItem.quantity - 1 }).eq('id', invItem.id);
 
@@ -1413,7 +1432,6 @@ function HomeAR() {
         </div>
       )}
 
-      {/* 🌟 変更: isAdminフラグがある場合のみデバッグボタンを表示 */}
       {isAdmin && (
         <button
           onClick={() => setIsDebugModalOpen(true)}
@@ -2223,7 +2241,6 @@ function HomeAR() {
           </button>
         )}
 
-        {/* 🌟 変更: ボトムナビゲーションに「もちもの」「おみせ」を常設追加 */}
         <div className='flex justify-around bg-white p-3 rounded-2xl shadow-xl border border-gray-100'>
           <button onClick={() => handleModeChange('mindar')} className={`font-bold flex flex-col items-center gap-1 ${viewMode === 'mindar' ? 'text-blue-600' : 'text-gray-400'}`}>
             <span className='text-xl'>🏠</span>
