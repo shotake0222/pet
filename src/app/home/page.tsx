@@ -10,7 +10,8 @@ function HomeAR() {
   const searchParams = useSearchParams();
   const supabase = useMemo(() => createClient(), []);
 
-  const modeParam = searchParams.get('mode');
+  const rawModeParam = searchParams.get('mode');
+  const modeParam = rawModeParam === 'minder' ? 'mindar' : rawModeParam;
   const tagIdParam = searchParams.get('tag_id');
 
   const [isClient, setIsClient] = useState(false);
@@ -230,10 +231,8 @@ function HomeAR() {
 
     setIsSwitchingMode(true);
     setCameraReady(mode === 'report');
-    const isArToArSwitch = (viewMode === 'mindar' || viewMode === 'gps') && (mode === 'mindar' || mode === 'gps');
-    if (mode === 'report' || isArToArSwitch) {
-      releaseCameraResources();
-    }
+    // report -> mindar でも残留videoがあるため、モード遷移時は毎回解放する
+    releaseCameraResources();
 
     setViewMode(mode);
     const nextParams = new URLSearchParams(searchParams.toString());
@@ -255,6 +254,22 @@ function HomeAR() {
   useEffect(() => {
     setIsClient(true);
   }, []);
+
+  // URLの誤パラメータ (?mode=minder など) を正規化して遷移バグを防ぐ
+  useEffect(() => {
+    if (!rawModeParam) return;
+    const isValid = rawModeParam === 'mindar' || rawModeParam === 'gps' || rawModeParam === 'report';
+    if (isValid) return;
+
+    const nextParams = new URLSearchParams(searchParams.toString());
+    nextParams.set('mode', 'mindar');
+    if (tagIdParam) {
+      nextParams.set('tag_id', tagIdParam);
+    }
+    const query = nextParams.toString();
+    const nextUrl = query ? `${window.location.pathname}?${query}` : window.location.pathname;
+    window.history.replaceState(window.history.state, '', nextUrl);
+  }, [rawModeParam, searchParams, tagIdParam]);
 
   // --- 追加: アンマウント時のみ解放 ---
   useEffect(() => {
