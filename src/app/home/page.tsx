@@ -2168,7 +2168,7 @@ function HomeAR() {
           </div>
         )}
 
-                {viewMode === 'gps' && (
+                       {viewMode === 'gps' && (
           <>
             <div className='bg-green-600/90 text-white p-3 rounded-xl font-bold shadow-lg w-full text-center text-sm backdrop-blur-sm'>
               {location ? `🚶‍♂️ 現在地周辺を散歩中... ${petId ? `(歩行: ${Math.floor(walkDistance)}m / 約${stepCount}歩)` : ''}` : '📡 GPSを探索中...'}
@@ -2222,7 +2222,7 @@ function HomeAR() {
       </div>
 
       {/* --- 背面：ARレイヤー --- */}
-      <div className='absolute top-0 left-0 w-full h-full z-0 pointer-events-none'>
+      <div className='absolute inset-0 z-0 pointer-events-none'>
         {viewMode === 'mindar' && sessionUserId && isDataLoaded && scriptsReadyForMindar && !isSwitchingMode && (
           <div key={`mindar-container-${sceneKey}`} className='absolute inset-0 z-0 pointer-events-auto'>
             <a-scene
