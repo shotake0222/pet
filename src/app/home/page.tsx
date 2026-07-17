@@ -735,6 +735,14 @@ function HomeAR() {
         setHatchOverlay(prev => (prev ? { ...prev, particles: prev.particles.map(p => ({ ...p, launched: true })) } : prev));
       }, 1000);
 
+      const maxDuration = Math.max(...particles.map(p => p.duration)) + 300;
+      setTimeout(() => {
+        setHatchOverlay(null);
+        resolve();
+      }, maxDuration);
+    });
+  };
+
   const showLevelUpEffect = (newLevel: number) => {
     return new Promise<void>(resolve => {
       const isMilestone = newLevel % 5 === 0;
@@ -1027,6 +1035,7 @@ function HomeAR() {
       }, 900);
     } catch (e) {
       console.error('孵化エラー:', e);
+    }
   };
 
   const handleFeed = async () => {
