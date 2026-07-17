@@ -185,13 +185,19 @@ function HomeAR() {
 
     setIsSwitchingMode(true);
     setCameraReady(mode === 'report');
-    if (viewMode !== 'report') {
+    if (mode === 'report') {
       releaseCameraResources();
     }
 
     setViewMode(mode);
-    const tagQuery = tagIdParam ? `&tag_id=${tagIdParam}` : '';
-    router.replace(`/?mode=${mode}${tagQuery}`, { scroll: false });
+    const nextParams = new URLSearchParams(searchParams.toString());
+    nextParams.set('mode', mode);
+    if (tagIdParam) {
+      nextParams.set('tag_id', tagIdParam);
+    }
+    const query = nextParams.toString();
+    const nextUrl = query ? `${window.location.pathname}?${query}` : window.location.pathname;
+    window.history.replaceState(window.history.state, '', nextUrl);
 
     window.setTimeout(() => {
       setSceneKey(prev => prev + 1);
@@ -727,15 +733,7 @@ function HomeAR() {
       setHatchOverlay({ active: true, particles, rarity });
       setTimeout(() => {
         setHatchOverlay(prev => (prev ? { ...prev, particles: prev.particles.map(p => ({ ...p, launched: true })) } : prev));
-      }, 40);
-
-      const maxDuration = Math.max(...particles.map(p => p.duration)) + 300;
-      setTimeout(() => {
-        setHatchOverlay(null);
-        resolve();
-      }, maxDuration);
-    });
-  };
+      }, 1000);
 
   const showLevelUpEffect = (newLevel: number) => {
     return new Promise<void>(resolve => {
@@ -1029,8 +1027,6 @@ function HomeAR() {
       }, 900);
     } catch (e) {
       console.error('孵化エラー:', e);
-      alert('孵化処理中にエラーが発生しました。');
-    }
   };
 
   const handleFeed = async () => {
