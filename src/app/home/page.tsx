@@ -1,6 +1,95 @@
 'use client';
 
-import { useState, useEffect, useMemo, Suspense, useRef, useCallback } from 'react';
+import { useState, useEffect, useMemo, Suspense, useRef, useCallback, type FormEvent } from 'react';
+import Script from 'next/script';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { createClient } from '@/utils/supabase/client';
+
+function HomeAR() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const supabase = useMemo(() => createClient(), []);
+
+  const modeParam = searchParams.get('mode');
+  const tagIdParam = searchParams.get('tag_id');
+
+  const [isClient, setIsClient] = useState(false);
+  const [isAuthChecking, setIsAuthChecking] = useState(true);
+  const [isDataLoaded, setIsDataLoaded] = useState(false);
+
+  const [sessionUserId, setSessionUserId] = useState<string | null>(null);
+  const [ownerId, setOwnerId] = useState<string | null>(null);
+  const [petId, setPetId] = useState<string | null>(null);
+
+  const [affection, setAffection] = useState(0);
+  const [sleepingUntil, setSleepingUntil] = useState<string | null>(null);
+  const [lastFedAt, setLastFedAt] = useState<string | null>(null);
+  const [isEgg, setIsEgg] = useState(true);
+  const [isEggUnregistered, setIsEggUnregistered] = useState(false);
+  const [walkDistance, setWalkDistance] = useState(0);
+  const [level, setLevel] = useState(1);
+  const [exp, setExp] = useState(0);
+  const [customName, setCustomName] = useState<string | null>(null);
+  const [birthday, setBirthday] = useState<string | null>(null);
+  const [generation, setGeneration] = useState(1);
+
+  const [petCondition, setPetCondition] = useState<'healthy' | 'starving' | 'sick'>('healthy');
+  const [showConditionSOS, setShowConditionSOS] = useState(false);
+
+  const [eggModelUrl, setEggModelUrl] = useState('/models/eggs/egg_A.glb');
+  const [petModelUrlV1, setPetModelUrlV1] = useState('/models/pet/N/v1.glb');
+  const [petModelUrlV2, setPetModelUrlV2] = useState<string | null>(null);
+  const [petModelUrlV3, setPetModelUrlV3] = useState<string | null>(null);
+  const [petMasterName, setPetMasterName] = useState('名無し');
+  const [petRarity, setPetRarity] = useState('?');
+
+  const [viewMode, setViewMode] = useState<'mindar' | 'gps' | 'report'>((modeParam === 'gps' || modeParam === 'report') ? (modeParam as 'mindar' | 'gps' | 'report') : 'mindar');
+  const [aframeLoaded, setAframeLoaded] = useState(false);
+  const [extrasLoaded, setExtrasLoaded] = useState(false);
+  const [mindarLoaded, setMindarLoaded] = useState(false);
+  const [arjsLoaded, setArjsLoaded] = useState(false);
+  const [cameraReady, setCameraReady] = useState(false);
+  const [isSwitchingMode, setIsSwitchingMode] = useState(false);
+
+  const [feedCount, setFeedCount] = useState(0);
+  const [eventCount, setEventCount] = useState(0);
+  const [landmarkVisitCount, setLandmarkVisitCount] = useState(0);
+  const [mindfulnessLogCount, setMindfulnessLogCount] = useState(0);
+  const [hallOfFameCount, setHallOfFameCount] = useState(0);
+
+  const [hatchOverlay, setHatchOverlay] = useState<{ active: boolean; particles: any[]; rarity: string } | null>(null);
+
+  const petMarkerUrl = '/markers/pet.mind';
+  const activeTargetIndex = 0;
+
+  const playSound = useCallback((name: string) => {
+    try {
+      const map: Record<string, string> = {
+        tap: '/sounds/tap.mp3',
+        eat: '/sounds/eat.mp3',
+        item: '/sounds/item.mp3',
+        levelup: '/sounds/levelup.mp3',
+        hatch: '/sounds/hatch.mp3',
+        camera: '/sounds/camera.mp3',
+        error: '/sounds/error.mp3',
+      };
+      const src = map[name];
+      if (!src) return;
+      const audio = new Audio(src);
+      audio.volume = 0.7;
+      void audio.play();
+    } catch {}
+  }, []);
+
+  const getDistance = (lat1: number, lon1: number, lat2: number, lon2: number) => {
+    const toRad = (n: number) => (n * Math.PI) / 180;
+    const R = 6371000;
+    const dLat = toRad(lat2 - lat1);
+    const dLon = toRad(lon2 - lon1);
+    const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+    return 2 * R * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  };
+
   const [hatchAnimating, setHatchAnimating] = useState(false);
 
   const [levelUpOverlay, setLevelUpOverlay] = useState<{ active: boolean; particles: any[]; level: number; isMilestone: boolean } | null>(null);
@@ -1131,7 +1220,7 @@ import { useState, useEffect, useMemo, Suspense, useRef, useCallback } from 'rea
     }
   };
 
-  const handleProfileSubmit = async (e: React.FormEvent) => {
+  const handleProfileSubmit = async (e: FormEvent) => {
     e.preventDefault();
     if (!sessionUserId) {
       alert('セッションが見つかりません。再度ログインしてください。');
@@ -1187,7 +1276,7 @@ import { useState, useEffect, useMemo, Suspense, useRef, useCallback } from 'rea
     }
   };
 
-  const handleNamingSubmit = async (e: React.FormEvent) => {
+  const handleNamingSubmit = async (e: FormEvent) => {
     e.preventDefault();
     if (!petId || !namingInput.trim()) return;
 
