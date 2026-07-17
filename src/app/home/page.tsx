@@ -1213,15 +1213,48 @@ function HomeAR() {
   };
 
   const handleUseItem = async (invItem: any) => {
-    if (!petId || isSleeping) return;
+    if (!petId) return;
+    if (isSleeping) {
+      playSound('error');
+      alert('ペットは眠っています。起きてからアイテムを使ってね。');
+      return;
+    }
+
     const item = invItem.item_masters;
-    setIsInventoryOpen(false);
-    playSound('item');
-    setInventory(prev => prev.map(i => (i.id === invItem.id ? { ...i, quantity: i.quantity - 1 } : i)).filter(i => i.quantity > 0));
-    await supabase.from('user_inventory').update({ quantity: invItem.quantity - 1 }).eq('id', invItem.id);
+    if (!item) return;
+
+    // 効果がない状況では消費しない。
+    if (item.item_type === 'food' && petCondition === 'sick') {
+      playSound('error');
+      alert('体調が悪くてご飯が食べられないみたい…病院に行こう！');
+      return;
+    }
+    if (item.item_type === 'medicine' && petCondition !== 'sick') {
+      playSound('error');
+      alert('今は健康なので、お薬は使わずに取っておこう。');
+      return;
+    }
+
+    try {
+      const nextQuantity = invItem.quantity - 1;
+      const { error } = await supabase
+        .from('user_inventory')
+        .update({ quantity: nextQuantity })
+        .eq('id', invItem.id);
+      if (error) throw error;
+
+      setInventory(prev => prev
+        .map(i => (i.id === invItem.id ? { ...i, quantity: nextQuantity } : i))
+        .filter(i => i.quantity > 0));
+      setIsInventoryOpen(false);
+      playSound('item');
+    } catch (error) {
+      console.error('アイテム使用エラー:', error);
+      alert('アイテムを使えませんでした。通信状態を確認して、もう一度お試しください。');
+      return;
+    }
 
     if (item.item_type === 'food') {
-      if (petCondition === 'sick') return alert('体調が悪くてご飯が食べられないみたい…病院に行こう！');
       const newAffection = affection + item.effect_value;
       const now = new Date().toISOString();
       setAffection(newAffection);
@@ -1246,19 +1279,19 @@ function HomeAR() {
       await supabase.from('pets').update({ sleeping_until: sleepEnd.toISOString() }).eq('id', petId);
       alert(`💤 ペットは ${item.effect_value} 時間眠りにつきました。`);
     } else if (item.item_type === 'medicine') {
-      if (petCondition === 'sick') {
-        setPetCondition('healthy');
-        setShowConditionSOS(false);
-        await supabase.from('pets').update({ condition_status: 'healthy' }).eq('id', petId);
-        setActionAnim('Happy');
-        setTimeout(() => setActionAnim(null), 2000);
-        alert('✨ お薬が効いて元気になりました！');
-      } else {
-        alert('今は健康なので効果がなかったみたい。');
-      }
+      setPetCondition('healthy');
+      setShowConditionSOS(false);
+      await supabase.from('pets').update({ condition_status: 'healthy' }).eq('id', petId);
+      setActionAnim('Happy');
+      setTimeout(() => setActionAnim(null), 2000);
+      alert('✨ お薬が効いて元気になりました！');
     } else if (item.item_type === 'exp') {
       addExperience(item.effect_value || 100);
       alert(`✨ ${item.name} の香りに包まれて、経験値を獲得しました！`);
+    } else {
+      // 将来追加する種類のアイテムも、少なくとも経験値アイテムとして利用可能にする。
+      addExperience(item.effect_value || 10);
+      alert(`✨ ${item.name} を使いました！`);
     }
   };
 
@@ -1501,21 +1534,33 @@ function HomeAR() {
   }
 
   return (
-    <div className='relative isolate h-[100dvh] w-full overflow-hidden bg-black text-white'>
+    <div className='relative isolate h-[100dvh] min-h-0 w-full min-w-0 max-w-full overflow-hidden bg-black text-white'>
       {/* 🌟 画面真っ暗問題を解決する強制CSS */}
       <style jsx global>{`
         html,
         body {
           background-color: transparent !important;
+          width: 100%;
+          max-width: 100%;
+          height: 100%;
           margin: 0;
           padding: 0;
+          overflow: hidden !important;
+          overscroll-behavior: none;
         }
         #__next {
           background-color: transparent !important;
+          width: 100%;
+          max-width: 100%;
+          height: 100%;
+          overflow: hidden;
         }
         .ar-camera-viewport {
           position: absolute;
           inset: 0;
+          width: 100%;
+          height: 100%;
+          max-width: 100%;
           overflow: hidden;
           isolation: isolate;
           contain: layout paint;
@@ -1531,6 +1576,8 @@ function HomeAR() {
           height: 100% !important;
           max-width: none !important;
           max-height: none !important;
+          min-width: 0 !important;
+          min-height: 0 !important;
           pointer-events: none !important;
         }
         .ar-camera-viewport a-scene,
@@ -2412,16 +2459,35 @@ function HomeAR() {
           </button>
         )}
 
-        <div className='flex justify-around bg-white p-3 rounded-2xl shadow-xl border border-gray-100'>
-          <button onClick={() => handleModeChange('mindar')} className={`font-bold flex flex-col items-center gap-1 ${viewMode === 'mindar' ? 'text-blue-600' : 'text-gray-400'}`}>
+        <div className='grid grid-cols-4 gap-1 bg-white p-3 rounded-2xl shadow-xl border border-gray-100'>
+          <button onClick={() => handleModeChange('mindar')} className={`min-w-0 font-bold flex flex-col items-center gap-1 ${viewMode === 'mindar' ? 'text-blue-600' : 'text-gray-400'}`}>
             <span className='text-xl'>🏠</span>
             <span className='text-xs'>おうち</span>
           </button>
-          <button onClick={() => handleModeChange('gps')} className={`font-bold flex flex-col items-center gap-1 ${viewMode === 'gps' ? 'text-green-600' : 'text-gray-400'}`}>
+          <button onClick={() => handleModeChange('gps')} className={`min-w-0 font-bold flex flex-col items-center gap-1 ${viewMode === 'gps' ? 'text-green-600' : 'text-gray-400'}`}>
             <span className='text-xl'>🚶</span>
             <span className='text-xs'>さんぽ</span>
           </button>
-          <button onClick={() => handleModeChange('report')} className={`font-bold flex flex-col items-center gap-1 ${viewMode === 'report' ? 'text-purple-600' : 'text-gray-400'}`}>
+          <button
+            onClick={() => {
+              setIsInventoryOpen(true);
+              setIsShopOpen(false);
+              setIsNewsOpen(false);
+              playSound('tap');
+            }}
+            className={`min-w-0 font-bold flex flex-col items-center gap-1 relative ${isInventoryOpen ? 'text-blue-600' : 'text-gray-400'}`}
+          >
+            <span className='relative text-xl'>
+              🎒
+              {inventory.reduce((total, entry) => total + entry.quantity, 0) > 0 && (
+                <span className='absolute -top-1 -right-2 min-w-4 h-4 px-1 rounded-full bg-red-500 border border-white text-[10px] leading-4 text-white'>
+                  {inventory.reduce((total, entry) => total + entry.quantity, 0)}
+                </span>
+              )}
+            </span>
+            <span className='text-xs'>もちもの</span>
+          </button>
+          <button onClick={() => handleModeChange('report')} className={`min-w-0 font-bold flex flex-col items-center gap-1 ${viewMode === 'report' ? 'text-purple-600' : 'text-gray-400'}`}>
             <span className='text-xl'>📊</span>
             <span className='text-xs'>きろく</span>
           </button>
