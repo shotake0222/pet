@@ -1526,7 +1526,7 @@ function HomeAR() {
   // 🌟 ここで未ログインやロード中ならUI・AR描画を完全にブロック
   if (!isClient || isAuthChecking || (sessionUserId && !isDataLoaded)) {
     return (
-      <div className='bg-black w-full h-full flex flex-col items-center justify-center text-white fixed inset-0 z-[9999]' style={{ width: '100vw', height: '100svh' }}>
+      <div className='bg-black w-full h-full flex flex-col items-center justify-center text-white absolute inset-0 z-[9999]'>
         <div className='w-10 h-10 border-4 border-gray-500 border-t-white rounded-full animate-spin mb-4'></div>
         <p className='font-bold'>データ読み込み中...</p>
       </div>
@@ -1534,10 +1534,7 @@ function HomeAR() {
   }
 
   return (
-    <div
-      className='relative isolate min-h-0 w-full min-w-0 max-w-full overflow-hidden bg-black text-white'
-      style={{ width: '100vw', height: '100svh' }}
-    >
+    <div className='relative isolate w-full h-full min-h-0 min-w-0 max-w-full overflow-hidden bg-black text-white'>
       {/* 🌟 画面が左側に潰れる問題(親コンテナ幅依存の暴走)を根本から防ぐ強制CSS */}
       <style jsx global>{`
         html,
@@ -1701,7 +1698,7 @@ function HomeAR() {
 
       {/* --- レベルアップエフェクトオーバーレイ --- */}
       {levelUpOverlay?.active && (
-        <div className='pointer-events-none fixed inset-0 z-[140] overflow-hidden flex items-center justify-center'>
+        <div className='pointer-events-none absolute inset-0 z-[140] overflow-hidden flex items-center justify-center'>
           {levelUpOverlay.particles.map((p: any) => (
             <div
               key={p.id}
@@ -1730,7 +1727,7 @@ function HomeAR() {
 
       {/* --- 孵化エフェクトオーバーレイ --- */}
       {hatchOverlay?.active && (
-        <div className='pointer-events-none fixed inset-0 z-[130] overflow-hidden'>
+        <div className='pointer-events-none absolute inset-0 z-[130] overflow-hidden'>
           {hatchOverlay.particles.map((p: any) => (
             <div
               key={p.id}
@@ -1756,7 +1753,7 @@ function HomeAR() {
 
       {/* --- 虹の橋（寿命）エフェクトオーバーレイ --- */}
       {showRainbowBridge && (
-        <div className='fixed inset-0 z-[200] bg-black flex flex-col items-center justify-center p-6 text-center text-white transition-opacity duration-1000'>
+        <div className='absolute inset-0 z-[200] bg-black flex flex-col items-center justify-center p-6 text-center text-white transition-opacity duration-1000'>
           {rainbowPhase === 1 && (
             <div className='animate-pulse space-y-6'>
               <h1 className='text-4xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-purple-400 via-pink-400 to-red-400'>🌈 虹の橋を渡りました...</h1>
@@ -2332,7 +2329,10 @@ function HomeAR() {
       )}
 
         {/* --- UIレイヤー (ボトム) --- */}
-      <div className='absolute bottom-0 left-0 right-0 z-[130] p-4 flex flex-col gap-4 pointer-events-auto'>
+      <div
+        className='absolute bottom-0 left-0 right-0 z-[130] p-4 flex flex-col gap-4 pointer-events-auto'
+        style={{ paddingBottom: 'calc(1rem + env(safe-area-inset-bottom, 16px))' }}
+      >
         {isShopOpen && (
           <div className='absolute bottom-24 left-4 right-4 bg-white/95 p-5 rounded-3xl shadow-2xl backdrop-blur-md z-50 border border-gray-200'>
             <div className='flex justify-between items-center mb-4 border-b pb-3'>
@@ -2586,7 +2586,7 @@ function HomeAR() {
 
 export default function HomeARPage() {
   return (
-    <Suspense fallback={<div className='bg-black w-full h-full text-white flex items-center justify-center' style={{ width: '100vw', height: '100svh' }}>ARエンジンを起動中...</div>}>
+    <Suspense fallback={<div className='bg-black w-full h-full text-white flex items-center justify-center'>ARエンジンを起動中...</div>}>
       <HomeAR />
     </Suspense>
   );
