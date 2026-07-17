@@ -184,6 +184,14 @@ function HomeAR() {
     playSound('tap');
     if (mode === viewMode) return;
 
+    // モード遷移時に残留しやすい前面UIを閉じる
+    setIsSpotMapOpen(false);
+    setIsNewsOpen(false);
+    setIsInventoryOpen(false);
+    setIsShopOpen(false);
+    setIsStatusModalOpen(false);
+    setIsDebugModalOpen(false);
+
     setIsSwitchingMode(true);
     setCameraReady(mode === 'report');
     if (mode === 'report') {
@@ -903,6 +911,13 @@ function HomeAR() {
     }
   }, [location, landmarks, viewMode]);
 
+  // GPS以外へ遷移したら地図モーダルを必ず閉じる
+  useEffect(() => {
+    if (viewMode !== 'gps') {
+      setIsSpotMapOpen(false);
+    }
+  }, [viewMode]);
+
   useEffect(() => {
     if (viewMode === 'mindar' && petId && !isEgg && !isSleeping && isDataLoaded) {
       const petModel = document.querySelector('#pet-model');
@@ -1422,7 +1437,7 @@ function HomeAR() {
       {/* --- 左下デバッグボタン --- */}
       <button
         onClick={() => setIsDebugModalOpen(true)}
-        className='absolute bottom-24 left-4 z-[120] bg-black/50 text-white p-3 rounded-full shadow-2xl active:scale-95 text-xl backdrop-blur-sm border border-gray-600'
+        className='absolute bottom-24 left-4 z-[260] bg-black/50 text-white p-3 rounded-full shadow-2xl active:scale-95 text-xl backdrop-blur-sm border border-gray-600'
         aria-label='デバッグメニュー'
       >
         🐞
