@@ -1553,19 +1553,14 @@ function HomeAR() {
           overflow: hidden !important;
           overscroll-behavior: none;
         }
-        /* Next.js App Router / Pages Router どちらのルートラッパーにも保険をかける。
-           #__next は Pages Router 専用IDのため、App Router では body 直下の
-           ラッパー div 群にも同じ幅指定を当てる。 */
-        #__next,
-        body > div,
-        body > div > div,
-        body > next-route-announcer + div {
+        /* Pages Router 用の保険（App Routerでは何にもマッチせず無害）。
+           カメラ(video)を巻き込まないよう、対象は #__next のみに限定する。 */
+        #__next {
           background-color: transparent !important;
-          width: 100% !important;
-          max-width: 100% !important;
-          min-width: 0 !important;
-          height: 100% !important;
-          overflow: hidden !important;
+          width: 100%;
+          max-width: 100%;
+          height: 100%;
+          overflow: hidden;
         }
         .ar-camera-viewport {
           position: absolute;
@@ -2514,7 +2509,7 @@ function HomeAR() {
               embedded
               style={{ position: 'absolute', inset: 0, height: '100%', width: '100%', pointerEvents: 'none' }}
               mindar-image={`imageTargetSrc: ${petMarkerUrl}; autoStart: true; uiLoading: no; uiError: no; maxTrack: 1;`}
-              renderer='preserveDrawingBuffer: true; colorManagement: true; physicallyCorrectLights: true;'
+              renderer='alpha: true; preserveDrawingBuffer: true; colorManagement: true; physicallyCorrectLights: true;'
               color-space='sRGB'
               vr-mode-ui='enabled: false'
               device-orientation-permission-ui='enabled: false'
@@ -2548,7 +2543,7 @@ function HomeAR() {
               embedded
               style={{ position: 'absolute', inset: 0, height: '100%', width: '100%', pointerEvents: 'none' }}
               vr-mode-ui='enabled: false'
-              renderer='preserveDrawingBuffer: true; colorManagement: true;'
+              renderer='alpha: true; preserveDrawingBuffer: true; colorManagement: true;'
               arjs={`sourceType: webcam; videoTexture: true; debugUIEnabled: false; facingMode: ${cameraFacing};`}
             >
               <a-assets>
