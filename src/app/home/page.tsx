@@ -50,6 +50,9 @@ function HomeAR() {
   const [mindarLoaded, setMindarLoaded] = useState(false);
   const [arjsLoaded, setArjsLoaded] = useState(false);
   const [cameraReady, setCameraReady] = useState(false);
+  // cameraReadyは「待機を打ち切ったかどうか」のフラグ（UIブロック解除用）。
+  // こちらは「実際に映像取得まで確認できたか」を別管理し、失敗時のリトライ導線に使う。
+  const [cameraTrulyReady, setCameraTrulyReady] = useState(false);
   const [isSwitchingMode, setIsSwitchingMode] = useState(false);
 
   const [feedCount, setFeedCount] = useState(0);
@@ -349,7 +352,7 @@ function HomeAR() {
       setSceneKey(prev => prev + 1);
       setIsSwitchingMode(false);
       normalizeArLayers();
-    }, 180);
+    }, 350);
   };
 
   useEffect(() => {
@@ -434,10 +437,12 @@ function HomeAR() {
   useEffect(() => {
     if (viewMode === 'report') {
       setCameraReady(true);
+      setCameraTrulyReady(true);
       return;
     }
     if (!isClient || isAuthChecking || !isDataLoaded || isSwitchingMode) return;
 
+    setCameraTrulyReady(false);
     let tries = 0;
     const maxTries = 40; // 8秒
     const timer = window.setInterval(() => {
@@ -447,12 +452,14 @@ function HomeAR() {
 
       if (ready) {
         setCameraReady(true);
+        setCameraTrulyReady(true);
         window.clearInterval(timer);
         return;
       }
 
       tries += 1;
       if (tries >= maxTries) {
+        // 待機は打ち切ってUIは表示するが、映像自体は未確認のままなのでリトライ導線を出す
         setCameraReady(true);
         window.clearInterval(timer);
       }
@@ -460,6 +467,19 @@ function HomeAR() {
 
     return () => window.clearInterval(timer);
   }, [viewMode, isClient, isAuthChecking, isDataLoaded, isSwitchingMode, sceneKey]);
+
+  // カメラが起動しなかった時に、手動でAR/カメラの再取得をやり直す
+  const retryCamera = useCallback(() => {
+    playSound('tap');
+    setIsSwitchingMode(true);
+    setCameraReady(false);
+    setCameraTrulyReady(false);
+    releaseCameraResources();
+    window.setTimeout(() => {
+      setSceneKey(prev => prev + 1);
+      setIsSwitchingMode(false);
+    }, 350);
+  }, [playSound, releaseCameraResources]);
 
   // ==========================================
   //  Auth & Profile チェック
@@ -1714,6 +1734,15 @@ function HomeAR() {
         </div>
       )}
 
+      {cameraReady && !cameraTrulyReady && viewMode !== 'report' && !isSwitchingMode && (
+        <button
+          onClick={retryCamera}
+          className='absolute top-20 left-1/2 -translate-x-1/2 z-[180] bg-red-600/90 text-white text-xs font-bold px-4 py-2 rounded-full shadow-lg backdrop-blur-sm active:scale-95'
+        >
+          📷 カメラ映像を確認できません。タップして再試行
+        </button>
+      )}
+
       {viewMode === 'gps' && !location && !isSwitchingMode && (
         <div className='absolute top-20 left-1/2 -translate-x-1/2 z-[180] bg-black/60 text-white text-xs px-3 py-2 rounded-full backdrop-blur-sm'>
           GPSを取得中です... そのまま少しお待ちください
@@ -2651,7 +2680,7 @@ function HomeAR() {
                   rotation='0 0 0'
                   position='0 0 0'
                   scale={hatchAnimating ? '0.1 0.1 0.1' : '0.5 0.5 0.5'}
-                  src={activeModelUrl}
+                  src='#pet-asset'
                   shadow='cast: true; receive: true'
                   animation-mixer={isEgg ? '' : `clip: ${actionAnim || currentMood.clip}; loop: ${actionAnim ? 'once' : 'repeat'}; crossFadeDuration: 0.3;`}
                   animation={hatchAnimating ? 'property: scale; to: 0.5 0.5 0.5; dur: 800; easing: easeOutElastic;' : undefined}
@@ -2664,7 +2693,7 @@ function HomeAR() {
                   rotation='0 0 0'
                   position='0 0 0'
                   scale={hatchAnimating ? '0.1 0.1 0.1' : '0.5 0.5 0.5'}
-                  src={activeModelUrl}
+                  src='#pet-asset'
                   shadow='cast: true; receive: true'
                   animation-mixer={isEgg ? '' : `clip: ${actionAnim || currentMood.clip}; loop: ${actionAnim ? 'once' : 'repeat'}; crossFadeDuration: 0.3;`}
                   animation={hatchAnimating ? 'property: scale; to: 0.5 0.5 0.5; dur: 800; easing: easeOutElastic;' : undefined}
@@ -2677,7 +2706,7 @@ function HomeAR() {
                   rotation='0 0 0'
                   position='0 0 0'
                   scale={hatchAnimating ? '0.1 0.1 0.1' : '0.5 0.5 0.5'}
-                  src={activeModelUrl}
+                  src='#pet-asset'
                   shadow='cast: true; receive: true'
                   animation-mixer={isEgg ? '' : `clip: ${actionAnim || currentMood.clip}; loop: ${actionAnim ? 'once' : 'repeat'}; crossFadeDuration: 0.3;`}
                   animation={hatchAnimating ? 'property: scale; to: 0.5 0.5 0.5; dur: 800; easing: easeOutElastic;' : undefined}
@@ -2690,7 +2719,7 @@ function HomeAR() {
                   rotation='0 0 0'
                   position='0 0 0'
                   scale={hatchAnimating ? '0.1 0.1 0.1' : '0.5 0.5 0.5'}
-                  src={activeModelUrl}
+                  src='#pet-asset'
                   shadow='cast: true; receive: true'
                   animation-mixer={isEgg ? '' : `clip: ${actionAnim || currentMood.clip}; loop: ${actionAnim ? 'once' : 'repeat'}; crossFadeDuration: 0.3;`}
                   animation={hatchAnimating ? 'property: scale; to: 0.5 0.5 0.5; dur: 800; easing: easeOutElastic;' : undefined}
