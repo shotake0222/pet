@@ -665,8 +665,7 @@ function HomeAR() {
         .from('pets')
         .select(`
           id, owner_id, affection_level, sleeping_until, last_fed_at, 
-          is_egg, walk_distance_m, level, exp, custom_name, birthday, condition_status, generation, is_deceased, egg_master_id, pet_master_id,
-          pet_masters!pet_master_id(name, model_url, model_url_v2, model_url_v3, rarity, egg_type)
+          is_egg, walk_distance_m, level, exp, custom_name, birthday, condition_status, generation, is_deceased, egg_master_id, pet_master_id
         `)
         .eq('owner_id', sessionUserId)
         .order('created_at', { ascending: false })
@@ -715,16 +714,27 @@ function HomeAR() {
           setEggModelUrl('/models/eggs/egg.glb');
         }
 
-        if (pet.pet_masters) {
-          const pm = (pet.pet_masters && pet.pet_masters[0] ? pet.pet_masters[0] : pet.pet_masters) || {};
-          const rarityPm = (pm as any).rarity || '?';
-          const fallbackBase = `/models/pet/${rarityPm}`;
+        if (pet.pet_master_id) {
+          const { data: petMasterData, error: petMasterFetchError } = await supabase
+            .from('pet_masters')
+            .select('name, model_url, model_url_v2, model_url_v3, rarity, egg_type')
+            .eq('id', pet.pet_master_id)
+            .maybeSingle();
 
-          setPetModelUrlV1((pm as any).model_url || `${fallbackBase}/v1.glb`);
-          setPetModelUrlV2((pm as any).model_url_v2 || `${fallbackBase}/v2.glb`);
-          setPetModelUrlV3((pm as any).model_url_v3 || `${fallbackBase}/v3.glb`);
-          setPetMasterName((pm as any).name || '不明');
-          setPetRarity(rarityPm);
+          if (petMasterFetchError) {
+            console.error('ペットマスターの取得に失敗しました:', petMasterFetchError);
+          }
+
+          if (petMasterData) {
+            const rarityPm = petMasterData.rarity || '?';
+            const fallbackBase = `/models/pet/${rarityPm}`;
+
+            setPetModelUrlV1(petMasterData.model_url || `${fallbackBase}/v1.glb`);
+            setPetModelUrlV2(petMasterData.model_url_v2 || `${fallbackBase}/v2.glb`);
+            setPetModelUrlV3(petMasterData.model_url_v3 || `${fallbackBase}/v3.glb`);
+            setPetMasterName(petMasterData.name || '不明');
+            setPetRarity(rarityPm);
+          }
         }
 
         const { data: inv } = await supabase.from('user_inventory').select('id, quantity, item_masters(*)').eq('user_id', sessionUserId).gt('quantity', 0);
