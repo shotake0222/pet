@@ -659,7 +659,7 @@ function HomeAR() {
         setGameOverNotice(null);
         setGameOverHandled(false);
 
-        const { data: pet } = await supabase
+        const { data: pet, error: petFetchError } = await supabase
           .from('pets')
           .select(`
           id, owner_id, affection_level, sleeping_until, last_fed_at, 
@@ -670,6 +670,14 @@ function HomeAR() {
           .order('created_at', { ascending: false })
           .limit(1)
           .maybeSingle();
+
+        if (petFetchError) {
+          // 🌟 取得エラーを「まだ卵を拾っていない」と誤判定しないようにする。
+          // ここを誤判定すると、実際にはDBにペットが存在するのに未登録画面に
+          // 戻ってしまい、進捗が消えたように見える不具合の原因になる。
+          console.error('ペット情報の取得に失敗しました:', petFetchError);
+          throw petFetchError;
+        }
 
         if (pet && !pet.is_deceased) {
           setPetId(pet.id);
