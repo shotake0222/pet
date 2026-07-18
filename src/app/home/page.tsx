@@ -70,6 +70,10 @@ function HomeAR() {
 
   // マーカーの数（0〜3の4つ）。卵の種類はマーカーに紐付けず、
   // egg_masters テーブルからのランダム選択のみで決定する。
+  // マーカーに対するペット/卵モデルの表示スケール。
+  // 遠くから見えず近づくと崩れて見える場合は、この値が大きすぎる（モデルの中にカメラが
+  // めり込んでいる）ことが原因。まずはこの1箇所だけを変えて調整する。
+  const MODEL_SCALE = 0.05;
   const MARKER_COUNT = 4;
 
   // 現在カメラが検出しているマーカーのtargetIndex（未検出時はnull）
@@ -2744,11 +2748,11 @@ function HomeAR() {
                   class={(!isEgg && !isSleeping) ? 'clickable' : ''}
                   rotation='0 0 0'
                   position='0 0 0'
-                  scale={hatchAnimating ? '0.1 0.1 0.1' : '0.5 0.5 0.5'}
+                  scale={hatchAnimating ? `${MODEL_SCALE * 0.2} ${MODEL_SCALE * 0.2} ${MODEL_SCALE * 0.2}` : `${MODEL_SCALE} ${MODEL_SCALE} ${MODEL_SCALE}`}
                   src='#pet-asset'
                   shadow='cast: true; receive: true'
                   animation-mixer={isEgg ? '' : `clip: ${actionAnim || currentMood.clip}; loop: ${actionAnim ? 'once' : 'repeat'}; crossFadeDuration: 0.3;`}
-                  animation={hatchAnimating ? 'property: scale; to: 0.5 0.5 0.5; dur: 800; easing: easeOutElastic;' : undefined}
+                  animation={hatchAnimating ? `property: scale; to: ${MODEL_SCALE} ${MODEL_SCALE} ${MODEL_SCALE}; dur: 800; easing: easeOutElastic;` : undefined}
                 ></a-gltf-model>
               </a-entity>
               <a-entity mindar-image-target='targetIndex: 1' id='marker-target-1'>
@@ -2757,11 +2761,11 @@ function HomeAR() {
                   class={(!isEgg && !isSleeping) ? 'clickable' : ''}
                   rotation='0 0 0'
                   position='0 0 0'
-                  scale={hatchAnimating ? '0.1 0.1 0.1' : '0.5 0.5 0.5'}
+                  scale={hatchAnimating ? `${MODEL_SCALE * 0.2} ${MODEL_SCALE * 0.2} ${MODEL_SCALE * 0.2}` : `${MODEL_SCALE} ${MODEL_SCALE} ${MODEL_SCALE}`}
                   src='#pet-asset'
                   shadow='cast: true; receive: true'
                   animation-mixer={isEgg ? '' : `clip: ${actionAnim || currentMood.clip}; loop: ${actionAnim ? 'once' : 'repeat'}; crossFadeDuration: 0.3;`}
-                  animation={hatchAnimating ? 'property: scale; to: 0.5 0.5 0.5; dur: 800; easing: easeOutElastic;' : undefined}
+                  animation={hatchAnimating ? `property: scale; to: ${MODEL_SCALE} ${MODEL_SCALE} ${MODEL_SCALE}; dur: 800; easing: easeOutElastic;` : undefined}
                 ></a-gltf-model>
               </a-entity>
               <a-entity mindar-image-target='targetIndex: 2' id='marker-target-2'>
@@ -2770,11 +2774,11 @@ function HomeAR() {
                   class={(!isEgg && !isSleeping) ? 'clickable' : ''}
                   rotation='0 0 0'
                   position='0 0 0'
-                  scale={hatchAnimating ? '0.1 0.1 0.1' : '0.5 0.5 0.5'}
+                  scale={hatchAnimating ? `${MODEL_SCALE * 0.2} ${MODEL_SCALE * 0.2} ${MODEL_SCALE * 0.2}` : `${MODEL_SCALE} ${MODEL_SCALE} ${MODEL_SCALE}`}
                   src='#pet-asset'
                   shadow='cast: true; receive: true'
                   animation-mixer={isEgg ? '' : `clip: ${actionAnim || currentMood.clip}; loop: ${actionAnim ? 'once' : 'repeat'}; crossFadeDuration: 0.3;`}
-                  animation={hatchAnimating ? 'property: scale; to: 0.5 0.5 0.5; dur: 800; easing: easeOutElastic;' : undefined}
+                  animation={hatchAnimating ? `property: scale; to: ${MODEL_SCALE} ${MODEL_SCALE} ${MODEL_SCALE}; dur: 800; easing: easeOutElastic;` : undefined}
                 ></a-gltf-model>
               </a-entity>
               <a-entity mindar-image-target='targetIndex: 3' id='marker-target-3'>
@@ -2783,11 +2787,11 @@ function HomeAR() {
                   class={(!isEgg && !isSleeping) ? 'clickable' : ''}
                   rotation='0 0 0'
                   position='0 0 0'
-                  scale={hatchAnimating ? '0.1 0.1 0.1' : '0.5 0.5 0.5'}
+                  scale={hatchAnimating ? `${MODEL_SCALE * 0.2} ${MODEL_SCALE * 0.2} ${MODEL_SCALE * 0.2}` : `${MODEL_SCALE} ${MODEL_SCALE} ${MODEL_SCALE}`}
                   src='#pet-asset'
                   shadow='cast: true; receive: true'
                   animation-mixer={isEgg ? '' : `clip: ${actionAnim || currentMood.clip}; loop: ${actionAnim ? 'once' : 'repeat'}; crossFadeDuration: 0.3;`}
-                  animation={hatchAnimating ? 'property: scale; to: 0.5 0.5 0.5; dur: 800; easing: easeOutElastic;' : undefined}
+                  animation={hatchAnimating ? `property: scale; to: ${MODEL_SCALE} ${MODEL_SCALE} ${MODEL_SCALE}; dur: 800; easing: easeOutElastic;` : undefined}
                 ></a-gltf-model>
               </a-entity>
             </a-scene>
