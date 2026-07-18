@@ -666,7 +666,7 @@ function HomeAR() {
         .select(`
           id, owner_id, affection_level, sleeping_until, last_fed_at, 
           is_egg, walk_distance_m, level, exp, custom_name, birthday, condition_status, generation, is_deceased, egg_master_id, pet_master_id,
-          pet_masters(name, model_url, model_url_v2, model_url_v3, rarity, egg_type)
+          pet_masters!pet_master_id(name, model_url, model_url_v2, model_url_v3, rarity, egg_type)
         `)
         .eq('owner_id', sessionUserId)
         .order('created_at', { ascending: false })
