@@ -49,6 +49,14 @@ function HomeAR() {
   const [extrasLoaded, setExtrasLoaded] = useState(false);
   const [mindarLoaded, setMindarLoaded] = useState(false);
   const [arjsLoaded, setArjsLoaded] = useState(false);
+  // 🌟 MindAR(mindar-image)とAR.js(aframe-ar)は同じAFRAME名前空間を取り合う別々のARエンジン。
+  // 両方を常に読み込んでいると、AR.js側の内部ループがMindARのカメラ/レンダラーを
+  // 触りに行って壊してしまう（レンダリング崩れ・色化け・スケール異常の原因）。
+  // そのため、AR.jsは「さんぽ」を一度でも開くまで読み込まないようにする。
+  const [gpsEverActivated, setGpsEverActivated] = useState(viewMode === 'gps');
+  useEffect(() => {
+    if (viewMode === 'gps') setGpsEverActivated(true);
+  }, [viewMode]);
   const [cameraReady, setCameraReady] = useState(false);
   // cameraReadyは「待機を打ち切ったかどうか」のフラグ（UIブロック解除用）。
   // こちらは「実際に映像取得まで確認できたか」を別管理し、失敗時のリトライ導線に使う。
@@ -86,8 +94,8 @@ function HomeAR() {
   const [detectedTargetIndex, setDetectedTargetIndex] = useState<number | null>(null);
 
   // 🌟 サウンドファイルは毎回new Audio()せず使い回す（パフォーマンス改善 & 
-  //   ファイル欠損時の挙動を安定させるため）。ここに書かれている7種類が
-  //   /public/sounds/ 以下に実在している必要がある。
+  //    ファイル欠損時の挙動を安定させるため）。ここに書かれている7種類が
+  //    /public/sounds/ 以下に実在している必要がある。
   const SOUND_SOURCES: Record<string, string> = {
     tap: '/sounds/tap.mp3',
     eat: '/sounds/eat.mp3',
@@ -341,6 +349,20 @@ function HomeAR() {
   const handleModeChange = (mode: 'mindar' | 'gps' | 'report') => {
     playSound('tap');
     if (mode === viewMode) return;
+
+    // 🌟 MindARとAR.jsは同居させると内部状態が競合し、レンダリング崩れの原因になる。
+    // 一度でもAR.jsが読み込まれた後にmindar⇄gpsを行き来する場合は、
+    // 中途半端な状態リセットに頼らず、確実にクリーンな状態にするためページごと再読み込みする。
+    const isCrossingArEngines = (mode === 'gps' && viewMode === 'mindar') || (mode === 'mindar' && viewMode === 'gps');
+    if (isCrossingArEngines && arjsLoaded) {
+      const nextParams = new URLSearchParams(searchParams.toString());
+      nextParams.set('mode', mode);
+      if (tagIdParam) {
+        nextParams.set('tag_id', tagIdParam);
+      }
+      window.location.href = `${window.location.pathname}?${nextParams.toString()}`;
+      return;
+    }
 
     // モード遷移時に残留しやすい前面UIを閉じる
     setIsSpotMapOpen(false);
@@ -1792,7 +1814,9 @@ function HomeAR() {
       <Script src='https://aframe.io/releases/1.5.0/aframe.min.js' strategy='afterInteractive' onLoad={() => setAframeLoaded(true)} />
       <Script src='https://cdn.jsdelivr.net/gh/c-frame/aframe-extras@7.2.0/dist/aframe-extras.min.js' strategy='afterInteractive' onLoad={() => setExtrasLoaded(true)} />
       <Script src='https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-aframe.prod.js' strategy='afterInteractive' onLoad={() => setMindarLoaded(true)} />
-      <Script src='https://raw.githack.com/AR-js-org/AR.js/master/aframe/build/aframe-ar.js' strategy='afterInteractive' onLoad={() => setArjsLoaded(true)} />
+      {gpsEverActivated && (
+        <Script src='https://raw.githack.com/AR-js-org/AR.js/master/aframe/build/aframe-ar.js' strategy='afterInteractive' onLoad={() => setArjsLoaded(true)} />
+      )}
 
       {dataLoadError && (
         <div className='absolute inset-0 z-[500] bg-black/90 backdrop-blur-md flex items-center justify-center p-6'>
@@ -1843,7 +1867,7 @@ function HomeAR() {
       {/* --- デバッグモーダル --- */}
       {isDebugModalOpen && (
         <div className='absolute inset-0 z-[300] bg-black/80 backdrop-blur-md flex items-center justify-center p-4'>
-          <div className='bg-white rounded-3xl p-6 w-full max-w-sm shadow-2xl space-y-4 max-h-[80vh] overflow-y-auto relative text-black'>
+          <div className='bg-white rounded-3xl p-6 w-full max-w-sm shadow-2xl space-y-4 max-h-[80vh] overflow-y-auto relative'>
             <div className='flex justify-between items-center mb-2 border-b pb-2'>
               <h2 className='text-xl font-bold text-red-600'>🐞 デバッグメニュー</h2>
               <button onClick={() => setIsDebugModalOpen(false)} className='text-gray-500 font-bold bg-gray-100 px-3 py-1 rounded'>
@@ -1851,38 +1875,7 @@ function HomeAR() {
               </button>
             </div>
 
-            {/* 🌟 追加: リアルタイムスケール/回転調整UI */}
-            <div className='space-y-2 mt-4 bg-gray-100 p-3 rounded-lg text-black'>
-              <h3 className='font-bold text-sm bg-gray-300 p-1 rounded'>📐 モデル調整（リアルタイム）</h3>
-              <div className='text-xs space-y-2'>
-                <div>
-                  <label className='block'>Scale X: {debugScaleX}</label>
-                  <input type="range" min="0.001" max="0.5" step="0.001" value={debugScaleX} onChange={e => setDebugScaleX(parseFloat(e.target.value))} className="w-full" />
-                </div>
-                <div>
-                  <label className='block'>Scale Y: {debugScaleY}</label>
-                  <input type="range" min="0.001" max="0.5" step="0.001" value={debugScaleY} onChange={e => setDebugScaleY(parseFloat(e.target.value))} className="w-full" />
-                </div>
-                <div>
-                  <label className='block'>Scale Z: {debugScaleZ}</label>
-                  <input type="range" min="0.001" max="0.5" step="0.001" value={debugScaleZ} onChange={e => setDebugScaleZ(parseFloat(e.target.value))} className="w-full" />
-                </div>
-                <div>
-                  <label className='block'>Rot X: {debugRotX}°</label>
-                  <input type="range" min="-180" max="180" step="1" value={debugRotX} onChange={e => setDebugRotX(parseFloat(e.target.value))} className="w-full" />
-                </div>
-                <div>
-                  <label className='block'>Rot Y: {debugRotY}°</label>
-                  <input type="range" min="-180" max="180" step="1" value={debugRotY} onChange={e => setDebugRotY(parseFloat(e.target.value))} className="w-full" />
-                </div>
-                <div>
-                  <label className='block'>Rot Z: {debugRotZ}°</label>
-                  <input type="range" min="-180" max="180" step="1" value={debugRotZ} onChange={e => setDebugRotZ(parseFloat(e.target.value))} className="w-full" />
-                </div>
-              </div>
-            </div>
-
-            <div className='space-y-2 mt-4'>
+            <div className='space-y-2'>
               <h3 className='font-bold text-sm bg-gray-200 p-1 rounded'>🥚 卵の検証</h3>
               <button onClick={handleCreateEgg} className='w-full bg-yellow-500 text-white font-bold py-2 rounded-lg shadow text-sm'>
                 新しい卵を取得する
@@ -1934,6 +1927,37 @@ function HomeAR() {
               <button onClick={() => triggerRainbowBridge(petId!, generation)} className='w-full bg-black text-white font-bold py-2 rounded-lg shadow text-sm'>
                 🌈 寿命(虹の橋)テスト
               </button>
+            </div>
+
+            {/* 🌟 追加: リアルタイムスケール/回転調整UI */}
+            <div className='space-y-2 mt-4 bg-gray-100 p-3 rounded-lg text-black'>
+              <h3 className='font-bold text-sm bg-gray-300 p-1 rounded'>📐 モデル調整（リアルタイム）</h3>
+              <div className='text-xs space-y-2'>
+                <div>
+                  <label className='block'>Scale X: {debugScaleX}</label>
+                  <input type="range" min="0.001" max="0.5" step="0.001" value={debugScaleX} onChange={e => setDebugScaleX(parseFloat(e.target.value))} className="w-full" />
+                </div>
+                <div>
+                  <label className='block'>Scale Y: {debugScaleY}</label>
+                  <input type="range" min="0.001" max="0.5" step="0.001" value={debugScaleY} onChange={e => setDebugScaleY(parseFloat(e.target.value))} className="w-full" />
+                </div>
+                <div>
+                  <label className='block'>Scale Z: {debugScaleZ}</label>
+                  <input type="range" min="0.001" max="0.5" step="0.001" value={debugScaleZ} onChange={e => setDebugScaleZ(parseFloat(e.target.value))} className="w-full" />
+                </div>
+                <div>
+                  <label className='block'>Rot X: {debugRotX}°</label>
+                  <input type="range" min="-180" max="180" step="1" value={debugRotX} onChange={e => setDebugRotX(parseFloat(e.target.value))} className="w-full" />
+                </div>
+                <div>
+                  <label className='block'>Rot Y: {debugRotY}°</label>
+                  <input type="range" min="-180" max="180" step="1" value={debugRotY} onChange={e => setDebugRotY(parseFloat(e.target.value))} className="w-full" />
+                </div>
+                <div>
+                  <label className='block'>Rot Z: {debugRotZ}°</label>
+                  <input type="range" min="-180" max="180" step="1" value={debugRotZ} onChange={e => setDebugRotZ(parseFloat(e.target.value))} className="w-full" />
+                </div>
+              </div>
             </div>
           </div>
         </div>
