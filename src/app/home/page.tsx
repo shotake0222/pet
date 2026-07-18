@@ -37,7 +37,7 @@ function HomeAR() {
   const [petCondition, setPetCondition] = useState<'healthy' | 'starving' | 'sick'>('healthy');
   const [showConditionSOS, setShowConditionSOS] = useState(false);
 
-  const [eggModelUrl, setEggModelUrl] = useState('/models/eggs/egg_A.glb');
+  const [eggModelUrl, setEggModelUrl] = useState('/models/eggs/egg.glb');
   const [petModelUrlV1, setPetModelUrlV1] = useState('/models/pet/N/v1.glb');
   const [petModelUrlV2, setPetModelUrlV2] = useState<string | null>(null);
   const [petModelUrlV3, setPetModelUrlV3] = useState<string | null>(null);
@@ -65,20 +65,17 @@ function HomeAR() {
   // 1ファイルにまとめてtargetIndexで区別するのが正しい運用です。
   const petMarkerUrl = '/markers/targets.mind';
 
-  // targetIndex(0〜3)ごとに表示する卵モデル。パスは実際のファイル名に合わせて調整してください。
-  const MARKER_EGG_MODELS = [
-    '/models/eggs/egg_A.glb', // targetIndex: 0
-    '/models/eggs/egg_B.glb', // targetIndex: 1
-    '/models/eggs/egg_C.glb', // targetIndex: 2
-    '/models/eggs/egg_D.glb', // targetIndex: 3
-  ];
+  // マーカーの数（0〜3の4つ）。卵の種類はマーカーに紐付けず、
+  // egg_masters テーブルからのランダム選択のみで決定する。
+  const MARKER_COUNT = 4;
 
   // 現在カメラが検出しているマーカーのtargetIndex（未検出時はnull）
+  // ※卵拾いボタンの表示可否（マーカーを検出しているかどうか）にのみ使用する
   const [detectedTargetIndex, setDetectedTargetIndex] = useState<number | null>(null);
 
   // 🌟 サウンドファイルは毎回new Audio()せず使い回す（パフォーマンス改善 & 
-  //   ファイル欠損時の挙動を安定させるため）。ここに書かれている7種類が
-  //   /public/sounds/ 以下に実在している必要がある。
+  //    ファイル欠損時の挙動を安定させるため）。ここに書かれている7種類が
+  //    /public/sounds/ 以下に実在している必要がある。
   const SOUND_SOURCES: Record<string, string> = {
     tap: '/sounds/tap.mp3',
     eat: '/sounds/eat.mp3',
@@ -263,8 +260,17 @@ function HomeAR() {
         el.style.width = '100%';
         el.style.height = '100%';
         el.style.objectFit = 'cover';
+        el.style.objectPosition = 'center';
         el.style.zIndex = '0';
         el.style.pointerEvents = 'none';
+        // AR.js/MindARが独自に付与するtransform/margin/top/leftが残っていると、
+        // このコンテナへ移動した後も古い位置指定が効いてカメラ映像が左右にズレるため、明示的にリセットする
+        el.style.transform = 'none';
+        el.style.margin = '0';
+        el.style.top = '0';
+        el.style.left = '0';
+        el.style.right = '';
+        el.style.bottom = '';
       });
 
       const scenes = viewport.querySelectorAll('a-scene') as NodeListOf<any>;
@@ -277,6 +283,8 @@ function HomeAR() {
         el.style.height = '100%';
         el.style.zIndex = '1';
         el.style.pointerEvents = 'none';
+        el.style.transform = 'none';
+        el.style.margin = '0';
       });
 
       const canvases = viewport.querySelectorAll('canvas');
@@ -289,6 +297,8 @@ function HomeAR() {
         el.style.height = '100%';
         el.style.zIndex = '1';
         el.style.pointerEvents = 'none';
+        el.style.transform = 'none';
+        el.style.margin = '0';
       });
 
       const { width, height } = viewport.getBoundingClientRect();
@@ -669,10 +679,10 @@ function HomeAR() {
             if (eggData && eggData.model_url) {
               setEggModelUrl(eggData.model_url);
             } else {
-              setEggModelUrl('/models/eggs/egg_A.glb');
+              setEggModelUrl('/models/eggs/egg.glb');
             }
           } else {
-            setEggModelUrl('/models/eggs/egg_A.glb');
+            setEggModelUrl('/models/eggs/egg.glb');
           }
 
           if (pet.pet_masters) {
@@ -711,7 +721,7 @@ function HomeAR() {
         } else {
           setIsEggUnregistered(true);
           setIsEgg(true);
-          setEggModelUrl('/models/eggs/egg_A.glb');
+          setEggModelUrl('/models/eggs/egg.glb');
         }
       } catch (error) {
         console.error('fetchGameData error', error);
@@ -764,10 +774,7 @@ function HomeAR() {
 
   const getCurrentModelUrl = () => {
     if (isEgg || isEggUnregistered) {
-      // マーカーを検出中はそのマーカーに対応する卵モデルを優先表示する
-      if (detectedTargetIndex !== null && MARKER_EGG_MODELS[detectedTargetIndex]) {
-        return MARKER_EGG_MODELS[detectedTargetIndex];
-      }
+      // 卵はマーカーに依らず、egg_masters テーブルからのランダム選択(eggModelUrl)を常に使う
       return eggModelUrl;
     }
     if (level >= 10 && petModelUrlV3) return petModelUrlV3;
@@ -1136,7 +1143,7 @@ function HomeAR() {
         addExperience(5);
       };
       // マーカーが4つに増えたため、どのマーカー上のペットモデルがタップされても反応するようにする
-      const petModels = MARKER_EGG_MODELS.map((_, i) => document.querySelector(`#pet-model-${i}`)).filter(Boolean) as Element[];
+      const petModels = Array.from({ length: MARKER_COUNT }, (_, i) => document.querySelector(`#pet-model-${i}`)).filter(Boolean) as Element[];
       petModels.forEach(el => el.addEventListener('click', handlePetTap));
       return () => petModels.forEach(el => el.removeEventListener('click', handlePetTap));
     }
@@ -1147,7 +1154,7 @@ function HomeAR() {
     if (viewMode !== 'mindar' || !(aframeLoaded && extrasLoaded && mindarLoaded) || isSwitchingMode) return;
 
     const cleanups: Array<() => void> = [];
-    MARKER_EGG_MODELS.forEach((_, i) => {
+    Array.from({ length: MARKER_COUNT }).forEach((_, i) => {
       const el = document.querySelector(`#marker-target-${i}`);
       if (!el) return;
       const onFound = () => setDetectedTargetIndex(i);
@@ -1210,7 +1217,7 @@ function HomeAR() {
       setExp(0);
       setAffection(0);
 
-      setEggModelUrl(selectedEgg.model_url || '/models/eggs/egg_A.glb');
+      setEggModelUrl(selectedEgg.model_url || '/models/eggs/egg.glb');
 
       playSound('item');
       alert(`不思議な卵を発見した！\nさんぽ、給餌、ランドマーク、イベントの全てをこなして孵化させよう！`);
@@ -1628,10 +1635,7 @@ function HomeAR() {
   }
 
   return (
-    <div 
-      className='fixed inset-0 z-[9999] isolate w-full min-h-0 min-w-0 max-w-full overflow-hidden bg-black text-white'
-      style={{ height: 'var(--app-height, 100dvh)' }}
-    >
+    <div className='relative isolate w-full h-full min-h-0 min-w-0 max-w-full overflow-hidden bg-black text-white'>
       {/* 🌟 画面が左側に潰れる問題(親コンテナ幅依存の暴走)を根本から防ぐ強制CSS */}
       <style jsx global>{`
         html,
