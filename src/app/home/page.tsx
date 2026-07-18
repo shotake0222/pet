@@ -639,127 +639,132 @@ function HomeAR() {
     }
   };
 
-  useEffect(() => {
-    const fetchGameData = async () => {
-      if (!sessionUserId) return;
+  const [dataLoadError, setDataLoadError] = useState<string | null>(null);
 
-      try {
-        const { data: items } = await supabase.from('item_masters').select('*').order('id', { ascending: false });
-        if (items) setShopItems(items);
+  const fetchGameData = useCallback(async () => {
+    if (!sessionUserId) return;
 
-        const { data: spots } = await supabase.from('landmarks').select('*, landmark_masters(facility_type)');
-        if (spots) setLandmarks(spots);
+    setDataLoadError(null);
+    try {
+      const { data: items } = await supabase.from('item_masters').select('*').order('id', { ascending: false });
+      if (items) setShopItems(items);
 
-        const { data: news } = await supabase.from('announcements').select('*').eq('is_active', true).order('published_at', { ascending: false });
-        if (news) setNewsList(news);
+      const { data: spots } = await supabase.from('landmarks').select('*, landmark_masters(facility_type)');
+      if (spots) setLandmarks(spots);
 
-        const { data: notifications } = await supabase.from('user_notifications').select('*').eq('user_id', sessionUserId).order('created_at', { ascending: false }).limit(20);
-        if (notifications) setUserNotifications(notifications);
+      const { data: news } = await supabase.from('announcements').select('*').eq('is_active', true).order('published_at', { ascending: false });
+      if (news) setNewsList(news);
 
-        setGameOverNotice(null);
-        setGameOverHandled(false);
+      const { data: notifications } = await supabase.from('user_notifications').select('*').eq('user_id', sessionUserId).order('created_at', { ascending: false }).limit(20);
+      if (notifications) setUserNotifications(notifications);
 
-        const { data: pet, error: petFetchError } = await supabase
-          .from('pets')
-          .select(`
+      setGameOverNotice(null);
+      setGameOverHandled(false);
+
+      const { data: pet, error: petFetchError } = await supabase
+        .from('pets')
+        .select(`
           id, owner_id, affection_level, sleeping_until, last_fed_at, 
           is_egg, walk_distance_m, level, exp, custom_name, birthday, condition_status, generation, is_deceased, egg_master_id, pet_master_id,
           pet_masters(name, model_url, model_url_v2, model_url_v3, rarity, egg_type)
         `)
-          .eq('owner_id', sessionUserId)
-          .order('created_at', { ascending: false })
-          .limit(1)
-          .maybeSingle();
+        .eq('owner_id', sessionUserId)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
 
-        if (petFetchError) {
-          // 🌟 取得エラーを「まだ卵を拾っていない」と誤判定しないようにする。
-          // ここを誤判定すると、実際にはDBにペットが存在するのに未登録画面に
-          // 戻ってしまい、進捗が消えたように見える不具合の原因になる。
-          console.error('ペット情報の取得に失敗しました:', petFetchError);
-          throw petFetchError;
+      if (petFetchError) {
+        // 🌟 取得エラーを「まだ卵を拾っていない」と誤判定しないようにする。
+        // ここを誤判定すると、実際にはDBにペットが存在するのに未登録画面に
+        // 戻ってしまい、進捗が消えたように見える不具合の原因になる。
+        console.error('ペット情報の取得に失敗しました:', petFetchError);
+        throw petFetchError;
+      }
+
+      if (pet && !pet.is_deceased) {
+        setPetId(pet.id);
+        setOwnerId(pet.owner_id);
+        setAffection(pet.affection_level || 0);
+        setSleepingUntil(pet.sleeping_until);
+        setLastFedAt(pet.last_fed_at);
+        setIsEgg(pet.is_egg);
+        setWalkDistance(pet.walk_distance_m || 0);
+        setLevel(pet.level || 1);
+        setExp(pet.exp || 0);
+        setCustomName(pet.custom_name);
+        setBirthday(pet.birthday);
+        setGeneration(pet.generation || 1);
+        setIsEggUnregistered(false);
+
+        const currentCondition = pet.condition_status || 'healthy';
+        setPetCondition(currentCondition as any);
+        if (currentCondition !== 'healthy') {
+          setShowConditionSOS(true);
+        } else {
+          setShowConditionSOS(false);
         }
 
-        if (pet && !pet.is_deceased) {
-          setPetId(pet.id);
-          setOwnerId(pet.owner_id);
-          setAffection(pet.affection_level || 0);
-          setSleepingUntil(pet.sleeping_until);
-          setLastFedAt(pet.last_fed_at);
-          setIsEgg(pet.is_egg);
-          setWalkDistance(pet.walk_distance_m || 0);
-          setLevel(pet.level || 1);
-          setExp(pet.exp || 0);
-          setCustomName(pet.custom_name);
-          setBirthday(pet.birthday);
-          setGeneration(pet.generation || 1);
-          setIsEggUnregistered(false);
-
-          const currentCondition = pet.condition_status || 'healthy';
-          setPetCondition(currentCondition as any);
-          if (currentCondition !== 'healthy') {
-            setShowConditionSOS(true);
-          } else {
-            setShowConditionSOS(false);
-          }
-
-          if (pet.egg_master_id) {
-            const { data: eggData } = await supabase.from('egg_masters').select('*').eq('id', pet.egg_master_id).maybeSingle();
-            if (eggData && eggData.model_url) {
-              setEggModelUrl(eggData.model_url);
-            } else {
-              setEggModelUrl('/models/eggs/egg.glb');
-            }
+        if (pet.egg_master_id) {
+          const { data: eggData } = await supabase.from('egg_masters').select('*').eq('id', pet.egg_master_id).maybeSingle();
+          if (eggData && eggData.model_url) {
+            setEggModelUrl(eggData.model_url);
           } else {
             setEggModelUrl('/models/eggs/egg.glb');
           }
-
-          if (pet.pet_masters) {
-            const pm = (pet.pet_masters && pet.pet_masters[0] ? pet.pet_masters[0] : pet.pet_masters) || {};
-            const rarityPm = (pm as any).rarity || '?';
-            const fallbackBase = `/models/pet/${rarityPm}`;
-
-            setPetModelUrlV1((pm as any).model_url || `${fallbackBase}/v1.glb`);
-            setPetModelUrlV2((pm as any).model_url_v2 || `${fallbackBase}/v2.glb`);
-            setPetModelUrlV3((pm as any).model_url_v3 || `${fallbackBase}/v3.glb`);
-            setPetMasterName((pm as any).name || '不明');
-            setPetRarity(rarityPm);
-          }
-
-          const { data: inv } = await supabase.from('user_inventory').select('id, quantity, item_masters(*)').eq('user_id', sessionUserId).gt('quantity', 0);
-          if (inv) setInventory(inv);
-
-          const { count: feedLogCount } = await supabase.from('activity_logs').select('id', { count: 'exact', head: true }).eq('pet_id', pet.id).eq('action_type', 'feed');
-          if (feedLogCount !== null) setFeedCount(feedLogCount);
-
-          const { count: eventLogCount } = await supabase.from('activity_logs').select('id', { count: 'exact', head: true }).eq('pet_id', pet.id).eq('action_type', 'event');
-          if (eventLogCount !== null) setEventCount(eventLogCount);
-
-          const { count: mindCount } = await supabase.from('activity_logs').select('id', { count: 'exact', head: true }).eq('pet_id', pet.id).eq('action_type', 'mindfulness');
-          if (mindCount !== null) setMindfulnessLogCount(mindCount);
-
-          const { count: landmarkCount } = await supabase.from('landmark_visits').select('id', { count: 'exact', head: true }).eq('user_id', sessionUserId);
-          if (landmarkCount !== null) setLandmarkVisitCount(landmarkCount);
-
-          if (!pet.is_egg && pet.birthday) {
-            const daysLived = (new Date().getTime() - new Date(pet.birthday).getTime()) / (1000 * 3600 * 24);
-            if (daysLived > 30) {
-              triggerRainbowBridge(pet.id, pet.generation || 1);
-            }
-          }
         } else {
-          setIsEggUnregistered(true);
-          setIsEgg(true);
           setEggModelUrl('/models/eggs/egg.glb');
         }
-      } catch (error) {
-        console.error('fetchGameData error', error);
-      } finally {
-        // データ取得失敗時でもロード画面で固まらないようにする
-        setIsDataLoaded(true);
+
+        if (pet.pet_masters) {
+          const pm = (pet.pet_masters && pet.pet_masters[0] ? pet.pet_masters[0] : pet.pet_masters) || {};
+          const rarityPm = (pm as any).rarity || '?';
+          const fallbackBase = `/models/pet/${rarityPm}`;
+
+          setPetModelUrlV1((pm as any).model_url || `${fallbackBase}/v1.glb`);
+          setPetModelUrlV2((pm as any).model_url_v2 || `${fallbackBase}/v2.glb`);
+          setPetModelUrlV3((pm as any).model_url_v3 || `${fallbackBase}/v3.glb`);
+          setPetMasterName((pm as any).name || '不明');
+          setPetRarity(rarityPm);
+        }
+
+        const { data: inv } = await supabase.from('user_inventory').select('id, quantity, item_masters(*)').eq('user_id', sessionUserId).gt('quantity', 0);
+        if (inv) setInventory(inv);
+
+        const { count: feedLogCount } = await supabase.from('activity_logs').select('id', { count: 'exact', head: true }).eq('pet_id', pet.id).eq('action_type', 'feed');
+        if (feedLogCount !== null) setFeedCount(feedLogCount);
+
+        const { count: eventLogCount } = await supabase.from('activity_logs').select('id', { count: 'exact', head: true }).eq('pet_id', pet.id).eq('action_type', 'event');
+        if (eventLogCount !== null) setEventCount(eventLogCount);
+
+        const { count: mindCount } = await supabase.from('activity_logs').select('id', { count: 'exact', head: true }).eq('pet_id', pet.id).eq('action_type', 'mindfulness');
+        if (mindCount !== null) setMindfulnessLogCount(mindCount);
+
+        const { count: landmarkCount } = await supabase.from('landmark_visits').select('id', { count: 'exact', head: true }).eq('user_id', sessionUserId);
+        if (landmarkCount !== null) setLandmarkVisitCount(landmarkCount);
+
+        if (!pet.is_egg && pet.birthday) {
+          const daysLived = (new Date().getTime() - new Date(pet.birthday).getTime()) / (1000 * 3600 * 24);
+          if (daysLived > 30) {
+            triggerRainbowBridge(pet.id, pet.generation || 1);
+          }
+        }
+      } else {
+        setIsEggUnregistered(true);
+        setIsEgg(true);
+        setEggModelUrl('/models/eggs/egg.glb');
       }
-    };
-    fetchGameData();
+    } catch (error: any) {
+      console.error('fetchGameData error', error);
+      setDataLoadError(error?.message || 'データの取得に失敗しました。通信状態を確認して再試行してください。');
+    } finally {
+      // データ取得失敗時でもロード画面で固まらないようにする
+      setIsDataLoaded(true);
+    }
   }, [sessionUserId, supabase]);
+
+  useEffect(() => {
+    fetchGameData();
+  }, [fetchGameData]);
 
   const triggerRainbowBridge = async (targetPetId: string, currentGeneration: number) => {
     setShowRainbowBridge(true);
@@ -1732,6 +1737,19 @@ function HomeAR() {
       <Script src='https://cdn.jsdelivr.net/gh/c-frame/aframe-extras@7.2.0/dist/aframe-extras.min.js' strategy='afterInteractive' onLoad={() => setExtrasLoaded(true)} />
       <Script src='https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-aframe.prod.js' strategy='afterInteractive' onLoad={() => setMindarLoaded(true)} />
       <Script src='https://raw.githack.com/AR-js-org/AR.js/master/aframe/build/aframe-ar.js' strategy='afterInteractive' onLoad={() => setArjsLoaded(true)} />
+
+      {dataLoadError && (
+        <div className='absolute inset-0 z-[500] bg-black/90 backdrop-blur-md flex items-center justify-center p-6'>
+          <div className='bg-white rounded-3xl p-6 w-full max-w-sm shadow-2xl text-center space-y-4'>
+            <div className='text-4xl'>⚠️</div>
+            <h2 className='text-lg font-bold text-red-600'>データの取得に失敗しました</h2>
+            <p className='text-xs text-gray-600 whitespace-pre-wrap break-words'>{dataLoadError}</p>
+            <button onClick={() => fetchGameData()} className='w-full bg-slate-900 text-white font-bold py-3 rounded-xl shadow-lg active:scale-95 transition-transform'>
+              再試行する
+            </button>
+          </div>
+        </div>
+      )}
 
       {!cameraReady && viewMode !== 'report' && (
         <div className='absolute inset-0 z-[170] bg-black/70 backdrop-blur-sm flex items-center justify-center'>
