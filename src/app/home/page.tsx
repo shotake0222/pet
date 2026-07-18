@@ -70,19 +70,24 @@ function HomeAR() {
 
   // マーカーの数（0〜3の4つ）。卵の種類はマーカーに紐付けず、
   // egg_masters テーブルからのランダム選択のみで決定する。
-  // マーカーに対するペット/卵モデルの表示スケール。
-  // 遠くから見えず近づくと崩れて見える場合は、この値が大きすぎる（モデルの中にカメラが
-  // めり込んでいる）ことが原因。まずはこの1箇所だけを変えて調整する。
-  const MODEL_SCALE = 0.05;
   const MARKER_COUNT = 4;
+
+  // 🌟 デバッグ用: スケールと回転のリアルタイム調整State
+  const MODEL_SCALE = 0.05;
+  const [debugScaleX, setDebugScaleX] = useState(MODEL_SCALE);
+  const [debugScaleY, setDebugScaleY] = useState(MODEL_SCALE);
+  const [debugScaleZ, setDebugScaleZ] = useState(MODEL_SCALE);
+  const [debugRotX, setDebugRotX] = useState(0);
+  const [debugRotY, setDebugRotY] = useState(0);
+  const [debugRotZ, setDebugRotZ] = useState(0);
 
   // 現在カメラが検出しているマーカーのtargetIndex（未検出時はnull）
   // ※卵拾いボタンの表示可否（マーカーを検出しているかどうか）にのみ使用する
   const [detectedTargetIndex, setDetectedTargetIndex] = useState<number | null>(null);
 
   // 🌟 サウンドファイルは毎回new Audio()せず使い回す（パフォーマンス改善 & 
-  //    ファイル欠損時の挙動を安定させるため）。ここに書かれている7種類が
-  //    /public/sounds/ 以下に実在している必要がある。
+  //   ファイル欠損時の挙動を安定させるため）。ここに書かれている7種類が
+  //   /public/sounds/ 以下に実在している必要がある。
   const SOUND_SOURCES: Record<string, string> = {
     tap: '/sounds/tap.mp3',
     eat: '/sounds/eat.mp3',
@@ -1838,7 +1843,7 @@ function HomeAR() {
       {/* --- デバッグモーダル --- */}
       {isDebugModalOpen && (
         <div className='absolute inset-0 z-[300] bg-black/80 backdrop-blur-md flex items-center justify-center p-4'>
-          <div className='bg-white rounded-3xl p-6 w-full max-w-sm shadow-2xl space-y-4 max-h-[80vh] overflow-y-auto relative'>
+          <div className='bg-white rounded-3xl p-6 w-full max-w-sm shadow-2xl space-y-4 max-h-[80vh] overflow-y-auto relative text-black'>
             <div className='flex justify-between items-center mb-2 border-b pb-2'>
               <h2 className='text-xl font-bold text-red-600'>🐞 デバッグメニュー</h2>
               <button onClick={() => setIsDebugModalOpen(false)} className='text-gray-500 font-bold bg-gray-100 px-3 py-1 rounded'>
@@ -1846,7 +1851,38 @@ function HomeAR() {
               </button>
             </div>
 
-            <div className='space-y-2'>
+            {/* 🌟 追加: リアルタイムスケール/回転調整UI */}
+            <div className='space-y-2 mt-4 bg-gray-100 p-3 rounded-lg text-black'>
+              <h3 className='font-bold text-sm bg-gray-300 p-1 rounded'>📐 モデル調整（リアルタイム）</h3>
+              <div className='text-xs space-y-2'>
+                <div>
+                  <label className='block'>Scale X: {debugScaleX}</label>
+                  <input type="range" min="0.001" max="0.5" step="0.001" value={debugScaleX} onChange={e => setDebugScaleX(parseFloat(e.target.value))} className="w-full" />
+                </div>
+                <div>
+                  <label className='block'>Scale Y: {debugScaleY}</label>
+                  <input type="range" min="0.001" max="0.5" step="0.001" value={debugScaleY} onChange={e => setDebugScaleY(parseFloat(e.target.value))} className="w-full" />
+                </div>
+                <div>
+                  <label className='block'>Scale Z: {debugScaleZ}</label>
+                  <input type="range" min="0.001" max="0.5" step="0.001" value={debugScaleZ} onChange={e => setDebugScaleZ(parseFloat(e.target.value))} className="w-full" />
+                </div>
+                <div>
+                  <label className='block'>Rot X: {debugRotX}°</label>
+                  <input type="range" min="-180" max="180" step="1" value={debugRotX} onChange={e => setDebugRotX(parseFloat(e.target.value))} className="w-full" />
+                </div>
+                <div>
+                  <label className='block'>Rot Y: {debugRotY}°</label>
+                  <input type="range" min="-180" max="180" step="1" value={debugRotY} onChange={e => setDebugRotY(parseFloat(e.target.value))} className="w-full" />
+                </div>
+                <div>
+                  <label className='block'>Rot Z: {debugRotZ}°</label>
+                  <input type="range" min="-180" max="180" step="1" value={debugRotZ} onChange={e => setDebugRotZ(parseFloat(e.target.value))} className="w-full" />
+                </div>
+              </div>
+            </div>
+
+            <div className='space-y-2 mt-4'>
               <h3 className='font-bold text-sm bg-gray-200 p-1 rounded'>🥚 卵の検証</h3>
               <button onClick={handleCreateEgg} className='w-full bg-yellow-500 text-white font-bold py-2 rounded-lg shadow text-sm'>
                 新しい卵を取得する
@@ -2763,52 +2799,52 @@ function HomeAR() {
                 <a-gltf-model
                   id='pet-model-0'
                   class={(!isEgg && !isSleeping) ? 'clickable' : ''}
-                  rotation='0 0 0'
+                  rotation={`${debugRotX} ${debugRotY} ${debugRotZ}`}
                   position='0 0 0'
-                  scale={hatchAnimating ? `${MODEL_SCALE * 0.2} ${MODEL_SCALE * 0.2} ${MODEL_SCALE * 0.2}` : `${MODEL_SCALE} ${MODEL_SCALE} ${MODEL_SCALE}`}
+                  scale={hatchAnimating ? `${debugScaleX * 0.2} ${debugScaleY * 0.2} ${debugScaleZ * 0.2}` : `${debugScaleX} ${debugScaleY} ${debugScaleZ}`}
                   src='#pet-asset'
                   shadow='cast: true; receive: true'
                   animation-mixer={isEgg ? '' : `clip: ${actionAnim || currentMood.clip}; loop: ${actionAnim ? 'once' : 'repeat'}; crossFadeDuration: 0.3;`}
-                  animation={hatchAnimating ? `property: scale; to: ${MODEL_SCALE} ${MODEL_SCALE} ${MODEL_SCALE}; dur: 800; easing: easeOutElastic;` : undefined}
+                  animation={hatchAnimating ? `property: scale; to: ${debugScaleX} ${debugScaleY} ${debugScaleZ}; dur: 800; easing: easeOutElastic;` : undefined}
                 ></a-gltf-model>
               </a-entity>
               <a-entity mindar-image-target='targetIndex: 1' id='marker-target-1'>
                 <a-gltf-model
                   id='pet-model-1'
                   class={(!isEgg && !isSleeping) ? 'clickable' : ''}
-                  rotation='0 0 0'
+                  rotation={`${debugRotX} ${debugRotY} ${debugRotZ}`}
                   position='0 0 0'
-                  scale={hatchAnimating ? `${MODEL_SCALE * 0.2} ${MODEL_SCALE * 0.2} ${MODEL_SCALE * 0.2}` : `${MODEL_SCALE} ${MODEL_SCALE} ${MODEL_SCALE}`}
+                  scale={hatchAnimating ? `${debugScaleX * 0.2} ${debugScaleY * 0.2} ${debugScaleZ * 0.2}` : `${debugScaleX} ${debugScaleY} ${debugScaleZ}`}
                   src='#pet-asset'
                   shadow='cast: true; receive: true'
                   animation-mixer={isEgg ? '' : `clip: ${actionAnim || currentMood.clip}; loop: ${actionAnim ? 'once' : 'repeat'}; crossFadeDuration: 0.3;`}
-                  animation={hatchAnimating ? `property: scale; to: ${MODEL_SCALE} ${MODEL_SCALE} ${MODEL_SCALE}; dur: 800; easing: easeOutElastic;` : undefined}
+                  animation={hatchAnimating ? `property: scale; to: ${debugScaleX} ${debugScaleY} ${debugScaleZ}; dur: 800; easing: easeOutElastic;` : undefined}
                 ></a-gltf-model>
               </a-entity>
               <a-entity mindar-image-target='targetIndex: 2' id='marker-target-2'>
                 <a-gltf-model
                   id='pet-model-2'
                   class={(!isEgg && !isSleeping) ? 'clickable' : ''}
-                  rotation='0 0 0'
+                  rotation={`${debugRotX} ${debugRotY} ${debugRotZ}`}
                   position='0 0 0'
-                  scale={hatchAnimating ? `${MODEL_SCALE * 0.2} ${MODEL_SCALE * 0.2} ${MODEL_SCALE * 0.2}` : `${MODEL_SCALE} ${MODEL_SCALE} ${MODEL_SCALE}`}
+                  scale={hatchAnimating ? `${debugScaleX * 0.2} ${debugScaleY * 0.2} ${debugScaleZ * 0.2}` : `${debugScaleX} ${debugScaleY} ${debugScaleZ}`}
                   src='#pet-asset'
                   shadow='cast: true; receive: true'
                   animation-mixer={isEgg ? '' : `clip: ${actionAnim || currentMood.clip}; loop: ${actionAnim ? 'once' : 'repeat'}; crossFadeDuration: 0.3;`}
-                  animation={hatchAnimating ? `property: scale; to: ${MODEL_SCALE} ${MODEL_SCALE} ${MODEL_SCALE}; dur: 800; easing: easeOutElastic;` : undefined}
+                  animation={hatchAnimating ? `property: scale; to: ${debugScaleX} ${debugScaleY} ${debugScaleZ}; dur: 800; easing: easeOutElastic;` : undefined}
                 ></a-gltf-model>
               </a-entity>
               <a-entity mindar-image-target='targetIndex: 3' id='marker-target-3'>
                 <a-gltf-model
                   id='pet-model-3'
                   class={(!isEgg && !isSleeping) ? 'clickable' : ''}
-                  rotation='0 0 0'
+                  rotation={`${debugRotX} ${debugRotY} ${debugRotZ}`}
                   position='0 0 0'
-                  scale={hatchAnimating ? `${MODEL_SCALE * 0.2} ${MODEL_SCALE * 0.2} ${MODEL_SCALE * 0.2}` : `${MODEL_SCALE} ${MODEL_SCALE} ${MODEL_SCALE}`}
+                  scale={hatchAnimating ? `${debugScaleX * 0.2} ${debugScaleY * 0.2} ${debugScaleZ * 0.2}` : `${debugScaleX} ${debugScaleY} ${debugScaleZ}`}
                   src='#pet-asset'
                   shadow='cast: true; receive: true'
                   animation-mixer={isEgg ? '' : `clip: ${actionAnim || currentMood.clip}; loop: ${actionAnim ? 'once' : 'repeat'}; crossFadeDuration: 0.3;`}
-                  animation={hatchAnimating ? `property: scale; to: ${MODEL_SCALE} ${MODEL_SCALE} ${MODEL_SCALE}; dur: 800; easing: easeOutElastic;` : undefined}
+                  animation={hatchAnimating ? `property: scale; to: ${debugScaleX} ${debugScaleY} ${debugScaleZ}; dur: 800; easing: easeOutElastic;` : undefined}
                 ></a-gltf-model>
               </a-entity>
             </a-scene>
