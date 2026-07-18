@@ -1213,6 +1213,35 @@ function HomeAR() {
     return () => cleanups.forEach(fn => fn());
   }, [viewMode, aframeLoaded, extrasLoaded, mindarLoaded, isSwitchingMode, sceneKey]);
 
+  // 🌟 診断用: glbモデルの読み込み成否をコンソールに出す（表示されない原因の切り分け用）
+  useEffect(() => {
+    if (viewMode !== 'mindar' || !(aframeLoaded && extrasLoaded && mindarLoaded) || isSwitchingMode) return;
+
+    const cleanups: Array<() => void> = [];
+
+    const assetEl = document.querySelector('#pet-asset');
+    if (assetEl) {
+      const onAssetError = (e: any) => console.error('🔴 モデルasset読み込みエラー(#pet-asset):', activeModelUrl, e?.detail || e);
+      assetEl.addEventListener('error', onAssetError);
+      cleanups.push(() => assetEl.removeEventListener('error', onAssetError));
+    }
+
+    Array.from({ length: MARKER_COUNT }).forEach((_, i) => {
+      const el = document.querySelector(`#pet-model-${i}`);
+      if (!el) return;
+      const onModelError = (e: any) => console.error(`🔴 pet-model-${i} の読み込みに失敗:`, activeModelUrl, e?.detail || e);
+      const onModelLoaded = () => console.log(`✅ pet-model-${i} 読み込み成功:`, activeModelUrl);
+      el.addEventListener('model-error', onModelError);
+      el.addEventListener('model-loaded', onModelLoaded);
+      cleanups.push(() => {
+        el.removeEventListener('model-error', onModelError);
+        el.removeEventListener('model-loaded', onModelLoaded);
+      });
+    });
+
+    return () => cleanups.forEach(fn => fn());
+  }, [viewMode, aframeLoaded, extrasLoaded, mindarLoaded, isSwitchingMode, sceneKey, activeModelUrl]);
+
   const handleCreateEgg = async () => {
     if (!sessionUserId) return;
     try {
