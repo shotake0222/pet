@@ -77,8 +77,8 @@ function HomeAR() {
   const [detectedTargetIndex, setDetectedTargetIndex] = useState<number | null>(null);
 
   // 🌟 サウンドファイルは毎回new Audio()せず使い回す（パフォーマンス改善 & 
-  //    ファイル欠損時の挙動を安定させるため）。ここに書かれている7種類が
-  //    /public/sounds/ 以下に実在している必要がある。
+  //   ファイル欠損時の挙動を安定させるため）。ここに書かれている7種類が
+  //   /public/sounds/ 以下に実在している必要がある。
   const SOUND_SOURCES: Record<string, string> = {
     tap: '/sounds/tap.mp3',
     eat: '/sounds/eat.mp3',
@@ -1628,7 +1628,10 @@ function HomeAR() {
   }
 
   return (
-    <div className='relative isolate w-full h-full min-h-0 min-w-0 max-w-full overflow-hidden bg-black text-white'>
+    <div 
+      className='fixed inset-0 z-[9999] isolate w-full min-h-0 min-w-0 max-w-full overflow-hidden bg-black text-white'
+      style={{ height: 'var(--app-height, 100dvh)' }}
+    >
       {/* 🌟 画面が左側に潰れる問題(親コンテナ幅依存の暴走)を根本から防ぐ強制CSS */}
       <style jsx global>{`
         html,
