@@ -314,10 +314,18 @@ function HomeAR() {
       scenes.forEach(scene => {
         try {
           scene.resize?.();
-          scene.renderer?.setSize?.(width, height, false);
-          if (scene.camera) {
-            scene.camera.aspect = width / height;
-            scene.camera.updateProjectionMatrix?.();
+          // 🌟 MindARは実カメラ解像度をもとに「マーカー実寸⇔AR空間」のスケールを
+          // 自前で正確に計算・管理している。ここでコンテナのCSSピクセルサイズを使って
+          // レンダラー/カメラのFOVを強制上書きすると、モード切替を繰り返すたびに
+          // そのスケール計算が狂っていく（卵が巨大化していく）原因になるため、
+          // MindARのシーンではスキップし、AR.js(gps)側のシーンにのみ適用する。
+          const isMindArScene = scene.hasAttribute?.('mindar-image');
+          if (!isMindArScene) {
+            scene.renderer?.setSize?.(width, height, false);
+            if (scene.camera) {
+              scene.camera.aspect = width / height;
+              scene.camera.updateProjectionMatrix?.();
+            }
           }
         } catch {}
       });
@@ -2420,7 +2428,16 @@ function HomeAR() {
       {sessionUserId && viewMode !== 'report' && (
         <div className='absolute top-4 left-4 right-4 z-20 flex flex-col gap-3 pointer-events-none'>
           <div className='flex justify-between items-end'>
-            <span className='text-white font-bold text-3xl drop-shadow-lg bg-black/30 px-3 py-1 rounded-xl backdrop-blur-sm'>{isEggUnregistered ? '' : displayName}</span>
+            {!isEggUnregistered && !customName ? (
+              <button
+                onClick={() => { setNamingInput(''); setShowNamingScreen(true); playSound('tap'); }}
+                className='pointer-events-auto text-white font-bold text-lg drop-shadow-lg bg-black/40 px-3 py-1.5 rounded-xl backdrop-blur-sm border border-white/30 active:scale-95 transition-transform flex items-center gap-1'
+              >
+                ✏️ 名前をつける
+              </button>
+            ) : (
+              <span className='text-white font-bold text-3xl drop-shadow-lg bg-black/30 px-3 py-1 rounded-xl backdrop-blur-sm'>{isEggUnregistered ? '' : displayName}</span>
+            )}
             <span className={`${currentMood.color} text-white px-4 py-2 rounded-xl font-bold shadow-xl text-md transition-colors duration-300 border border-white/20`}>{currentMood.text}</span>
           </div>
         </div>
