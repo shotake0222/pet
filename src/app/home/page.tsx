@@ -49,17 +49,11 @@ function HomeAR() {
   const [extrasLoaded, setExtrasLoaded] = useState(false);
   const [mindarLoaded, setMindarLoaded] = useState(false);
   const [arjsLoaded, setArjsLoaded] = useState(false);
-  // 🌟 MindAR(mindar-image)とAR.js(aframe-ar)は同じAFRAME名前空間を取り合う別々のARエンジン。
-  // 両方を常に読み込んでいると、AR.js側の内部ループがMindARのカメラ/レンダラーを
-  // 触りに行って壊してしまう（レンダリング崩れ・色化け・スケール異常の原因）。
-  // そのため、AR.jsは「さんぽ」を一度でも開くまで読み込まないようにする。
   const [gpsEverActivated, setGpsEverActivated] = useState(viewMode === 'gps');
   useEffect(() => {
     if (viewMode === 'gps') setGpsEverActivated(true);
   }, [viewMode]);
   const [cameraReady, setCameraReady] = useState(false);
-  // cameraReadyは「待機を打ち切ったかどうか」のフラグ（UIブロック解除用）。
-  // こちらは「実際に映像取得まで確認できたか」を別管理し、失敗時のリトライ導線に使う。
   const [cameraTrulyReady, setCameraTrulyReady] = useState(false);
   const [isSwitchingMode, setIsSwitchingMode] = useState(false);
 
@@ -71,16 +65,9 @@ function HomeAR() {
 
   const [hatchOverlay, setHatchOverlay] = useState<{ active: boolean; particles: any[]; rarity: string } | null>(null);
 
-  // 🌟 4体分のマーカーを1つの.mindファイルにまとめてコンパイルしたもの（targetIndex: 0〜3）。
-  // MindARは<a-scene>ごとに.mindを1つしかロードできないため、複数マーカーは
-  // 1ファイルにまとめてtargetIndexで区別するのが正しい運用です。
   const petMarkerUrl = '/markers/targets.mind';
-
-  // マーカーの数（0〜3の4つ）。卵の種類はマーカーに紐付けず、
-  // egg_masters テーブルからのランダム選択のみで決定する。
   const MARKER_COUNT = 4;
 
-  // 🌟 デバッグ用: スケールと回転のリアルタイム調整State
   const MODEL_SCALE = 0.5;
   const [debugScaleX, setDebugScaleX] = useState(MODEL_SCALE);
   const [debugScaleY, setDebugScaleY] = useState(MODEL_SCALE);
@@ -88,14 +75,10 @@ function HomeAR() {
   const [debugRotX, setDebugRotX] = useState(0);
   const [debugRotY, setDebugRotY] = useState(0);
   const [debugRotZ, setDebugRotZ] = useState(0);
+  const [debugAnimEnabled, setDebugAnimEnabled] = useState(true);
 
-  // 現在カメラが検出しているマーカーのtargetIndex（未検出時はnull）
-  // ※卵拾いボタンの表示可否（マーカーを検出しているかどうか）にのみ使用する
   const [detectedTargetIndex, setDetectedTargetIndex] = useState<number | null>(null);
 
-  // 🌟 サウンドファイルは毎回new Audio()せず使い回す（パフォーマンス改善 & 
-  //    ファイル欠損時の挙動を安定させるため）。ここに書かれている7種類が
-  //    /public/sounds/ 以下に実在している必要がある。
   const SOUND_SOURCES: Record<string, string> = {
     tap: '/sounds/tap.mp3',
     eat: '/sounds/eat.mp3',
@@ -119,11 +102,8 @@ function HomeAR() {
         audio.volume = 0.7;
         audioPoolRef.current[name] = audio;
       }
-      // 連打しても再生できるよう毎回頭出しする
       audio.currentTime = 0;
       audio.play().catch(err => {
-        // ファイル欠損(416等)やブラウザの自動再生制限で失敗しても、
-        // アプリの動作自体は止めない。コンソールにだけ残す。
         console.warn(`サウンド再生に失敗しました (${name}):`, err);
       });
     } catch (err) {
@@ -141,7 +121,6 @@ function HomeAR() {
   };
 
   const [hatchAnimating, setHatchAnimating] = useState(false);
-
   const [levelUpOverlay, setLevelUpOverlay] = useState<{ active: boolean; particles: any[]; level: number; isMilestone: boolean } | null>(null);
 
   const [inventory, setInventory] = useState<any[]>([]);
@@ -152,6 +131,11 @@ function HomeAR() {
   const [newsList, setNewsList] = useState<any[]>([]);
   const [userNotifications, setUserNotifications] = useState<any[]>([]);
   const [isNewsOpen, setIsNewsOpen] = useState(false);
+
+  // 追加モーダルState
+  const [isFoodMenuOpen, setIsFoodMenuOpen] = useState(false);
+  const [isWalkPromptOpen, setIsWalkPromptOpen] = useState(false);
+  const [isHelpModalOpen, setIsHelpModalOpen] = useState(false);
 
   const [showProfileSetup, setShowProfileSetup] = useState(false);
   const [inputBirthYear, setInputBirthYear] = useState('');
@@ -191,12 +175,8 @@ function HomeAR() {
   const [isSpotMapOpen, setIsSpotMapOpen] = useState(false);
   const [cameraFacing, setCameraFacing] = useState<'environment' | 'user'>('environment');
   const [sceneKey, setSceneKey] = useState(0);
-  // MindAR / AR.js が生成する video・canvas・a-scene を、このUI内に閉じ込めるための親要素。
   const arViewportRef = useRef<HTMLDivElement>(null);
 
-  // Android Chromeは読み込み中にアドレスバーの状態が確定しておらず、
-  // dvh/svhの計算がジャンプすることがあるため、実測した高さをCSS変数として
-  // 直接DOMへ書き込む（Reactのstateは使わず再レンダリングを起こさない）。
   useEffect(() => {
     const setAppHeight = () => {
       const h = window.visualViewport?.height ?? window.innerHeight;
@@ -205,8 +185,6 @@ function HomeAR() {
     setAppHeight();
     window.addEventListener('resize', setAppHeight);
     window.addEventListener('orientationchange', setAppHeight);
-    // Android Chromeのアドレスバー開閉は通常のresizeイベントが発火しないことがあるため、
-    // visualViewportのresizeも合わせて監視する（Reactのstateは使わないのでガタつきは起きない）
     window.visualViewport?.addEventListener('resize', setAppHeight);
     window.visualViewport?.addEventListener('scroll', setAppHeight);
     return () => {
@@ -217,7 +195,6 @@ function HomeAR() {
     };
   }, []);
 
-  // 🌟 追加したモーダル用State
   const [isStatusModalOpen, setIsStatusModalOpen] = useState(false);
   const [isDebugModalOpen, setIsDebugModalOpen] = useState(false);
 
@@ -230,7 +207,6 @@ function HomeAR() {
 
   const stepCount = Math.floor(walkDistance / 0.75);
 
-  // このゲームのARコンテナ内だけを解放する。ページ上の他の video / canvas には触れない。
   const releaseCameraResources = useCallback(() => {
     try {
       const viewport = arViewportRef.current;
@@ -255,17 +231,11 @@ function HomeAR() {
     } catch {}
   }, []);
 
-  // MindAR / AR.js が非同期で追加するDOMを、AR表示用コンテナの座標系に固定する。
-  // fixed / 100vw / 100vh を使わないため、UIカードやスマホ幅の親要素からはみ出さない。
   const normalizeArLayers = useCallback(() => {
     try {
       const viewport = arViewportRef.current;
       if (!viewport) return;
 
-      // AR.js の実装差分によっては camera video が document.body 直下へ追加される。
-      // このゲームの起動中に作られたライブカメラだけを、表示用コンテナへ移動する。
-      // (autoplay/playsInline属性の有無に関わらず、srcObjectが設定済みのvideoは
-      //  すべて対象にすることで、Android端末での検出漏れ＝カメラが左に寄る不具合を防ぐ)
       const detachedCameraVideos = Array.from(document.querySelectorAll('video')).filter(video => {
         return !viewport.contains(video) && Boolean(video.srcObject);
       });
@@ -283,8 +253,6 @@ function HomeAR() {
         el.style.objectPosition = 'center';
         el.style.zIndex = '0';
         el.style.pointerEvents = 'none';
-        // AR.js/MindARが独自に付与するtransform/margin/top/leftが残っていると、
-        // このコンテナへ移動した後も古い位置指定が効いてカメラ映像が左右にズレるため、明示的にリセットする
         el.style.transform = 'none';
         el.style.margin = '0';
         el.style.top = '0';
@@ -302,7 +270,7 @@ function HomeAR() {
         el.style.width = '100%';
         el.style.height = '100%';
         el.style.zIndex = '1';
-        el.style.pointerEvents = 'none';
+        el.style.pointerEvents = 'auto'; // <- ここをautoに修正してA-Frameへのクリックを通す
         el.style.transform = 'none';
         el.style.margin = '0';
       });
@@ -316,7 +284,7 @@ function HomeAR() {
         el.style.width = '100%';
         el.style.height = '100%';
         el.style.zIndex = '1';
-        el.style.pointerEvents = 'none';
+        el.style.pointerEvents = 'auto'; // <- ここも修正
         el.style.transform = 'none';
         el.style.margin = '0';
       });
@@ -327,11 +295,6 @@ function HomeAR() {
       scenes.forEach(scene => {
         try {
           scene.resize?.();
-          // 🌟 MindARは実カメラ解像度をもとに「マーカー実寸⇔AR空間」のスケールを
-          // 自前で正確に計算・管理している。ここでコンテナのCSSピクセルサイズを使って
-          // レンダラー/カメラのFOVを強制上書きすると、モード切替を繰り返すたびに
-          // そのスケール計算が狂っていく（卵が巨大化していく）原因になるため、
-          // MindARのシーンではスキップし、AR.js(gps)側のシーンにのみ適用する。
           const isMindArScene = scene.hasAttribute?.('mindar-image');
           if (!isMindArScene) {
             scene.renderer?.setSize?.(width, height, false);
@@ -345,14 +308,22 @@ function HomeAR() {
     } catch {}
   }, []);
 
-  // 🌟 修正: フルリロードをやめて安全にモード切替
+  const closeAllMenus = () => {
+    setIsSpotMapOpen(false);
+    setIsNewsOpen(false);
+    setIsInventoryOpen(false);
+    setIsShopOpen(false);
+    setIsStatusModalOpen(false);
+    setIsDebugModalOpen(false);
+    setIsFoodMenuOpen(false);
+    setIsWalkPromptOpen(false);
+    setIsHelpModalOpen(false);
+  };
+
   const handleModeChange = (mode: 'mindar' | 'gps' | 'report') => {
     playSound('tap');
     if (mode === viewMode) return;
 
-    // 🌟 MindARとAR.jsは同居させると内部状態が競合し、レンダリング崩れの原因になる。
-    // 一度でもAR.jsが読み込まれた後にmindar⇄gpsを行き来する場合は、
-    // 中途半端な状態リセットに頼らず、確実にクリーンな状態にするためページごと再読み込みする。
     const isCrossingArEngines = (mode === 'gps' && viewMode === 'mindar') || (mode === 'mindar' && viewMode === 'gps');
     if (isCrossingArEngines && arjsLoaded) {
       const nextParams = new URLSearchParams(searchParams.toString());
@@ -364,17 +335,10 @@ function HomeAR() {
       return;
     }
 
-    // モード遷移時に残留しやすい前面UIを閉じる
-    setIsSpotMapOpen(false);
-    setIsNewsOpen(false);
-    setIsInventoryOpen(false);
-    setIsShopOpen(false);
-    setIsStatusModalOpen(false);
-    setIsDebugModalOpen(false);
+    closeAllMenus();
 
     setIsSwitchingMode(true);
     setCameraReady(mode === 'report');
-    // report -> mindar でも残留videoがあるため、モード遷移時は毎回解放する
     releaseCameraResources();
 
     setViewMode(mode);
@@ -398,7 +362,6 @@ function HomeAR() {
     setIsClient(true);
   }, []);
 
-  // URLの誤パラメータ (?mode=minder など) を正規化して遷移バグを防ぐ
   useEffect(() => {
     if (!rawModeParam) return;
     const isValid = rawModeParam === 'mindar' || rawModeParam === 'gps' || rawModeParam === 'report';
@@ -414,14 +377,12 @@ function HomeAR() {
     window.history.replaceState(window.history.state, '', nextUrl);
   }, [rawModeParam, searchParams, tagIdParam]);
 
-  // --- 追加: アンマウント時のみ解放 ---
   useEffect(() => {
     return () => {
       releaseCameraResources();
     };
   }, [releaseCameraResources]);
 
-  // モード遷移直後はARライブラリがDOMを差し替えるため、短時間だけ複数回正規化する。
   useEffect(() => {
     if (viewMode === 'report') return;
     normalizeArLayers();
@@ -436,7 +397,6 @@ function HomeAR() {
     return () => window.clearInterval(timer);
   }, [viewMode, sceneKey, isSwitchingMode, normalizeArLayers]);
 
-  // 回転・アドレスバーの出入り・親UIのリサイズ後も、カメラとA-Frame canvasを同じ枠に合わせる。
   useEffect(() => {
     if (viewMode === 'report') return;
     const viewport = arViewportRef.current;
@@ -449,7 +409,6 @@ function HomeAR() {
     const observer = new ResizeObserver(sync);
     observer.observe(viewport);
 
-    // AR.js が video を body 直下へ追加するケースでも、追加直後にコンテナへ収める。
     const bodyObserver = new MutationObserver(sync);
     bodyObserver.observe(document.body, { childList: true });
     sync();
@@ -465,14 +424,12 @@ function HomeAR() {
     setCameraReady(viewMode === 'report');
   }, [viewMode, isAuthChecking, isDataLoaded]);
 
-  // モード切替がまれに固まるケースへの保険
   useEffect(() => {
     if (!isSwitchingMode) return;
     const timer = window.setTimeout(() => setIsSwitchingMode(false), 1500);
     return () => window.clearTimeout(timer);
   }, [isSwitchingMode]);
 
-  // --- 追加: videoの準備完了待ち ---
   useEffect(() => {
     if (viewMode === 'report') {
       setCameraReady(true);
@@ -483,7 +440,7 @@ function HomeAR() {
 
     setCameraTrulyReady(false);
     let tries = 0;
-    const maxTries = 40; // 8秒
+    const maxTries = 40;
     const timer = window.setInterval(() => {
       const viewport = arViewportRef.current;
       const videos = Array.from(viewport?.querySelectorAll('video') ?? []) as HTMLVideoElement[];
@@ -498,7 +455,6 @@ function HomeAR() {
 
       tries += 1;
       if (tries >= maxTries) {
-        // 待機は打ち切ってUIは表示するが、映像自体は未確認のままなのでリトライ導線を出す
         setCameraReady(true);
         window.clearInterval(timer);
       }
@@ -507,7 +463,6 @@ function HomeAR() {
     return () => window.clearInterval(timer);
   }, [viewMode, isClient, isAuthChecking, isDataLoaded, isSwitchingMode, sceneKey]);
 
-  // カメラが起動しなかった時に、手動でAR/カメラの再取得をやり直す
   const retryCamera = useCallback(() => {
     playSound('tap');
     setIsSwitchingMode(true);
@@ -520,9 +475,6 @@ function HomeAR() {
     }, 350);
   }, [playSound, releaseCameraResources]);
 
-  // ==========================================
-  //  Auth & Profile チェック
-  // ==========================================
   useEffect(() => {
     const initAuthAndProfile = async () => {
       try {
@@ -712,9 +664,6 @@ function HomeAR() {
         .maybeSingle();
 
       if (petFetchError) {
-        // 🌟 取得エラーを「まだ卵を拾っていない」と誤判定しないようにする。
-        // ここを誤判定すると、実際にはDBにペットが存在するのに未登録画面に
-        // 戻ってしまい、進捗が消えたように見える不具合の原因になる。
         console.error('ペット情報の取得に失敗しました:', petFetchError);
         throw petFetchError;
       }
@@ -791,12 +740,6 @@ function HomeAR() {
         const { count: landmarkCount } = await supabase.from('landmark_visits').select('id', { count: 'exact', head: true }).eq('user_id', sessionUserId);
         if (landmarkCount !== null) setLandmarkVisitCount(landmarkCount);
 
-        if (!pet.is_egg && pet.birthday) {
-          const daysLived = (new Date().getTime() - new Date(pet.birthday).getTime()) / (1000 * 3600 * 24);
-          if (daysLived > 30) {
-            triggerRainbowBridge(pet.id, pet.generation || 1);
-          }
-        }
       } else {
         setIsEggUnregistered(true);
         setIsEgg(true);
@@ -806,7 +749,6 @@ function HomeAR() {
       console.error('fetchGameData error', error);
       setDataLoadError(error?.message || 'データの取得に失敗しました。通信状態を確認して再試行してください。');
     } finally {
-      // データ取得失敗時でもロード画面で固まらないようにする
       setIsDataLoaded(true);
     }
   }, [sessionUserId, supabase]);
@@ -856,9 +798,9 @@ function HomeAR() {
 
   const getCurrentModelUrl = () => {
     if (isEgg || isEggUnregistered) {
-      // 卵はマーカーに依らず、egg_masters テーブルからのランダム選択(eggModelUrl)を常に使う
       return eggModelUrl;
     }
+    // 5の倍数ごとに管理画面設定されたモデル（V2, V3）があれば姿を変える
     if (level >= 10 && petModelUrlV3) return petModelUrlV3;
     if (level >= 5 && petModelUrlV2) return petModelUrlV2;
     return petModelUrlV1;
@@ -868,8 +810,9 @@ function HomeAR() {
   const displayName = customName || petMasterName || '名無し';
 
   const getLevelRequirement = (levelNumber: number) => ({
-    distance: targetDistanceToHatch * levelNumber,
-    feed: targetFeedCount * levelNumber,
+    // 難易度を上げるためノルマを倍増
+    distance: targetDistanceToHatch * levelNumber * 2,
+    feed: targetFeedCount * levelNumber * 2,
     landmark: targetLandmarkVisits * levelNumber,
     event: targetEventCount * levelNumber,
   });
@@ -883,7 +826,7 @@ function HomeAR() {
   const isHatchReady = !isEggUnregistered && isEgg && petId && hatchProgress.distance >= 1 && hatchProgress.feed >= 1 && hatchProgress.landmark >= 1 && hatchProgress.event >= 1;
   const nextLevelRequirements = getLevelRequirement(level);
   const isNextLevelReady = !isEgg && petId && walkDistance >= nextLevelRequirements.distance && feedCount >= nextLevelRequirements.feed && landmarkVisitCount >= nextLevelRequirements.landmark && eventCount >= nextLevelRequirements.event;
-  const expNeededForNextLevel = level * 150;
+  const expNeededForNextLevel = level * 500; // レベルアップ難易度を大幅アップ
 
   const resetPetToEgg = async (reason: string) => {
     if (!petId || isEgg || gameOverHandled) return;
@@ -995,26 +938,27 @@ function HomeAR() {
 
   const showHatchEffect = (rarity: string) => {
     return new Promise<void>(resolve => {
-      const multiplier = rarity === 'UR' ? 3 : rarity === 'SR' ? 2 : rarity === 'R' ? 1.5 : 1;
-      const base = 12;
-      const count = Math.min(120, Math.floor(base * multiplier * (rarity === 'UR' ? 2.5 : 1)));
+      // エフェクトをさらに極端に派手にする
+      const multiplier = rarity === 'UR' ? 8 : rarity === 'SR' ? 4 : rarity === 'R' ? 2 : 1;
+      const base = 30;
+      const count = Math.min(300, Math.floor(base * multiplier));
       const colors = {
         N: ['#E5E7EB', '#F9FAFB'],
         R: ['#FDE68A', '#FCA5A5', '#FBCFE8'],
-        SR: ['#C7A3FF', '#FDE68A', '#FECACA', '#A7F3D0'],
-        UR: ['#FFD700', '#FF73FA', '#7CF0FF', '#FF9F1C'],
+        SR: ['#C7A3FF', '#FDE68A', '#FECACA', '#A7F3D0', '#FFFFFF'],
+        UR: ['#FFD700', '#FF73FA', '#7CF0FF', '#FF9F1C', '#FFFFFF', '#00FF00'],
       } as Record<string, string[]>;
 
       const particles = Array.from({ length: count }).map((_, i) => {
         const angle = (Math.random() - 0.5) * Math.PI * 2;
-        const distance = 80 + Math.random() * (rarity === 'UR' ? 360 : rarity === 'SR' ? 260 : rarity === 'R' ? 180 : 120);
+        const distance = 80 + Math.random() * (rarity === 'UR' ? 500 : rarity === 'SR' ? 350 : rarity === 'R' ? 250 : 150);
         return {
           id: `${Date.now()}_${i}`,
           dx: Math.cos(angle) * distance,
-          dy: Math.sin(angle) * distance - Math.random() * 80,
+          dy: Math.sin(angle) * distance - Math.random() * 100,
           color: (colors[rarity as keyof typeof colors] || colors.N)[Math.floor(Math.random() * (colors[rarity as keyof typeof colors] || colors.N).length)],
-          size: 6 + Math.random() * (rarity === 'UR' ? 12 : rarity === 'SR' ? 10 : 6),
-          duration: 700 + Math.random() * (rarity === 'UR' ? 1200 : 800),
+          size: 6 + Math.random() * (rarity === 'UR' ? 15 : rarity === 'SR' ? 12 : 8),
+          duration: 700 + Math.random() * (rarity === 'UR' ? 2000 : rarity === 'SR' ? 1500 : 800),
         };
       });
 
@@ -1034,20 +978,20 @@ function HomeAR() {
   const showLevelUpEffect = (newLevel: number) => {
     return new Promise<void>(resolve => {
       const isMilestone = newLevel % 5 === 0;
-      const count = isMilestone ? 150 : 50;
+      const count = isMilestone ? 250 : 50;
 
       const colors = isMilestone ? ['#FFD700', '#FF73FA', '#7CF0FF', '#FF9F1C', '#FFFFFF'] : ['#60A5FA', '#34D399', '#FBBF24'];
 
       const particles = Array.from({ length: count }).map((_, i) => {
         const angle = (Math.random() - 0.5) * Math.PI * 2;
-        const distance = isMilestone ? 150 + Math.random() * 250 : 80 + Math.random() * 150;
+        const distance = isMilestone ? 150 + Math.random() * 350 : 80 + Math.random() * 150;
         return {
           id: `lvl_${Date.now()}_${i}`,
           dx: Math.cos(angle) * distance,
-          dy: Math.sin(angle) * distance - Math.random() * 100,
+          dy: Math.sin(angle) * distance - Math.random() * 150,
           color: colors[Math.floor(Math.random() * colors.length)],
-          size: isMilestone ? 8 + Math.random() * 12 : 6 + Math.random() * 8,
-          duration: isMilestone ? 1000 + Math.random() * 1500 : 700 + Math.random() * 800,
+          size: isMilestone ? 8 + Math.random() * 15 : 6 + Math.random() * 8,
+          duration: isMilestone ? 1000 + Math.random() * 2000 : 700 + Math.random() * 800,
         };
       });
 
@@ -1081,7 +1025,7 @@ function HomeAR() {
     let newExp = exp + amount;
     let newLevel = level;
     let leveledUp = false;
-    const expNeeded = newLevel * 150;
+    const expNeeded = newLevel * 500;
     const nextRequirements = getLevelRequirement(newLevel);
     if (newExp >= expNeeded) {
       if (walkDistance >= nextRequirements.distance && feedCount >= nextRequirements.feed && landmarkVisitCount >= nextRequirements.landmark && eventCount >= nextRequirements.event) {
@@ -1103,9 +1047,17 @@ function HomeAR() {
       playSound('levelup');
       await showLevelUpEffect(newLevel);
 
+      if (newLevel >= 99) {
+        alert('🎉 レベル99到達！おめでとうございます！！');
+        triggerRainbowBridge(petId, generation);
+        return;
+      }
+
       alert(`🌟 レベルアップ！ Lv.${newLevel} になりました！`);
-      if (newLevel === 5 && petModelUrlV2) alert('体が大きくなったみたい…！');
-      if (newLevel === 10 && petModelUrlV3) alert('姿が大きく変わった…！');
+      if (newLevel % 5 === 0) {
+        if (newLevel === 5 && petModelUrlV2) alert('体が少し大きくなったみたい…！');
+        if (newLevel === 10 && petModelUrlV3) alert('姿が大きく変わった…！');
+      }
 
       await triggerRandomSickness();
     }
@@ -1190,13 +1142,13 @@ function HomeAR() {
     }
   }, [location, landmarks, viewMode]);
 
-  // GPS以外へ遷移したら地図モーダルを必ず閉じる
   useEffect(() => {
     if (viewMode !== 'gps') {
       setIsSpotMapOpen(false);
     }
   }, [viewMode]);
 
+  // ペットタップ時のイベントバインド（CSSによるpointer-events修復により動作する）
   useEffect(() => {
     if (viewMode === 'mindar' && petId && !isEgg && !isSleeping && isDataLoaded) {
       const handlePetTap = () => {
@@ -1224,14 +1176,12 @@ function HomeAR() {
 
         addExperience(5);
       };
-      // マーカーが4つに増えたため、どのマーカー上のペットモデルがタップされても反応するようにする
       const petModels = Array.from({ length: MARKER_COUNT }, (_, i) => document.querySelector(`#pet-model-${i}`)).filter(Boolean) as Element[];
       petModels.forEach(el => el.addEventListener('click', handlePetTap));
       return () => petModels.forEach(el => el.removeEventListener('click', handlePetTap));
     }
   }, [viewMode, isClient, petId, supabase, isEgg, isSleeping, sceneKey, petCondition, isDataLoaded]);
 
-  // 4つのマーカーのうち、現在どれが検出されているかをtargetFound/targetLostイベントで追跡する
   useEffect(() => {
     if (viewMode !== 'mindar' || !(aframeLoaded && extrasLoaded && mindarLoaded) || isSwitchingMode) return;
 
@@ -1252,7 +1202,6 @@ function HomeAR() {
     return () => cleanups.forEach(fn => fn());
   }, [viewMode, aframeLoaded, extrasLoaded, mindarLoaded, isSwitchingMode, sceneKey]);
 
-  // 🌟 診断用: glbモデルの読み込み成否をコンソールに出す（表示されない原因の切り分け用）
   useEffect(() => {
     if (viewMode !== 'mindar' || !(aframeLoaded && extrasLoaded && mindarLoaded) || isSwitchingMode) return;
 
@@ -1399,27 +1348,6 @@ function HomeAR() {
     }
   };
 
-  const handleFeed = async () => {
-    if (!petId || isSleeping || petCondition === 'sick') return;
-    playSound('eat');
-    setActionAnim('Eat');
-    setTimeout(() => setActionAnim(null), 2000);
-    setFeedCount(prev => prev + 1);
-    await supabase.from('activity_logs').insert({ pet_id: petId, action_type: 'feed', points_earned: 10 });
-    if (!isEgg) {
-      const now = new Date().toISOString();
-      setLastFedAt(now);
-      setHungerPercent(100);
-      await supabase.from('pets').update({ last_fed_at: now }).eq('id', petId);
-      if (petCondition === 'starving') {
-        setPetCondition('healthy');
-        setShowConditionSOS(false);
-        await supabase.from('pets').update({ condition_status: 'healthy' }).eq('id', petId);
-      }
-    }
-    addExperience(20);
-  };
-
   const handleUseItem = async (invItem: any) => {
     if (!petId) return;
     if (isSleeping) {
@@ -1431,7 +1359,6 @@ function HomeAR() {
     const item = invItem.item_masters;
     if (!item) return;
 
-    // 効果がない状況では消費しない。
     if (item.item_type === 'food' && petCondition === 'sick') {
       playSound('error');
       alert('体調が悪くてご飯が食べられないみたい…病院に行こう！');
@@ -1455,6 +1382,7 @@ function HomeAR() {
         .map(i => (i.id === invItem.id ? { ...i, quantity: nextQuantity } : i))
         .filter(i => i.quantity > 0));
       setIsInventoryOpen(false);
+      setIsFoodMenuOpen(false);
       playSound('item');
     } catch (error) {
       console.error('アイテム使用エラー:', error);
@@ -1485,7 +1413,7 @@ function HomeAR() {
       sleepEnd.setHours(sleepEnd.getHours() + item.effect_value);
       setSleepingUntil(sleepEnd.toISOString());
       await supabase.from('pets').update({ sleeping_until: sleepEnd.toISOString() }).eq('id', petId);
-      alert(`💤 ペットは ${item.effect_value} 時間眠りにつきました。`);
+      alert(`💤 ${item.name} を使って、ペットは ${item.effect_value} 時間眠りにつきました。しばらく面倒を見なくても大丈夫です。`);
     } else if (item.item_type === 'medicine') {
       setPetCondition('healthy');
       setShowConditionSOS(false);
@@ -1497,7 +1425,6 @@ function HomeAR() {
       addExperience(item.effect_value || 100);
       alert(`✨ ${item.name} の香りに包まれて、経験値を獲得しました！`);
     } else {
-      // 将来追加する種類のアイテムも、少なくとも経験値アイテムとして利用可能にする。
       addExperience(item.effect_value || 10);
       alert(`✨ ${item.name} を使いました！`);
     }
@@ -1524,6 +1451,24 @@ function HomeAR() {
       alert('🛍️ 購入しました！「もちもの」から使用できます。');
     } catch (e) {
       alert('エラーが発生しました');
+    }
+  };
+
+  const handleWalkPrompt = () => {
+    playSound('tap');
+    closeAllMenus();
+    setIsWalkPromptOpen(true);
+  };
+
+  const handleSleepPrompt = () => {
+    playSound('tap');
+    const sleepItem = inventory.find(i => i.item_masters.item_type === 'sleep');
+    if (sleepItem) {
+      if (window.confirm(`「${sleepItem.item_masters.name}」を使ってペットをおやすみさせますか？\nしばらくお世話をしなくてもご機嫌を保てます。`)) {
+        handleUseItem(sleepItem);
+      }
+    } else {
+      alert('おやすみ薬を持っていません。おみせで買ってきましょう！');
     }
   };
 
@@ -1711,15 +1656,10 @@ function HomeAR() {
         .select('id, custom_name');
 
       if (nameUpdateError) {
-        // 🌟 ここでerrorを確認しないと、DB書き込みが失敗していても画面上は
-        // 成功したように見えてしまい、リロード後に名前が消えたように見える
-        // （実際はそもそも保存されていなかった）不具合の原因になる。
         console.error('名付け保存エラー:', nameUpdateError);
         throw nameUpdateError;
       }
       if (!updatedRows || updatedRows.length === 0) {
-        // RLSでUPDATE自体は許可されているが対象行がヒットしなかった場合など、
-        // エラーは出ないのに実際には何も更新されていないケースを検知する
         throw new Error('保存対象のペットが見つかりませんでした（RLS設定や所有者IDの不一致の可能性があります）。');
       }
 
@@ -1739,7 +1679,6 @@ function HomeAR() {
     }
   };
 
-  // 🌟 デバッグ用アクション 🌟
   const debugMaxHatchConditions = async () => {
     if (!petId) return;
     setWalkDistance(targetDistanceToHatch);
@@ -1753,7 +1692,6 @@ function HomeAR() {
   const scriptsReadyForMindar = aframeLoaded && extrasLoaded && mindarLoaded;
   const scriptsReadyForGps = aframeLoaded && arjsLoaded;
 
-  // 🌟 ここで未ログインやロード中ならUI・AR描画を完全にブロック
   if (!isClient || isAuthChecking || (sessionUserId && !isDataLoaded)) {
     return (
       <div className='bg-black w-full h-full flex flex-col items-center justify-center text-white absolute inset-0 z-[9999]'>
@@ -1765,7 +1703,6 @@ function HomeAR() {
 
   return (
     <div className='relative isolate w-full h-full min-h-0 min-w-0 max-w-full overflow-hidden bg-black text-white'>
-      {/* 🌟 画面が左側に潰れる問題(親コンテナ幅依存の暴走)を根本から防ぐ強制CSS */}
       <style jsx global>{`
         html,
         body {
@@ -1780,7 +1717,6 @@ function HomeAR() {
           overflow: hidden !important;
           overscroll-behavior: none;
         }
-        /* Pages Router 用（App Routerでは無視される） */
         #__next {
           background-color: transparent !important;
           width: 100%;
@@ -1811,16 +1747,18 @@ function HomeAR() {
           max-height: none !important;
           min-width: 0 !important;
           min-height: 0 !important;
-          pointer-events: none !important;
+          /* pointer-events を auto に修正し、Raycaster(クリック)をA-Frameに通す */
+          pointer-events: auto !important; 
+        }
+        .ar-camera-viewport video {
+          z-index: 0 !important;
+          object-fit: cover !important;
+          pointer-events: none !important; /* ビデオは操作しないのでnoneで良い */
         }
         .ar-camera-viewport a-scene,
         .ar-camera-viewport .a-canvas {
           z-index: 1 !important;
           background: transparent !important;
-        }
-        .ar-camera-viewport video {
-          z-index: 0 !important;
-          object-fit: cover !important;
         }
         .ar-camera-viewport .a-enter-vr,
         .ar-camera-viewport .mindar-ui-overlay,
@@ -1884,8 +1822,8 @@ function HomeAR() {
 
       {/* --- デバッグモーダル --- */}
       {isDebugModalOpen && (
-        <div className='absolute inset-0 z-[300] bg-black/80 backdrop-blur-md flex items-center justify-center p-4'>
-          <div className='bg-white rounded-3xl p-6 w-full max-w-sm shadow-2xl space-y-4 max-h-[80vh] overflow-y-auto relative'>
+        <div className='absolute inset-0 z-[300] bg-black/80 backdrop-blur-md flex items-center justify-center p-4 pointer-events-auto'>
+          <div className='bg-white rounded-3xl p-6 w-full max-w-sm shadow-2xl space-y-4 max-h-[80vh] overflow-y-auto relative text-black'>
             <div className='flex justify-between items-center mb-2 border-b pb-2'>
               <h2 className='text-xl font-bold text-red-600'>🐞 デバッグメニュー</h2>
               <button onClick={() => setIsDebugModalOpen(false)} className='text-gray-500 font-bold bg-gray-100 px-3 py-1 rounded'>
@@ -1894,6 +1832,14 @@ function HomeAR() {
             </div>
 
             <div className='space-y-2'>
+              <h3 className='font-bold text-sm bg-gray-200 p-1 rounded'>🔧 AR設定（震え対策用）</h3>
+              <button onClick={() => setDebugAnimEnabled(!debugAnimEnabled)} className={`w-full font-bold py-2 rounded-lg shadow text-sm ${debugAnimEnabled ? 'bg-indigo-500 text-white' : 'bg-gray-300 text-gray-700'}`}>
+                アニメーション: {debugAnimEnabled ? 'ON' : 'OFF'}
+              </button>
+              <p className='text-[10px] text-gray-500'>※これをOFFにして震えが止まればアニメーション由来、揺れ続けるならカメラ由来です。</p>
+            </div>
+
+            <div className='space-y-2 mt-4'>
               <h3 className='font-bold text-sm bg-gray-200 p-1 rounded'>🥚 卵の検証</h3>
               <button onClick={handleCreateEgg} className='w-full bg-yellow-500 text-white font-bold py-2 rounded-lg shadow text-sm'>
                 新しい卵を取得する
@@ -1911,43 +1857,14 @@ function HomeAR() {
               <button onClick={() => addExperience(1000)} className='w-full bg-blue-500 text-white font-bold py-2 rounded-lg shadow text-sm'>
                 経験値 +1000 (レベルアップ)
               </button>
-              <button
-                onClick={() => {
-                  const newDist = walkDistance + 1000;
-                  setWalkDistance(newDist);
-                  supabase.from('pets').update({ walk_distance_m: newDist }).eq('id', petId);
-                }}
-                className='w-full bg-green-500 text-white font-bold py-2 rounded-lg shadow text-sm'
-              >
+              <button onClick={() => { const newDist = walkDistance + 1000; setWalkDistance(newDist); supabase.from('pets').update({ walk_distance_m: newDist }).eq('id', petId); }} className='w-full bg-green-500 text-white font-bold py-2 rounded-lg shadow text-sm'>
                 歩行距離 +1000m
               </button>
-              <button
-                onClick={() => {
-                  setPetCondition('sick');
-                  setShowConditionSOS(true);
-                  supabase.from('pets').update({ condition_status: 'sick' }).eq('id', petId);
-                }}
-                className='w-full bg-purple-500 text-white font-bold py-2 rounded-lg shadow text-sm'
-              >
-                強制的に「病気」にする
-              </button>
-              <button
-                onClick={() => {
-                  setPetCondition('starving');
-                  setShowConditionSOS(true);
-                  setHungerPercent(10);
-                  supabase.from('pets').update({ condition_status: 'starving' }).eq('id', petId);
-                }}
-                className='w-full bg-red-500 text-white font-bold py-2 rounded-lg shadow text-sm'
-              >
-                強制的に「空腹(餓死寸前)」にする
-              </button>
               <button onClick={() => triggerRainbowBridge(petId!, generation)} className='w-full bg-black text-white font-bold py-2 rounded-lg shadow text-sm'>
-                🌈 寿命(虹の橋)テスト
+                🌈 寿命(殿堂入り)テスト
               </button>
             </div>
 
-            {/* 🌟 追加: リアルタイムスケール/回転調整UI */}
             <div className='space-y-2 mt-4 bg-gray-100 p-3 rounded-lg text-black'>
               <h3 className='font-bold text-sm bg-gray-300 p-1 rounded'>📐 モデル調整（リアルタイム）</h3>
               <div className='text-xs space-y-2'>
@@ -2031,19 +1948,19 @@ function HomeAR() {
             />
           ))}
           <div className='absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-center text-white drop-shadow-2xl pointer-events-none'>
-            <div className='text-3xl font-extrabold'>{hatchOverlay.rarity === 'UR' ? '🌈 UR!' : hatchOverlay.rarity === 'SR' ? '✨ SR' : hatchOverlay.rarity === 'R' ? '⭐ R' : 'N'}</div>
+            <div className='text-5xl font-extrabold animate-bounce'>{hatchOverlay.rarity === 'UR' ? '🌈 UR!' : hatchOverlay.rarity === 'SR' ? '✨ SR' : hatchOverlay.rarity === 'R' ? '⭐ R' : 'N'}</div>
           </div>
         </div>
       )}
 
-      {/* --- 虹の橋（寿命）エフェクトオーバーレイ --- */}
+      {/* --- 虹の橋（殿堂入り）エフェクトオーバーレイ --- */}
       {showRainbowBridge && (
         <div className='absolute inset-0 z-[200] bg-black flex flex-col items-center justify-center p-6 text-center text-white transition-opacity duration-1000'>
           {rainbowPhase === 1 && (
             <div className='animate-pulse space-y-6'>
               <h1 className='text-4xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-purple-400 via-pink-400 to-red-400'>🌈 虹の橋を渡りました...</h1>
               <p className='text-lg text-gray-300'>
-                {displayName}は寿命を全うし、虹の橋の向こう側へ旅立ちました。
+                {displayName}はレベルMAXに到達し、虹の橋の向こう側へ旅立ちました。
                 <br />
                 これまで大切に育ててくれてありがとう。
               </p>
@@ -2075,8 +1992,8 @@ function HomeAR() {
 
       {/* --- 初回プロフィール設定モーダル --- */}
       {showProfileSetup && (
-        <div className='absolute inset-0 z-[120] bg-black/80 backdrop-blur-md flex items-center justify-center p-4'>
-          <form onSubmit={handleProfileSubmit} className='bg-white rounded-3xl p-6 w-full max-w-sm shadow-2xl space-y-5 relative'>
+        <div className='absolute inset-0 z-[120] bg-black/80 backdrop-blur-md flex items-center justify-center p-4 pointer-events-auto'>
+          <form onSubmit={handleProfileSubmit} className='bg-white rounded-3xl p-6 w-full max-w-sm shadow-2xl space-y-5 relative text-black'>
             <h2 className='text-xl font-bold text-center border-b pb-3 text-slate-800'>🎉 ようこそ Straid AR へ！</h2>
             <p className='text-xs text-gray-500 text-center mb-4'>サービス向上のため、情報を教えてください</p>
 
@@ -2102,10 +2019,10 @@ function HomeAR() {
         </div>
       )}
 
-      {/* --- 名付け設定モーダル（孵化直後） --- */}
+      {/* --- 名付け設定モーダル --- */}
       {showNamingScreen && (
-        <div className='absolute inset-0 z-[125] bg-black/80 backdrop-blur-md flex items-center justify-center p-4'>
-          <form onSubmit={handleNamingSubmit} className='bg-white rounded-3xl p-6 w-full max-w-sm shadow-2xl space-y-5 relative'>
+        <div className='absolute inset-0 z-[125] bg-black/80 backdrop-blur-md flex items-center justify-center p-4 pointer-events-auto'>
+          <form onSubmit={handleNamingSubmit} className='bg-white rounded-3xl p-6 w-full max-w-sm shadow-2xl space-y-5 relative text-black'>
             <h2 className='text-2xl font-bold text-center border-b pb-3 text-slate-800'>{isEgg ? '🥚 その卵に名前をつけよう！' : '✨ 誕生おめでとう！'}</h2>
             <p className='text-sm text-gray-600 text-center mb-4'>
               {isEgg ? (
@@ -2137,7 +2054,7 @@ function HomeAR() {
 
       {/* --- マインドフルネス機能 モーダル --- */}
       {showMindfulness && (
-        <div className='absolute inset-0 z-[160] bg-black/90 backdrop-blur-xl flex flex-col items-center justify-center p-6 text-white text-center'>
+        <div className='absolute inset-0 z-[160] bg-black/90 backdrop-blur-xl flex flex-col items-center justify-center p-6 text-white text-center pointer-events-auto'>
           {mindPhase === 'intro' && (
             <div className='space-y-6'>
               <div className='text-6xl animate-bounce'>🧘</div>
@@ -2188,9 +2105,101 @@ function HomeAR() {
         </div>
       )}
 
+      {/* --- 歩く(さんぽ)誘いモーダル --- */}
+      {isWalkPromptOpen && (
+        <div className='absolute inset-0 z-[160] bg-black/80 backdrop-blur-md flex items-center justify-center p-4 pointer-events-auto'>
+          <div className='bg-white rounded-3xl p-6 w-full max-w-sm shadow-2xl text-center space-y-4 text-black'>
+            <div className='text-5xl mb-2'>🚶</div>
+            <h2 className='text-xl font-bold text-green-600'>さんぽに出かけよう！</h2>
+            <p className='text-sm text-gray-700'>
+              次のレベルアップまでに、あと<br/>
+              <span className='text-2xl font-black text-green-600'>{Math.max(0, nextLevelRequirements.distance - Math.floor(walkDistance))}</span> m の歩行距離が必要です。
+            </p>
+            <p className='text-xs text-gray-500'>さんぽ（GPS）モードに切り替えて、<br/>ペットと一緒に歩いてみませんか？</p>
+            <div className='space-y-2 mt-4'>
+              <button onClick={() => handleModeChange('gps')} className='w-full bg-green-500 text-white font-bold py-3 rounded-xl shadow-lg active:scale-95'>
+                さんぽへ行く！
+              </button>
+              <button onClick={() => setIsWalkPromptOpen(false)} className='w-full bg-gray-200 text-gray-700 font-bold py-3 rounded-xl active:scale-95'>
+                あとで
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* --- ごはん選択モーダル --- */}
+      {isFoodMenuOpen && (
+        <div className='absolute bottom-24 left-4 right-4 bg-white/95 p-5 rounded-3xl shadow-2xl backdrop-blur-md z-[150] border border-gray-200 pointer-events-auto'>
+          <div className='flex justify-between items-center mb-4 border-b pb-3'>
+            <h3 className='font-bold text-xl text-gray-800'>🍚 ごはんをあげる</h3>
+            <button onClick={() => setIsFoodMenuOpen(false)} className='text-gray-500 font-bold px-4 py-2 bg-gray-100 rounded-full hover:bg-gray-200'>
+              閉じる
+            </button>
+          </div>
+          {inventory.filter(i => i.item_masters.item_type === 'food').length === 0 ? (
+            <p className='text-gray-500 text-center py-8'>持っているご飯がありません。<br/>おみせで買ってこよう！</p>
+          ) : (
+            <div className='flex gap-4 overflow-x-auto pb-2'>
+              {inventory.filter(i => i.item_masters.item_type === 'food').map(invItem => (
+                <button key={invItem.id} onClick={() => handleUseItem(invItem)} className='flex-shrink-0 bg-white border border-orange-100 rounded-2xl p-3 w-32 flex flex-col text-left shadow-sm active:scale-95 transition-transform'>
+                  {invItem.item_masters.image_url ? (
+                    <img src={invItem.item_masters.image_url} className='w-full h-16 object-cover rounded-lg mb-2' />
+                  ) : (
+                    <div className='w-full h-16 bg-orange-50 rounded-lg mb-2 flex items-center justify-center text-2xl'>🍙</div>
+                  )}
+                  <div className='font-bold text-orange-900 text-sm truncate'>{invItem.item_masters.name}</div>
+                  <div className='mt-auto text-right text-xs font-bold text-orange-600 pt-2'>所持: {invItem.quantity}</div>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* --- 遊び方(ヘルプ)モーダル --- */}
+      {isHelpModalOpen && (
+        <div className='absolute inset-0 z-[200] bg-black/80 backdrop-blur-md flex items-center justify-center p-4 pointer-events-auto'>
+          <div className='bg-white rounded-3xl p-6 w-full max-w-sm shadow-2xl relative text-black max-h-[85vh] overflow-y-auto'>
+            <h2 className='text-2xl font-bold text-center border-b pb-3 mb-4 text-slate-800 flex items-center justify-center gap-2'>
+              <span>❓</span>遊び方ガイド
+            </h2>
+            <div className='space-y-4 text-sm'>
+              <div className='bg-pink-50 p-3 rounded-xl border border-pink-100'>
+                <h3 className='font-bold text-pink-700 mb-1'>❤️ 育てる</h3>
+                <p className='text-gray-700 leading-relaxed'>
+                  ペットをタップして撫でたり、アイテムのごはんをあげてごきげんをとりましょう。<br/>愛情が深まるほど成長しやすくなります。
+                </p>
+              </div>
+              <div className='bg-green-50 p-3 rounded-xl border border-green-100'>
+                <h3 className='font-bold text-green-700 mb-1'>🚶 出かける (さんぽ)</h3>
+                <p className='text-gray-700 leading-relaxed'>
+                  「さんぽ」モードで現実世界を歩くと、GPSで歩行距離がカウントされます。<br/>レベルアップや孵化の重要な条件になります。
+                </p>
+              </div>
+              <div className='bg-blue-50 p-3 rounded-xl border border-blue-100'>
+                <h3 className='font-bold text-blue-700 mb-1'>📍 スポットに行く</h3>
+                <p className='text-gray-700 leading-relaxed'>
+                  マップ上にあるランドマーク（施設）に近づいてチェックイン！<br/>大量の経験値や回復ボーナスがもらえます。
+                </p>
+              </div>
+              <div className='bg-yellow-50 p-3 rounded-xl border border-yellow-100'>
+                <h3 className='font-bold text-yellow-700 mb-1'>🌟 経験値を貯めて進化！</h3>
+                <p className='text-gray-700 leading-relaxed'>
+                  歩数・給餌・スポット訪問・タップの全ての条件を満たすとレベルアップ！<br/>レベルが上がると姿が変わるかも…？<br/>最大レベル99を目指しましょう！
+                </p>
+              </div>
+            </div>
+            <button onClick={() => setIsHelpModalOpen(false)} className='mt-6 w-full bg-slate-900 text-white font-bold py-3 rounded-xl shadow-lg active:scale-95'>
+              わかった！
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* --- 地図でスポットを探すモーダル --- */}
       {isSpotMapOpen && (
-        <div className='absolute inset-0 z-[320] bg-black/80 backdrop-blur-md flex items-center justify-center p-4' onClick={() => setIsSpotMapOpen(false)}>
+        <div className='absolute inset-0 z-[320] bg-black/80 backdrop-blur-md flex items-center justify-center p-4 pointer-events-auto' onClick={() => setIsSpotMapOpen(false)}>
           <div className='bg-white rounded-3xl p-6 w-full max-w-sm shadow-2xl relative max-h-[90vh] flex flex-col' onClick={e => e.stopPropagation()}>
             <h2 className='text-xl font-bold text-center border-b pb-3 mb-4 text-slate-800'>🗺️ 周辺のスポット</h2>
             <button
@@ -2280,7 +2289,7 @@ function HomeAR() {
 
       {/* --- ウィークリーログインボーナス モーダル --- */}
       {loginBonusState.showModal && (
-        <div className='absolute inset-0 z-[110] bg-black/80 backdrop-blur-md flex items-center justify-center p-4'>
+        <div className='absolute inset-0 z-[110] bg-black/80 backdrop-blur-md flex items-center justify-center p-4 pointer-events-auto'>
           <div className='bg-white rounded-3xl p-6 w-full max-w-sm shadow-2xl flex flex-col items-center text-black'>
             <h2 className='text-xl font-bold text-center mb-2 text-slate-800'>🎁 ログインボーナス</h2>
             <p className='text-sm text-gray-600 mb-6 text-center'>毎日ログインしてアイテムをゲットしよう！</p>
@@ -2315,7 +2324,7 @@ function HomeAR() {
 
       {/* --- お知らせ(News) モーダル --- */}
       {isNewsOpen && (
-        <div className='absolute top-20 left-4 right-4 bg-white/95 p-5 rounded-3xl shadow-2xl backdrop-blur-md z-50 border border-gray-200'>
+        <div className='absolute top-20 left-4 right-4 bg-white/95 p-5 rounded-3xl shadow-2xl backdrop-blur-md z-50 border border-gray-200 pointer-events-auto'>
           <div className='flex justify-between items-center mb-4 border-b pb-3'>
             <h3 className='font-bold text-xl text-gray-800'>📢 お知らせ</h3>
             <button onClick={() => setIsNewsOpen(false)} className='text-gray-500 font-bold px-4 py-2 bg-gray-100 rounded-full hover:bg-gray-200'>
@@ -2329,7 +2338,7 @@ function HomeAR() {
                 <h4 className='font-bold text-sm text-gray-500 mb-2 border-l-4 border-pink-500 pl-2'>あなたへのお知らせ</h4>
                 <div className='space-y-2'>
                   {userNotifications.map(n => (
-                    <div key={n.id} className='bg-pink-50 border border-pink-100 rounded-xl p-3'>
+                    <div key={n.id} className='bg-pink-50 border border-pink-100 rounded-xl p-3 text-black'>
                       <h4 className='font-bold text-pink-900 text-sm mb-1'>{n.title}</h4>
                       <p className='text-xs text-gray-700 whitespace-pre-wrap'>{n.content}</p>
                       <div className='text-[10px] text-gray-500 mt-2 text-right'>{new Date(n.created_at).toLocaleString()}</div>
@@ -2346,7 +2355,7 @@ function HomeAR() {
               ) : (
                 <div className='space-y-3'>
                   {newsList.map(news => (
-                    <div key={news.id} className='bg-blue-50 border border-blue-100 rounded-xl p-3'>
+                    <div key={news.id} className='bg-blue-50 border border-blue-100 rounded-xl p-3 text-black'>
                       <h4 className='font-bold text-blue-900 text-sm mb-1'>{news.title}</h4>
                       <p className='text-xs text-gray-700 whitespace-pre-wrap'>{news.content}</p>
                       <div className='text-[10px] text-gray-500 mt-2 text-right'>{new Date(news.published_at).toLocaleDateString()}</div>
@@ -2359,9 +2368,9 @@ function HomeAR() {
         </div>
       )}
 
-      {/* --- ステータスモーダル (画面に一瞬映る問題を解決) --- */}
+      {/* --- ステータスモーダル --- */}
       {isStatusModalOpen && (
-        <div className='absolute inset-0 z-[150] bg-black/80 backdrop-blur-md flex items-center justify-center p-4'>
+        <div className='absolute inset-0 z-[150] bg-black/80 backdrop-blur-md flex items-center justify-center p-4 pointer-events-auto'>
           <div className='bg-gray-900 border border-gray-700 rounded-3xl p-6 w-full max-w-sm shadow-2xl relative text-white space-y-4'>
             <div className='flex justify-between items-center border-b border-gray-700 pb-3'>
               <h2 className='text-xl font-bold text-white'>📊 ステータス詳細</h2>
@@ -2486,7 +2495,7 @@ function HomeAR() {
 
       {/* --- 状態異常SOS モーダル --- */}
       {showConditionSOS && !isEgg && petCondition !== 'healthy' && (
-        <div className='absolute top-24 left-4 right-4 z-[100] animate-bounce'>
+        <div className='absolute top-24 left-4 right-4 z-[100] animate-bounce pointer-events-auto'>
           <div className={`p-4 rounded-2xl shadow-2xl border-4 flex items-start gap-4 ${petCondition === 'sick' ? 'bg-purple-100 border-purple-400 text-purple-900' : 'bg-red-100 border-red-400 text-red-900'}`}>
             <div className='text-4xl'>{petCondition === 'sick' ? '🏥' : '🍽️'}</div>
             <div className='flex-1'>
@@ -2516,7 +2525,7 @@ function HomeAR() {
             ) : (
               <span className='text-white font-bold text-3xl drop-shadow-lg bg-black/30 px-3 py-1 rounded-xl backdrop-blur-sm'>{isEggUnregistered ? '' : displayName}</span>
             )}
-            <span className={`${currentMood.color} text-white px-4 py-2 rounded-xl font-bold shadow-xl text-md transition-colors duration-300 border border-white/20`}>{currentMood.text}</span>
+            <span className={`${currentMood.color} text-white px-4 py-2 rounded-xl font-bold shadow-xl text-md transition-colors duration-300 border border-white/20 pointer-events-auto`}>{currentMood.text}</span>
           </div>
         </div>
       )}
@@ -2524,7 +2533,6 @@ function HomeAR() {
       {/* --- 右上ボタン群 --- */}
       {viewMode !== 'report' && (
         <div className='absolute top-20 right-4 z-[140] flex flex-col gap-4 pointer-events-auto'>
-          {/* ステータス確認ボタン (追加) */}
           {!isEggUnregistered && (
             <button onClick={() => { setIsStatusModalOpen(true); playSound('tap'); }} className='bg-white/90 p-3 rounded-full shadow-2xl border border-gray-200 active:scale-90 flex items-center justify-center w-14 h-14 relative' aria-label='ステータス'>
               <span className='text-2xl'>📊</span>
@@ -2535,6 +2543,11 @@ function HomeAR() {
           <button onClick={() => { setIsNewsOpen(true); playSound('tap'); }} className='bg-white/90 p-3 rounded-full shadow-2xl border border-gray-200 active:scale-90 flex items-center justify-center w-14 h-14 relative' aria-label='お知らせ'>
             <span className='text-2xl'>📢</span>
             {(newsList.length > 0 || userNotifications.length > 0) && <span className='absolute top-0 right-0 w-4 h-4 bg-red-500 rounded-full border-2 border-white'></span>}
+          </button>
+
+          {/* 遊び方アイコンを追加 */}
+          <button onClick={() => { setIsHelpModalOpen(true); playSound('tap'); }} className='bg-white/90 p-3 rounded-full shadow-2xl border border-gray-200 active:scale-90 flex items-center justify-center w-14 h-14 relative' aria-label='遊び方'>
+            <span className='text-2xl font-bold text-gray-700'>❓</span>
           </button>
 
           {viewMode === 'gps' && activeLandmark ? (
@@ -2564,7 +2577,7 @@ function HomeAR() {
       )}
 
       {gameOverNotice && (
-        <div className='absolute inset-0 z-[130] bg-black/80 backdrop-blur-md flex items-center justify-center p-4'>
+        <div className='absolute inset-0 z-[130] bg-black/80 backdrop-blur-md flex items-center justify-center p-4 pointer-events-auto'>
           <div className='bg-white rounded-3xl p-6 w-full max-w-sm shadow-2xl text-center space-y-4'>
             <div className='text-4xl'>💀</div>
             <h2 className='text-xl font-bold text-red-600'>ゲームオーバー</h2>
@@ -2578,7 +2591,7 @@ function HomeAR() {
 
       {/* --- きろく（Report）画面 --- */}
       {viewMode === 'report' && (
-        <div className='absolute inset-0 z-30 bg-black/90 text-white overflow-y-auto pb-32 pt-10 px-6 backdrop-blur-md'>
+        <div className='absolute inset-0 z-30 bg-black/90 text-white overflow-y-auto pb-32 pt-10 px-6 backdrop-blur-md pointer-events-auto'>
           <h2 className='text-3xl font-bold mb-6 text-center text-purple-400'>📊 育成とマインドフルネスの記録</h2>
           <div className='space-y-6'>
             <div className='bg-gray-800 p-5 rounded-2xl border border-purple-500/30 shadow-lg'>
@@ -2632,7 +2645,7 @@ function HomeAR() {
         </div>
       )}
 
-        {/* --- UIレイヤー (ボトム) --- */}
+      {/* --- UIレイヤー (ボトム) --- */}
       <div
         className='absolute bottom-0 left-0 right-0 z-[130] p-4 flex flex-col gap-4 pointer-events-auto'
         style={{ paddingBottom: 'calc(1rem + env(safe-area-inset-bottom, 24px))' }}
@@ -2721,22 +2734,24 @@ function HomeAR() {
           </button>
         )}
 
+        {/* ユーザー要望: ペット表示時のアクションボタンの構成を変更 */}
         {viewMode === 'mindar' && !isEgg && !isEggUnregistered && petId && (
-          <div className='flex gap-2 w-full'>
-            <button onClick={handleFeed} disabled={isSleeping || hungerPercent === 100 || petCondition === 'sick'} className={`flex-[2] text-white py-3 rounded-2xl font-bold shadow-lg transition-all ${(isSleeping || hungerPercent === 100 || petCondition === 'sick') ? 'bg-gray-400 opacity-80' : 'bg-gradient-to-br from-orange-400 to-orange-600 active:scale-95'}`}>
-              🍚
-              <br />
+          <div className='grid grid-cols-2 gap-2 w-full'>
+            <button onClick={() => { closeAllMenus(); setIsFoodMenuOpen(true); playSound('tap'); }} disabled={isSleeping || hungerPercent === 100 || petCondition === 'sick'} className={`text-white py-3 rounded-2xl font-bold shadow-lg transition-all flex flex-col items-center justify-center ${(isSleeping || hungerPercent === 100 || petCondition === 'sick') ? 'bg-gray-400 opacity-80' : 'bg-gradient-to-br from-orange-400 to-orange-600 active:scale-95'}`}>
+              <span className='text-2xl'>🍚</span>
               <span className='text-xs'>ごはん</span>
             </button>
-            <button onClick={() => { setIsInventoryOpen(true); setIsShopOpen(false); setIsNewsOpen(false); playSound('tap'); }} className='flex-1 bg-gradient-to-br from-blue-500 to-blue-700 text-white py-3 rounded-2xl font-bold shadow-lg active:scale-95 transition-all flex flex-col items-center justify-center'>
-              🎒
-              <br />
-              <span className='text-xs'>もちもの</span>
-            </button>
-            <button onClick={() => { setIsShopOpen(true); setIsInventoryOpen(false); setIsNewsOpen(false); playSound('tap'); }} className='flex-1 bg-gradient-to-br from-green-500 to-green-700 text-white py-3 rounded-2xl font-bold shadow-lg active:scale-95 transition-all flex flex-col items-center justify-center'>
-              🛒
-              <br />
+            <button onClick={() => { closeAllMenus(); setIsShopOpen(true); playSound('tap'); }} className='bg-gradient-to-br from-green-500 to-green-700 text-white py-3 rounded-2xl font-bold shadow-lg active:scale-95 transition-all flex flex-col items-center justify-center'>
+              <span className='text-2xl'>🛒</span>
               <span className='text-xs'>おみせ</span>
+            </button>
+            <button onClick={handleWalkPrompt} disabled={isSleeping} className={`py-3 rounded-2xl font-bold shadow-lg transition-all flex flex-col items-center justify-center text-white ${isSleeping ? 'bg-gray-400 opacity-80' : 'bg-gradient-to-br from-blue-500 to-blue-700 active:scale-95'}`}>
+              <span className='text-2xl'>🚶</span>
+              <span className='text-xs'>あるく</span>
+            </button>
+            <button onClick={handleSleepPrompt} disabled={isSleeping || petCondition === 'sick'} className={`py-3 rounded-2xl font-bold shadow-lg transition-all flex flex-col items-center justify-center text-white ${(isSleeping || petCondition === 'sick') ? 'bg-gray-400 opacity-80' : 'bg-gradient-to-br from-purple-500 to-purple-700 active:scale-95'}`}>
+              <span className='text-2xl'>💤</span>
+              <span className='text-xs'>おやすみ</span>
             </button>
           </div>
         )}
@@ -2768,7 +2783,7 @@ function HomeAR() {
 
         {viewMode !== 'report' && (
           <button
-            onClick={() => { setIsSpotMapOpen(true); playSound('tap'); }}
+            onClick={() => { closeAllMenus(); setIsSpotMapOpen(true); playSound('tap'); }}
             className='bg-gradient-to-r from-teal-400 to-teal-600 text-white p-3 rounded-2xl font-bold shadow-lg w-full flex justify-center items-center gap-2 border-2 border-teal-300 active:scale-95 transition-transform text-lg'
           >
             🗺️ 地図でスポットを探す
@@ -2786,9 +2801,8 @@ function HomeAR() {
           </button>
           <button
             onClick={() => {
+              closeAllMenus();
               setIsInventoryOpen(true);
-              setIsShopOpen(false);
-              setIsNewsOpen(false);
               playSound('tap');
             }}
             className={`min-w-0 font-bold flex flex-col items-center gap-1 relative ${isInventoryOpen ? 'text-blue-600' : 'text-gray-400'}`}
@@ -2816,14 +2830,13 @@ function HomeAR() {
           <div key={`mindar-container-${sceneKey}`} className='absolute inset-0 pointer-events-none'>
             <a-scene
               embedded
-              style={{ position: 'absolute', inset: 0, height: '100%', width: '100%', pointerEvents: 'none' }}
-              mindar-image={`imageTargetSrc: ${petMarkerUrl}; autoStart: true; uiLoading: no; uiError: no; maxTrack: 1;`}
+              style={{ position: 'absolute', inset: 0, height: '100%', width: '100%', pointerEvents: 'auto' }}
+              mindar-image={`imageTargetSrc: ${petMarkerUrl}; autoStart: true; uiLoading: no; uiError: no; maxTrack: 1; filterMinCF: 0.0001; filterBeta: 0.001;`}
               renderer='alpha: true; preserveDrawingBuffer: true; colorManagement: true; physicallyCorrectLights: true;'
               color-space='sRGB'
               vr-mode-ui='enabled: false'
               device-orientation-permission-ui='enabled: false'
               onLoad={(e: any) => {
-                // .mindファイルの読み込み失敗やカメラ起動失敗をコンソールで確認できるようにする
                 const sceneEl = e?.target;
                 sceneEl?.addEventListener?.('arError', (err: any) => {
                   console.error('MindAR起動エラー:', err?.detail || err);
@@ -2846,7 +2859,7 @@ function HomeAR() {
                   scale={hatchAnimating ? `${debugScaleX * 0.2} ${debugScaleY * 0.2} ${debugScaleZ * 0.2}` : `${debugScaleX} ${debugScaleY} ${debugScaleZ}`}
                   src='#pet-asset'
                   shadow='cast: true; receive: true'
-                  animation-mixer={isEgg ? '' : `clip: ${actionAnim || currentMood.clip}; loop: ${actionAnim ? 'once' : 'repeat'}; crossFadeDuration: 0.3;`}
+                  animation-mixer={isEgg || !debugAnimEnabled ? '' : `clip: ${actionAnim || currentMood.clip}; loop: ${actionAnim ? 'once' : 'repeat'}; crossFadeDuration: 0.3;`}
                   animation={hatchAnimating ? `property: scale; to: ${debugScaleX} ${debugScaleY} ${debugScaleZ}; dur: 800; easing: easeOutElastic;` : undefined}
                 ></a-gltf-model>
               </a-entity>
@@ -2859,7 +2872,7 @@ function HomeAR() {
                   scale={hatchAnimating ? `${debugScaleX * 0.2} ${debugScaleY * 0.2} ${debugScaleZ * 0.2}` : `${debugScaleX} ${debugScaleY} ${debugScaleZ}`}
                   src='#pet-asset'
                   shadow='cast: true; receive: true'
-                  animation-mixer={isEgg ? '' : `clip: ${actionAnim || currentMood.clip}; loop: ${actionAnim ? 'once' : 'repeat'}; crossFadeDuration: 0.3;`}
+                  animation-mixer={isEgg || !debugAnimEnabled ? '' : `clip: ${actionAnim || currentMood.clip}; loop: ${actionAnim ? 'once' : 'repeat'}; crossFadeDuration: 0.3;`}
                   animation={hatchAnimating ? `property: scale; to: ${debugScaleX} ${debugScaleY} ${debugScaleZ}; dur: 800; easing: easeOutElastic;` : undefined}
                 ></a-gltf-model>
               </a-entity>
@@ -2872,7 +2885,7 @@ function HomeAR() {
                   scale={hatchAnimating ? `${debugScaleX * 0.2} ${debugScaleY * 0.2} ${debugScaleZ * 0.2}` : `${debugScaleX} ${debugScaleY} ${debugScaleZ}`}
                   src='#pet-asset'
                   shadow='cast: true; receive: true'
-                  animation-mixer={isEgg ? '' : `clip: ${actionAnim || currentMood.clip}; loop: ${actionAnim ? 'once' : 'repeat'}; crossFadeDuration: 0.3;`}
+                  animation-mixer={isEgg || !debugAnimEnabled ? '' : `clip: ${actionAnim || currentMood.clip}; loop: ${actionAnim ? 'once' : 'repeat'}; crossFadeDuration: 0.3;`}
                   animation={hatchAnimating ? `property: scale; to: ${debugScaleX} ${debugScaleY} ${debugScaleZ}; dur: 800; easing: easeOutElastic;` : undefined}
                 ></a-gltf-model>
               </a-entity>
@@ -2885,7 +2898,7 @@ function HomeAR() {
                   scale={hatchAnimating ? `${debugScaleX * 0.2} ${debugScaleY * 0.2} ${debugScaleZ * 0.2}` : `${debugScaleX} ${debugScaleY} ${debugScaleZ}`}
                   src='#pet-asset'
                   shadow='cast: true; receive: true'
-                  animation-mixer={isEgg ? '' : `clip: ${actionAnim || currentMood.clip}; loop: ${actionAnim ? 'once' : 'repeat'}; crossFadeDuration: 0.3;`}
+                  animation-mixer={isEgg || !debugAnimEnabled ? '' : `clip: ${actionAnim || currentMood.clip}; loop: ${actionAnim ? 'once' : 'repeat'}; crossFadeDuration: 0.3;`}
                   animation={hatchAnimating ? `property: scale; to: ${debugScaleX} ${debugScaleY} ${debugScaleZ}; dur: 800; easing: easeOutElastic;` : undefined}
                 ></a-gltf-model>
               </a-entity>
