@@ -81,7 +81,7 @@ function HomeAR() {
   const MARKER_COUNT = 4;
 
   // 🌟 デバッグ用: スケールと回転のリアルタイム調整State
-  const MODEL_SCALE = 0.05;
+  const MODEL_SCALE = 0.5;
   const [debugScaleX, setDebugScaleX] = useState(MODEL_SCALE);
   const [debugScaleY, setDebugScaleY] = useState(MODEL_SCALE);
   const [debugScaleZ, setDebugScaleZ] = useState(MODEL_SCALE);
@@ -1704,7 +1704,25 @@ function HomeAR() {
 
     setIsNamingSubmitting(true);
     try {
-      await supabase.from('pets').update({ custom_name: namingInput.trim() }).eq('id', petId);
+      const { error: nameUpdateError, data: updatedRows } = await supabase
+        .from('pets')
+        .update({ custom_name: namingInput.trim() })
+        .eq('id', petId)
+        .select('id, custom_name');
+
+      if (nameUpdateError) {
+        // 🌟 ここでerrorを確認しないと、DB書き込みが失敗していても画面上は
+        // 成功したように見えてしまい、リロード後に名前が消えたように見える
+        // （実際はそもそも保存されていなかった）不具合の原因になる。
+        console.error('名付け保存エラー:', nameUpdateError);
+        throw nameUpdateError;
+      }
+      if (!updatedRows || updatedRows.length === 0) {
+        // RLSでUPDATE自体は許可されているが対象行がヒットしなかった場合など、
+        // エラーは出ないのに実際には何も更新されていないケースを検知する
+        throw new Error('保存対象のペットが見つかりませんでした（RLS設定や所有者IDの不一致の可能性があります）。');
+      }
+
       setCustomName(namingInput.trim());
       setShowNamingScreen(false);
       playSound('levelup');
@@ -1713,9 +1731,9 @@ function HomeAR() {
       } else {
         alert(`これからよろしくね、${namingInput.trim()}！\n（誕生日は今日の日付で記録されました）`);
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('名付けエラー', err);
-      alert('エラーが発生しました。');
+      alert(`名前の保存に失敗しました。\n詳細: ${err?.message || '不明なエラー'}\n\nもう一度お試しいただくか、この詳細をサポートにお伝えください。`);
     } finally {
       setIsNamingSubmitting(false);
     }
