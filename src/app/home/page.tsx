@@ -2741,14 +2741,6 @@ function HomeAR() {
               <span className='text-2xl'>🍚</span>
               <span className='text-xs'>ごはん</span>
             </button>
-            <button onClick={() => { closeAllMenus(); setIsShopOpen(true); playSound('tap'); }} className='bg-gradient-to-br from-green-500 to-green-700 text-white py-3 rounded-2xl font-bold shadow-lg active:scale-95 transition-all flex flex-col items-center justify-center'>
-              <span className='text-2xl'>🛒</span>
-              <span className='text-xs'>おみせ</span>
-            </button>
-            <button onClick={handleWalkPrompt} disabled={isSleeping} className={`py-3 rounded-2xl font-bold shadow-lg transition-all flex flex-col items-center justify-center text-white ${isSleeping ? 'bg-gray-400 opacity-80' : 'bg-gradient-to-br from-blue-500 to-blue-700 active:scale-95'}`}>
-              <span className='text-2xl'>🚶</span>
-              <span className='text-xs'>あるく</span>
-            </button>
             <button onClick={handleSleepPrompt} disabled={isSleeping || petCondition === 'sick'} className={`py-3 rounded-2xl font-bold shadow-lg transition-all flex flex-col items-center justify-center text-white ${(isSleeping || petCondition === 'sick') ? 'bg-gray-400 opacity-80' : 'bg-gradient-to-br from-purple-500 to-purple-700 active:scale-95'}`}>
               <span className='text-2xl'>💤</span>
               <span className='text-xs'>おやすみ</span>
