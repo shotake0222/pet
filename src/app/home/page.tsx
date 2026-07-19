@@ -134,6 +134,8 @@ function HomeAR() {
 
   // 追加モーダルState
   const [isFoodMenuOpen, setIsFoodMenuOpen] = useState(false);
+  const [isSleepMenuOpen, setIsSleepMenuOpen] = useState(false);
+  const [isCareMenuOpen, setIsCareMenuOpen] = useState(false);
   const [isWalkPromptOpen, setIsWalkPromptOpen] = useState(false);
   const [isHelpModalOpen, setIsHelpModalOpen] = useState(false);
 
@@ -316,6 +318,8 @@ function HomeAR() {
     setIsStatusModalOpen(false);
     setIsDebugModalOpen(false);
     setIsFoodMenuOpen(false);
+    setIsSleepMenuOpen(false);
+    setIsCareMenuOpen(false);
     setIsWalkPromptOpen(false);
     setIsHelpModalOpen(false);
   };
@@ -508,14 +512,24 @@ function HomeAR() {
   }, [supabase, router, tagIdParam]);
 
   useEffect(() => {
-    if (sessionUserId && petId && !isEgg && !hasTriggeredMindfulness.current) {
-      hasTriggeredMindfulness.current = true;
+    if (!sessionUserId || !petId || isEgg) return;
+
+    const tryTriggerMindfulness = () => {
+      if (showMindfulness || isSleeping || petCondition !== 'healthy') return;
       if (Math.random() < 0.3) {
         setShowMindfulness(true);
         setMindPhase('intro');
       }
+    };
+
+    if (!hasTriggeredMindfulness.current) {
+      hasTriggeredMindfulness.current = true;
+      tryTriggerMindfulness();
     }
-  }, [sessionUserId, petId, isEgg]);
+
+    const interval = window.setInterval(tryTriggerMindfulness, 5 * 60 * 1000);
+    return () => window.clearInterval(interval);
+  }, [sessionUserId, petId, isEgg, isSleeping, petCondition, showMindfulness]);
 
   useEffect(() => {
     if (!showMindfulness || mindPhase === 'intro' || mindPhase === 'done') return;
@@ -1383,6 +1397,7 @@ function HomeAR() {
         .filter(i => i.quantity > 0));
       setIsInventoryOpen(false);
       setIsFoodMenuOpen(false);
+      setIsSleepMenuOpen(false);
       playSound('item');
     } catch (error) {
       console.error('アイテム使用エラー:', error);
@@ -1460,16 +1475,33 @@ function HomeAR() {
     setIsWalkPromptOpen(true);
   };
 
-  const handleSleepPrompt = () => {
+  const handleOpenCareMenu = () => {
     playSound('tap');
-    const sleepItem = inventory.find(i => i.item_masters.item_type === 'sleep');
-    if (sleepItem) {
-      if (window.confirm(`「${sleepItem.item_masters.name}」を使ってペットをおやすみさせますか？\nしばらくお世話をしなくてもご機嫌を保てます。`)) {
-        handleUseItem(sleepItem);
+    setIsCareMenuOpen(prev => {
+      const next = !prev;
+      if (next) {
+        setIsSpotMapOpen(false);
+        setIsNewsOpen(false);
+        setIsInventoryOpen(false);
+        setIsShopOpen(false);
+        setIsFoodMenuOpen(false);
+        setIsSleepMenuOpen(false);
+        setIsWalkPromptOpen(false);
       }
-    } else {
-      alert('おやすみ薬を持っていません。おみせで買ってきましょう！');
-    }
+      return next;
+    });
+  };
+
+  const handleOpenFoodMenu = () => {
+    playSound('tap');
+    setIsCareMenuOpen(false);
+    setIsFoodMenuOpen(true);
+  };
+
+  const handleOpenSleepMenu = () => {
+    playSound('tap');
+    setIsCareMenuOpen(false);
+    setIsSleepMenuOpen(true);
   };
 
   const getFacilityType = (name: string) => {
@@ -1788,7 +1820,7 @@ function HomeAR() {
       )}
 
       {!cameraReady && viewMode !== 'report' && (
-        <div className='absolute inset-0 z-[170] bg-black/70 backdrop-blur-sm flex items-center justify-center'>
+        <div className='absolute inset-0 z-[170] bg-black/70 backdrop-blur-sm flex items-center justify-center pointer-events-none'>
           <div className='text-center'>
             <div className='w-10 h-10 border-4 border-gray-500 border-t-white rounded-full animate-spin mx-auto mb-3'></div>
             <p className='font-bold'>カメラを起動しています...</p>
@@ -2128,6 +2160,26 @@ function HomeAR() {
         </div>
       )}
 
+      {/* --- お世話（ごはん・おやすみ）分岐メニュー --- */}
+      {isCareMenuOpen && (
+        <div className='absolute bottom-24 left-1/2 -translate-x-1/2 z-[150] flex gap-3 pointer-events-auto'>
+          <button
+            onClick={handleOpenFoodMenu}
+            className='flex flex-col items-center justify-center gap-1 bg-orange-500 text-white font-bold w-20 h-20 rounded-2xl shadow-2xl border-2 border-orange-200 active:scale-95 transition-transform'
+          >
+            <span className='text-2xl'>🍚</span>
+            <span className='text-xs'>ごはん</span>
+          </button>
+          <button
+            onClick={handleOpenSleepMenu}
+            className='flex flex-col items-center justify-center gap-1 bg-indigo-500 text-white font-bold w-20 h-20 rounded-2xl shadow-2xl border-2 border-indigo-200 active:scale-95 transition-transform'
+          >
+            <span className='text-2xl'>💤</span>
+            <span className='text-xs'>おやすみ</span>
+          </button>
+        </div>
+      )}
+
       {/* --- ごはん選択モーダル --- */}
       {isFoodMenuOpen && (
         <div className='absolute bottom-24 left-4 right-4 bg-white/95 p-5 rounded-3xl shadow-2xl backdrop-blur-md z-[150] border border-gray-200 pointer-events-auto'>
@@ -2150,6 +2202,42 @@ function HomeAR() {
                   )}
                   <div className='font-bold text-orange-900 text-sm truncate'>{invItem.item_masters.name}</div>
                   <div className='mt-auto text-right text-xs font-bold text-orange-600 pt-2'>所持: {invItem.quantity}</div>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* --- おやすみ選択モーダル --- */}
+      {isSleepMenuOpen && (
+        <div className='absolute bottom-24 left-4 right-4 bg-white/95 p-5 rounded-3xl shadow-2xl backdrop-blur-md z-[150] border border-gray-200 pointer-events-auto'>
+          <div className='flex justify-between items-center mb-4 border-b pb-3'>
+            <h3 className='font-bold text-xl text-gray-800'>💤 おやすみさせる</h3>
+            <button onClick={() => setIsSleepMenuOpen(false)} className='text-gray-500 font-bold px-4 py-2 bg-gray-100 rounded-full hover:bg-gray-200'>
+              閉じる
+            </button>
+          </div>
+          {isSleeping ? (
+            <p className='text-gray-500 text-center py-8'>
+              ペットは今おやすみ中です。
+              <br />
+              {sleepingUntil && `起床予定: ${new Date(sleepingUntil).toLocaleString()}`}
+            </p>
+          ) : inventory.filter(i => i.item_masters.item_type === 'sleep').length === 0 ? (
+            <p className='text-gray-500 text-center py-8'>持っているおやすみ薬がありません。<br/>おみせで買ってこよう！</p>
+          ) : (
+            <div className='flex gap-4 overflow-x-auto pb-2'>
+              {inventory.filter(i => i.item_masters.item_type === 'sleep').map(invItem => (
+                <button key={invItem.id} onClick={() => handleUseItem(invItem)} className='flex-shrink-0 bg-white border border-indigo-100 rounded-2xl p-3 w-32 flex flex-col text-left shadow-sm active:scale-95 transition-transform'>
+                  {invItem.item_masters.image_url ? (
+                    <img src={invItem.item_masters.image_url} className='w-full h-16 object-cover rounded-lg mb-2' />
+                  ) : (
+                    <div className='w-full h-16 bg-indigo-50 rounded-lg mb-2 flex items-center justify-center text-2xl'>💤</div>
+                  )}
+                  <div className='font-bold text-indigo-900 text-sm truncate'>{invItem.item_masters.name}</div>
+                  <div className='text-[10px] text-indigo-500'>{invItem.item_masters.effect_value}時間 おやすみ</div>
+                  <div className='mt-auto text-right text-xs font-bold text-indigo-600 pt-2'>所持: {invItem.quantity}</div>
                 </button>
               ))}
             </div>
@@ -2768,7 +2856,7 @@ function HomeAR() {
           </button>
         )}
 
-        <div className='grid grid-cols-4 gap-1 bg-white p-3 rounded-2xl shadow-xl border border-gray-100'>
+        <div className='grid grid-cols-5 gap-1 bg-white p-3 rounded-2xl shadow-xl border border-gray-100'>
           <button onClick={() => handleModeChange('mindar')} className={`min-w-0 font-bold flex flex-col items-center gap-1 ${viewMode === 'mindar' ? 'text-blue-600' : 'text-gray-400'}`}>
             <span className='text-xl'>🏠</span>
             <span className='text-xs'>おうち</span>
@@ -2776,6 +2864,13 @@ function HomeAR() {
           <button onClick={() => handleModeChange('gps')} className={`min-w-0 font-bold flex flex-col items-center gap-1 ${viewMode === 'gps' ? 'text-green-600' : 'text-gray-400'}`}>
             <span className='text-xl'>🚶</span>
             <span className='text-xs'>さんぽ</span>
+          </button>
+          <button
+            onClick={handleOpenCareMenu}
+            className={`min-w-0 font-bold flex flex-col items-center gap-1 ${isCareMenuOpen ? 'text-pink-600' : 'text-gray-400'}`}
+          >
+            <span className='text-xl'>🍙</span>
+            <span className='text-xs'>おせわ</span>
           </button>
           <button
             onClick={() => {
@@ -2893,7 +2988,6 @@ function HomeAR() {
               arjs={`sourceType: webcam; videoTexture: true; debugUIEnabled: false; facingMode: ${cameraFacing};`}
             >
               <a-assets>
-                <a-asset-item id='pet-asset-gps' src={activeModelUrl}></a-asset-item>
                 {activeLandmark && activeLandmark.model_url && (
                   <a-asset-item id='landmark-asset-dynamic' src={activeLandmark.model_url}></a-asset-item>
                 )}
@@ -2902,17 +2996,7 @@ function HomeAR() {
               <a-light type='ambient' color='#ffffff' intensity='0.7'></a-light>
               <a-light type='directional' color='#ffffff' intensity='1.5' position='0 5 0'></a-light>
 
-              <a-camera gps-camera rotation-reader>
-                {!isEgg && petId && (
-                  <a-entity
-                    gltf-model={activeModelUrl}
-                    scale='1.5 1.5 1.5'
-                    position={`0 -1.5 ${cameraFacing === 'user' ? '-2' : '-4'}`}
-                    rotation='0 180 0'
-                    animation-mixer={`clip: ${petCondition !== 'healthy' ? 'Sad' : 'Walk'}; loop: repeat; crossFadeDuration: 0.3;`}
-                  ></a-entity>
-                )}
-              </a-camera>
+              <a-camera gps-camera rotation-reader></a-camera>
 
               {activeLandmark && !isEgg && petId && (
                 <a-entity
