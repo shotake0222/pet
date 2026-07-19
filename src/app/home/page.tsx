@@ -2734,20 +2734,6 @@ function HomeAR() {
           </button>
         )}
 
-        {/* ユーザー要望: ペット表示時のアクションボタンの構成を変更 */}
-        {viewMode === 'mindar' && !isEgg && !isEggUnregistered && petId && (
-          <div className='grid grid-cols-2 gap-2 w-full'>
-            <button onClick={() => { closeAllMenus(); setIsFoodMenuOpen(true); playSound('tap'); }} disabled={isSleeping || hungerPercent === 100 || petCondition === 'sick'} className={`text-white py-3 rounded-2xl font-bold shadow-lg transition-all flex flex-col items-center justify-center ${(isSleeping || hungerPercent === 100 || petCondition === 'sick') ? 'bg-gray-400 opacity-80' : 'bg-gradient-to-br from-orange-400 to-orange-600 active:scale-95'}`}>
-              <span className='text-2xl'>🍚</span>
-              <span className='text-xs'>ごはん</span>
-            </button>
-            <button onClick={handleSleepPrompt} disabled={isSleeping || petCondition === 'sick'} className={`py-3 rounded-2xl font-bold shadow-lg transition-all flex flex-col items-center justify-center text-white ${(isSleeping || petCondition === 'sick') ? 'bg-gray-400 opacity-80' : 'bg-gradient-to-br from-purple-500 to-purple-700 active:scale-95'}`}>
-              <span className='text-2xl'>💤</span>
-              <span className='text-xs'>おやすみ</span>
-            </button>
-          </div>
-        )}
-
         {viewMode === 'gps' && (
           <>
             <div className='bg-green-600/90 text-white p-3 rounded-xl font-bold shadow-lg w-full text-center text-sm backdrop-blur-sm'>
