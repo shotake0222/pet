@@ -49,6 +49,12 @@ function HomeAR() {
   const [extrasLoaded, setExtrasLoaded] = useState(false);
   const [mindarLoaded, setMindarLoaded] = useState(false);
   const [arjsLoaded, setArjsLoaded] = useState(false);
+
+  // NOTE: 元々はレンダー直前に宣言されていたが、カメラ準備完了判定の
+  // useEffect より前で参照する必要があるためここに移動した。
+  const scriptsReadyForMindar = aframeLoaded && extrasLoaded && mindarLoaded;
+  const scriptsReadyForGps = aframeLoaded && arjsLoaded;
+
   const [gpsEverActivated, setGpsEverActivated] = useState(viewMode === 'gps');
   useEffect(() => {
     if (viewMode === 'gps') setGpsEverActivated(true);
@@ -213,27 +219,40 @@ function HomeAR() {
 
   const stepCount = Math.floor(walkDistance / 0.75);
 
+  // --- カメラリソースの解放処理（修正済み） ---
+  // 修正前は arViewportRef 配下の video のみを対象にしており、
+  // MindAR/AR.js が React 管理外（document.body 直下など）に生成した
+  // video 要素が停止されずに DOM へ残留し続けることがあった。
+  // 「さんぽ」等へモード切替 → 戻る、を繰り返すとカメラが起動しなくなる
+  // 不具合はこの残留 video が原因である可能性が高いため、
+  // document 全体から video を検索し、トラック停止に加えて要素自体を
+  // remove() して完全にクリーンアップするように変更した。
   const releaseCameraResources = useCallback(() => {
     try {
       const viewport = arViewportRef.current;
-      if (!viewport) return;
 
-      const videos = viewport.querySelectorAll('video');
-      videos.forEach(video => {
-        if (video.srcObject) {
-          const tracks = (video.srcObject as MediaStream).getTracks();
-          tracks.forEach(track => track.stop());
-          video.srcObject = null;
-        }
-      });
-
-      const scenes = viewport.querySelectorAll('a-scene') as NodeListOf<any>;
-      scenes.forEach(scene => {
+      const allVideos = document.querySelectorAll('video');
+      allVideos.forEach(video => {
         try {
-          scene.systems?.['mindar-image-system']?.stop?.();
-          scene.renderer?.dispose?.();
+          if (video.srcObject) {
+            const tracks = (video.srcObject as MediaStream).getTracks();
+            tracks.forEach(track => track.stop());
+            video.srcObject = null;
+          }
+          video.pause?.();
+          video.remove();
         } catch {}
       });
+
+      if (viewport) {
+        const scenes = viewport.querySelectorAll('a-scene') as NodeListOf<any>;
+        scenes.forEach(scene => {
+          try {
+            scene.systems?.['mindar-image-system']?.stop?.();
+            scene.renderer?.dispose?.();
+          } catch {}
+        });
+      }
     } catch {}
   }, []);
 
@@ -359,11 +378,13 @@ function HomeAR() {
     const nextUrl = query ? `${window.location.pathname}?${query}` : window.location.pathname;
     window.history.replaceState(window.history.state, '', nextUrl);
 
+    // カメラデバイスの解放～再取得には端末によって時間がかかることがあるため、
+    // 350ms では短すぎてカメラが再起動できないケースがあった。600ms に延長。
     window.setTimeout(() => {
       setSceneKey(prev => prev + 1);
       setIsSwitchingMode(false);
       normalizeArLayers();
-    }, 350);
+    }, 600);
   };
 
   useEffect(() => {
@@ -434,10 +455,20 @@ function HomeAR() {
 
   useEffect(() => {
     if (!isSwitchingMode) return;
-    const timer = window.setTimeout(() => setIsSwitchingMode(false), 1500);
+    // モード切替のフォールバック解除タイマー。releaseCameraResources 後の
+    // 再取得待ち(600ms)より長く取り、余裕を持って自動解除する。
+    const timer = window.setTimeout(() => setIsSwitchingMode(false), 2000);
     return () => window.clearTimeout(timer);
   }, [isSwitchingMode]);
 
+  // --- カメラ準備完了判定（修正済み） ---
+  // 修正前は isDataLoaded になった時点で即座にポーリングを開始しており、
+  // aframe/aframe-extras/mind-ar(またはAR.js)の外部CDNスクリプトが
+  // まだ読み込み中の場合でも8秒のタイムアウトが先に発動し、
+  // 「カメラが起動していないのに起動完了扱いになる」不具合があった。
+  // NFCタグ経由の初回アクセス（キャッシュが効かずCDN読み込みが遅い）で
+  // 顕在化しやすいため、スクリプト読み込み完了を待ってからポーリングを
+  // 開始するように変更し、タイムアウトも15秒に延長した。
   useEffect(() => {
     if (viewMode === 'report') {
       setCameraReady(true);
@@ -445,10 +476,12 @@ function HomeAR() {
       return;
     }
     if (!isClient || isAuthChecking || !isDataLoaded || isSwitchingMode) return;
+    if (viewMode === 'mindar' && !scriptsReadyForMindar) return;
+    if (viewMode === 'gps' && !scriptsReadyForGps) return;
 
     setCameraTrulyReady(false);
     let tries = 0;
-    const maxTries = 40;
+    const maxTries = 75; // 200ms × 75 = 15秒
     const timer = window.setInterval(() => {
       const viewport = arViewportRef.current;
       const videos = Array.from(viewport?.querySelectorAll('video') ?? []) as HTMLVideoElement[];
@@ -469,7 +502,7 @@ function HomeAR() {
     }, 200);
 
     return () => window.clearInterval(timer);
-  }, [viewMode, isClient, isAuthChecking, isDataLoaded, isSwitchingMode, sceneKey]);
+  }, [viewMode, isClient, isAuthChecking, isDataLoaded, isSwitchingMode, sceneKey, scriptsReadyForMindar, scriptsReadyForGps]);
 
   const retryCamera = useCallback(() => {
     playSound('tap');
@@ -480,7 +513,7 @@ function HomeAR() {
     window.setTimeout(() => {
       setSceneKey(prev => prev + 1);
       setIsSwitchingMode(false);
-    }, 350);
+    }, 600);
   }, [playSound, releaseCameraResources]);
 
   useEffect(() => {
@@ -1723,9 +1756,6 @@ function HomeAR() {
     await supabase.from('pets').update({ walk_distance_m: targetDistanceToHatch }).eq('id', petId);
     alert('孵化条件をMAXにしました');
   };
-
-  const scriptsReadyForMindar = aframeLoaded && extrasLoaded && mindarLoaded;
-  const scriptsReadyForGps = aframeLoaded && arjsLoaded;
 
   if (!isClient || isAuthChecking || (sessionUserId && !isDataLoaded)) {
     return (
