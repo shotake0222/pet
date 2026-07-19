@@ -179,6 +179,10 @@ function HomeAR() {
   const [sceneKey, setSceneKey] = useState(0);
   const arViewportRef = useRef<HTMLDivElement>(null);
 
+  // ここで isSleeping を計算する（他の useEffect よりも前に宣言することで
+  // "used before its declaration" エラーを防ぐ）
+  const isSleeping = sleepingUntil ? new Date(sleepingUntil) > new Date() : false;
+
   useEffect(() => {
     const setAppHeight = () => {
       const h = window.visualViewport?.height ?? window.innerHeight;
@@ -820,7 +824,6 @@ function HomeAR() {
     return petModelUrlV1;
   };
   const activeModelUrl = getCurrentModelUrl();
-  const isSleeping = sleepingUntil ? new Date(sleepingUntil) > new Date() : false;
   const displayName = customName || petMasterName || '名無し';
 
   const getLevelRequirement = (levelNumber: number) => ({
