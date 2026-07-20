@@ -366,7 +366,6 @@ function HomeAR() {
 
     setIsSwitchingMode(true);
     setCameraReady(mode === 'report');
-    releaseCameraResources();
 
     setViewMode(mode);
     const nextParams = new URLSearchParams(searchParams.toString());
@@ -380,7 +379,14 @@ function HomeAR() {
 
     // カメラデバイスの解放～再取得には端末によって時間がかかることがあるため、
     // 350ms では短すぎてカメラが再起動できないケースがあった。600ms に延長。
+    // また、releaseCameraResources() は「React が古い a-scene を確実に
+    // アンマウントし終えた後」に呼び出すことで、A-Frame/MindAR/AR.js 自身の
+    // 後始末（disconnectedCallback 等）と衝突しないようにしている。
+    // (以前は setViewMode の直前で呼んでいたため、ライブラリ自身のクリーン
+    // アップと手動クリーンアップが競合し、次回のカメラ起動に失敗する
+    // 不具合の原因になっていた)
     window.setTimeout(() => {
+      releaseCameraResources();
       setSceneKey(prev => prev + 1);
       setIsSwitchingMode(false);
       normalizeArLayers();
@@ -509,8 +515,8 @@ function HomeAR() {
     setIsSwitchingMode(true);
     setCameraReady(false);
     setCameraTrulyReady(false);
-    releaseCameraResources();
     window.setTimeout(() => {
+      releaseCameraResources();
       setSceneKey(prev => prev + 1);
       setIsSwitchingMode(false);
     }, 600);
@@ -1198,59 +1204,90 @@ function HomeAR() {
     }
   }, [viewMode]);
 
-  // ペットタップ時のイベントバインド（CSSによるpointer-events修復により動作する）
+  // ペットタップ時のイベントバインド
+  // 修正: 以前は sceneKey などが変わるたびに document.querySelector で
+  // #pet-model-N を検索して直接リスナーを貼っていたが、CDN スクリプトの
+  // 読み込みタイミングによってはこの useEffect が発火した時点でまだ
+  // a-scene 自体がマウントされておらず、要素が見つからずリスナーが
+  // 一切登録されないことがあった（クリックしても何も起きない不具合）。
+  // クリックイベントは DOM をバブリングするため、常に存在する
+  // arViewportRef のコンテナ1箇所にだけリスナーを貼り、
+  // e.target の id で対象を判定するイベント委譲方式に変更した。
   useEffect(() => {
-    if (viewMode === 'mindar' && petId && !isEgg && !isSleeping && isDataLoaded) {
-      const handlePetTap = () => {
-        if (petCondition === 'starving' || petCondition === 'sick') {
-          playSound('error');
-          setActionAnim('Sad');
-          setTimeout(() => setActionAnim(null), 1500);
-          setShowConditionSOS(true);
-          return;
-        }
+    if (viewMode !== 'mindar' || !petId || isEgg || isSleeping || !isDataLoaded) return;
+    const viewport = arViewportRef.current;
+    if (!viewport) return;
 
-        playSound('tap');
-        setAffection(prev => {
-          const val = prev + 1;
-          supabase.from('pets').update({ affection_level: val }).eq('id', petId).then();
-          return val;
-        });
-        setEventCount(prev => prev + 1);
-        supabase.from('activity_logs').insert({ pet_id: petId, action_type: 'event', points_earned: 5 }).then();
+    const handlePetTap = (e: Event) => {
+      const target = e.target as HTMLElement | null;
+      const id = target?.id || '';
+      if (!/^pet-model-\d+$/.test(id)) return;
 
-        const tapActions = ['Jump', 'Fly', 'Happy'];
-        const randomAction = tapActions[Math.floor(Math.random() * tapActions.length)];
-        setActionAnim(randomAction);
+      if (petCondition === 'starving' || petCondition === 'sick') {
+        playSound('error');
+        setActionAnim('Sad');
         setTimeout(() => setActionAnim(null), 1500);
+        setShowConditionSOS(true);
+        return;
+      }
 
-        addExperience(5);
-      };
-      const petModels = Array.from({ length: MARKER_COUNT }, (_, i) => document.querySelector(`#pet-model-${i}`)).filter(Boolean) as Element[];
-      petModels.forEach(el => el.addEventListener('click', handlePetTap));
-      return () => petModels.forEach(el => el.removeEventListener('click', handlePetTap));
-    }
-  }, [viewMode, isClient, petId, supabase, isEgg, isSleeping, sceneKey, petCondition, isDataLoaded]);
-
-  useEffect(() => {
-    if (viewMode !== 'mindar' || !(aframeLoaded && extrasLoaded && mindarLoaded) || isSwitchingMode) return;
-
-    const cleanups: Array<() => void> = [];
-    Array.from({ length: MARKER_COUNT }).forEach((_, i) => {
-      const el = document.querySelector(`#marker-target-${i}`);
-      if (!el) return;
-      const onFound = () => setDetectedTargetIndex(i);
-      const onLost = () => setDetectedTargetIndex(prev => (prev === i ? null : prev));
-      el.addEventListener('targetFound', onFound);
-      el.addEventListener('targetLost', onLost);
-      cleanups.push(() => {
-        el.removeEventListener('targetFound', onFound);
-        el.removeEventListener('targetLost', onLost);
+      playSound('tap');
+      setAffection(prev => {
+        const val = prev + 1;
+        supabase.from('pets').update({ affection_level: val }).eq('id', petId).then();
+        return val;
       });
-    });
+      setEventCount(prev => prev + 1);
+      supabase.from('activity_logs').insert({ pet_id: petId, action_type: 'event', points_earned: 5 }).then();
 
-    return () => cleanups.forEach(fn => fn());
-  }, [viewMode, aframeLoaded, extrasLoaded, mindarLoaded, isSwitchingMode, sceneKey]);
+      const tapActions = ['Jump', 'Fly', 'Happy'];
+      const randomAction = tapActions[Math.floor(Math.random() * tapActions.length)];
+      setActionAnim(randomAction);
+      setTimeout(() => setActionAnim(null), 1500);
+
+      addExperience(5);
+    };
+
+    viewport.addEventListener('click', handlePetTap);
+    return () => viewport.removeEventListener('click', handlePetTap);
+  }, [viewMode, petId, supabase, isEgg, isSleeping, petCondition, isDataLoaded]);
+
+  // マーカー検出イベント（targetFound / targetLost）のバインド
+  // 修正: 以前は aframeLoaded/extrasLoaded/mindarLoaded が true になった
+  // 時点で document.querySelector('#marker-target-N') を検索していたが、
+  // これらのスクリプトはキャッシュ済みだと isDataLoaded/sessionUserId より
+  // 先に true になることがあり、その場合 a-scene（と #marker-target-N）が
+  // まだ DOM に存在せず、リスナーが一切バインドされないまま終わっていた。
+  // これが「マーカーは認識しているのに卵発見ボタンが出ない」不具合の原因。
+  // targetFound/targetLost もクリック同様にバブリングするイベントなので、
+  // 常に存在する arViewportRef 1箇所にだけリスナーを貼るよう変更した。
+  useEffect(() => {
+    if (viewMode !== 'mindar') return;
+    const viewport = arViewportRef.current;
+    if (!viewport) return;
+
+    const parseIndex = (target: EventTarget | null) => {
+      const id = (target as HTMLElement | null)?.id || '';
+      const match = /^marker-target-(\d+)$/.exec(id);
+      return match ? Number(match[1]) : null;
+    };
+
+    const onFound = (e: Event) => {
+      const idx = parseIndex(e.target);
+      if (idx !== null) setDetectedTargetIndex(idx);
+    };
+    const onLost = (e: Event) => {
+      const idx = parseIndex(e.target);
+      if (idx !== null) setDetectedTargetIndex(prev => (prev === idx ? null : prev));
+    };
+
+    viewport.addEventListener('targetFound', onFound);
+    viewport.addEventListener('targetLost', onLost);
+    return () => {
+      viewport.removeEventListener('targetFound', onFound);
+      viewport.removeEventListener('targetLost', onLost);
+    };
+  }, [viewMode, sceneKey]);
 
   useEffect(() => {
     if (viewMode !== 'mindar' || !(aframeLoaded && extrasLoaded && mindarLoaded) || isSwitchingMode) return;
@@ -1833,9 +1870,13 @@ function HomeAR() {
       `}</style>
 
       <Script src='https://aframe.io/releases/1.5.0/aframe.min.js' strategy='afterInteractive' onLoad={() => setAframeLoaded(true)} />
-      <Script src='https://cdn.jsdelivr.net/gh/c-frame/aframe-extras@7.2.0/dist/aframe-extras.min.js' strategy='afterInteractive' onLoad={() => setExtrasLoaded(true)} />
-      <Script src='https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-aframe.prod.js' strategy='afterInteractive' onLoad={() => setMindarLoaded(true)} />
-      {gpsEverActivated && (
+      {aframeLoaded && (
+        <Script src='https://cdn.jsdelivr.net/gh/c-frame/aframe-extras@7.2.0/dist/aframe-extras.min.js' strategy='afterInteractive' onLoad={() => setExtrasLoaded(true)} />
+      )}
+      {extrasLoaded && (
+        <Script src='https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-aframe.prod.js' strategy='afterInteractive' onLoad={() => setMindarLoaded(true)} />
+      )}
+      {gpsEverActivated && extrasLoaded && (
         <Script src='https://raw.githack.com/AR-js-org/AR.js/master/aframe/build/aframe-ar.js' strategy='afterInteractive' onLoad={() => setArjsLoaded(true)} />
       )}
 
