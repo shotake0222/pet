@@ -295,7 +295,7 @@ function HomeAR() {
         el.style.width = '100%';
         el.style.height = '100%';
         el.style.zIndex = '1';
-        el.style.pointerEvents = 'auto'; // <- ここをautoに修正してA-Frameへのクリックを通す
+        // pointer-events は CSS 側の .mindar-clickable クラスで制御するため、ここでは触らない
         el.style.transform = 'none';
         el.style.margin = '0';
       });
@@ -309,7 +309,7 @@ function HomeAR() {
         el.style.width = '100%';
         el.style.height = '100%';
         el.style.zIndex = '1';
-        el.style.pointerEvents = 'auto'; // <- ここも修正
+        // pointer-events は CSS 側の .mindar-clickable クラスで制御するため、ここでは触らない
         el.style.transform = 'none';
         el.style.margin = '0';
       });
@@ -1866,18 +1866,30 @@ function HomeAR() {
           max-height: none !important;
           min-width: 0 !important;
           min-height: 0 !important;
-          /* pointer-events を auto に修正し、Raycaster(クリック)をA-Frameに通す */
-          pointer-events: auto !important; 
+          /* 修正: 以前はここで pointer-events を無条件に auto にしていたが、
+             これはカメラがまだ起動していない（AR映像が映っていない）間も
+             全画面サイズの a-scene/canvas がタップを奪ってしまい、下に重なる
+             はずのナビゲーションボタンが反応しなくなる不具合の原因になって
+             いた（GPSモードの a-scene 側で意図的に指定していた
+             pointerEvents:'none' も !important によって上書きされてしまって
+             いた）。既定では none にし、実際にタップ操作が必要になる場面
+             （下記 .mindar-clickable クラス付与時）だけ auto にする。 */
+          pointer-events: none !important;
         }
         .ar-camera-viewport video {
           z-index: 0 !important;
           object-fit: cover !important;
-          pointer-events: none !important; /* ビデオは操作しないのでnoneで良い */
         }
         .ar-camera-viewport a-scene,
         .ar-camera-viewport .a-canvas {
           z-index: 1 !important;
           background: transparent !important;
+        }
+        /* カメラが起動しペットをタップできる状態のときだけ、MindAR の
+           raycaster/cursor がクリックを拾えるよう pointer-events を有効化する */
+        .ar-camera-viewport.mindar-clickable a-scene,
+        .ar-camera-viewport.mindar-clickable .a-canvas {
+          pointer-events: auto !important;
         }
         .ar-camera-viewport .a-enter-vr,
         .ar-camera-viewport .mindar-ui-overlay,
@@ -2989,7 +3001,12 @@ function HomeAR() {
       </div>
 
       {/* --- 背面：ARレイヤー。refの範囲内でのみカメラを表示する。 --- */}
-      <div ref={arViewportRef} className='ar-camera-viewport absolute inset-0 z-[1] pointer-events-none'>
+      <div
+        ref={arViewportRef}
+        className={`ar-camera-viewport absolute inset-0 z-[1] pointer-events-none${
+          viewMode === 'mindar' && cameraReady && !isEgg && !isEggUnregistered && !isSleeping ? ' mindar-clickable' : ''
+        }`}
+      >
         {viewMode === 'mindar' && sessionUserId && isDataLoaded && scriptsReadyForMindar && !isSwitchingMode && (
           <div key={`mindar-container-${sceneKey}`} className='absolute inset-0 pointer-events-none'>
             <a-scene
