@@ -184,6 +184,11 @@ function HomeAR() {
   const [cameraFacing, setCameraFacing] = useState<'environment' | 'user'>('environment');
   const [sceneKey, setSceneKey] = useState(0);
   const arViewportRef = useRef<HTMLDivElement>(null);
+  // 修正(3回目): MindAR/AR.js が React 管理外（document.body 直下）に
+  // 追加するUI要素（ローディング表示・パーミッション許可プロンプト・
+  // VRモード切替ボタンなど）を検出するため、自分自身のルート要素を
+  // 判別できるようにしておく参照。
+  const appRootRef = useRef<HTMLDivElement>(null);
 
   // ここで isSleeping を計算する（他の useEffect よりも前に宣言することで
   // "used before its declaration" エラーを防ぐ）
@@ -332,6 +337,66 @@ function HomeAR() {
       });
     } catch {}
   }, []);
+
+  // --- body直下ストレイ要素の無効化（新規追加） ---
+  // MindAR/AR.js/A-Frame は、ローディング表示・デバイス方向センサーの
+  // パーミッション許可プロンプト・VRモード切替ボタンなどのUI要素を、
+  // React の管理外である document.body 直下に直接追加することがある。
+  // これらは私たちのアプリのルート要素（.relative.isolate）とは別の
+  // 兄弟要素として body に追加されるため、アプリ内部でどれだけ
+  // z-index を調整しても効果がなく、通常のDOM描画順（後に追加された
+  // ものが上に乗る）に従って画面全体のタップを奪ってしまう。
+  // 「ARが映っている時だけナビが反応する」不具合は、まさにこの種の
+  // 要素がカメラ起動前後の一時的なタイミングで存在し、カメラが
+  // 完全に起動し終えると消える（あるいは動作が変わる）ために
+  // 発生していた可能性が高い。
+  // ここでは、自分のアプリのルート要素・スクリプト/スタイル関連タグ・
+  // 既存の video 要素（別処理で viewport 内に移動・管理済み）以外の
+  // body直下の要素を検出し、強制的に非表示・非インタラクティブ化する。
+  const suppressStrayOverlays = useCallback(() => {
+    try {
+      const root = appRootRef.current;
+      if (!root || typeof document === 'undefined' || !document.body) return;
+
+      Array.from(document.body.children).forEach(child => {
+        if (child === root) return;
+
+        const tag = child.tagName;
+        // スクリプト/スタイル/メタ情報系タグや、既存処理で管理している
+        // video要素は対象外（video は normalizeArLayers 側で
+        // viewport 内へ移動・スタイル管理されるため触らない）
+        if (tag === 'SCRIPT' || tag === 'STYLE' || tag === 'LINK' || tag === 'META' || tag === 'NOSCRIPT' || tag === 'VIDEO' || tag === 'TITLE') {
+          return;
+        }
+
+        const el = child as HTMLElement;
+        // 既に無効化済みなら再処理不要（負荷軽減）
+        if (el.dataset.strayOverlaySuppressed === 'true') return;
+
+        el.style.setProperty('pointer-events', 'none', 'important');
+        el.style.setProperty('display', 'none', 'important');
+        el.setAttribute('aria-hidden', 'true');
+        el.dataset.strayOverlaySuppressed = 'true';
+      });
+    } catch {}
+  }, []);
+
+  useEffect(() => {
+    // マウント直後に一度実行
+    suppressStrayOverlays();
+
+    if (typeof MutationObserver === 'undefined' || typeof document === 'undefined') return;
+
+    // document.body に要素が追加/削除されるたびに即座に検出・無効化する。
+    // ポーリングではなく MutationObserver によるイベント駆動にすることで、
+    // CDNスクリプトの読み込みタイミングに依存せず、常に最新の状態を保つ。
+    const bodyObserver = new MutationObserver(() => {
+      suppressStrayOverlays();
+    });
+    bodyObserver.observe(document.body, { childList: true });
+
+    return () => bodyObserver.disconnect();
+  }, [suppressStrayOverlays]);
 
   const closeAllMenus = () => {
     setIsSpotMapOpen(false);
@@ -1821,7 +1886,7 @@ function HomeAR() {
   }
 
   return (
-    <div className='relative isolate w-full h-full min-h-0 min-w-0 max-w-full overflow-hidden bg-black text-white'>
+    <div ref={appRootRef} className='relative isolate w-full h-full min-h-0 min-w-0 max-w-full overflow-hidden bg-black text-white'>
       <style jsx global>{`
         html,
         body {
