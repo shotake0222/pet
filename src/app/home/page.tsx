@@ -1927,16 +1927,22 @@ function HomeAR() {
         </div>
       )}
 
-      {/* 修正: z-[170] → z-10 に変更。
-          このオーバーレイは pointer-events-none 指定済みだが、
-          backdrop-blur（backdrop-filter）と 'isolate' による独立した
-          スタッキングコンテキストの組み合わせにより、一部のモバイル
-          ブラウザでは pointer-events:none が正しくタップを透過しない
-          ことがある。下部ナビ(z-[130])・右上ボタン群(z-[140])・
-          お世話メニュー(z-[150])より確実に下の z-index にしておくことで、
-          カメラ起動中でもナビゲーション操作が常に機能するようにした。 */}
+      {/* 修正(2回目): このオーバーレイが「ARが映っていない間だけナビが反応しない」
+          不具合の直接の原因だった。
+          1) z-[170] → z-10 に変更し、下部ナビ(z-[130])・右上ボタン群(z-[140])・
+             お世話メニュー(z-[150])より確実に下の z-index にした。
+          2) さらに重要な修正として、backdrop-blur-sm（backdrop-filter）を完全に
+             撤去した。backdrop-filter を持つ要素は、pointer-events: none を
+             指定していてもブラウザ（特にWebKit系）によっては独自の
+             コンポジットレイヤーが生成されるためヒットテストの対象から
+             正しく除外されず、下にあるはずのボタンへタップが届かなくなる
+             既知の不具合がある。このオーバーレイは cameraReady が false の間
+             （＝AR映像がまだ出ていない間）ずっと画面全体に存在し続けるため、
+             症状（「ARが映っている時しか操作できない」）と完全に一致していた。
+             視覚的な暗さは backdrop-blur なしの単純な半透明背景
+             （bg-black/80）で代替し、ぼかし効果は使わないようにした。 */}
       {!cameraReady && viewMode !== 'report' && (
-        <div className='absolute inset-0 z-10 bg-black/70 backdrop-blur-sm flex items-center justify-center pointer-events-none'>
+        <div className='absolute inset-0 z-10 bg-black/80 flex items-center justify-center pointer-events-none' style={{ pointerEvents: 'none' }}>
           <div className='text-center'>
             <div className='w-10 h-10 border-4 border-gray-500 border-t-white rounded-full animate-spin mx-auto mb-3'></div>
             <p className='font-bold'>カメラを起動しています...</p>
