@@ -1853,6 +1853,11 @@ function HomeAR() {
           isolation: isolate;
           contain: layout paint;
           background: #000;
+          /* 修正: 起動中オーバーレイの pointer-events 透過に加えて、
+             AR側のcanvas/videoが誤ってブラウザ既定のタッチジェスチャー
+             （スクロール等）に絡んでナビゲーション操作を邪魔しないよう
+             touch-action も明示的に無効化しておく */
+          touch-action: none;
         }
         .ar-camera-viewport a-scene,
         .ar-camera-viewport .a-canvas,
@@ -1922,8 +1927,16 @@ function HomeAR() {
         </div>
       )}
 
+      {/* 修正: z-[170] → z-10 に変更。
+          このオーバーレイは pointer-events-none 指定済みだが、
+          backdrop-blur（backdrop-filter）と 'isolate' による独立した
+          スタッキングコンテキストの組み合わせにより、一部のモバイル
+          ブラウザでは pointer-events:none が正しくタップを透過しない
+          ことがある。下部ナビ(z-[130])・右上ボタン群(z-[140])・
+          お世話メニュー(z-[150])より確実に下の z-index にしておくことで、
+          カメラ起動中でもナビゲーション操作が常に機能するようにした。 */}
       {!cameraReady && viewMode !== 'report' && (
-        <div className='absolute inset-0 z-[170] bg-black/70 backdrop-blur-sm flex items-center justify-center pointer-events-none'>
+        <div className='absolute inset-0 z-10 bg-black/70 backdrop-blur-sm flex items-center justify-center pointer-events-none'>
           <div className='text-center'>
             <div className='w-10 h-10 border-4 border-gray-500 border-t-white rounded-full animate-spin mx-auto mb-3'></div>
             <p className='font-bold'>カメラを起動しています...</p>
