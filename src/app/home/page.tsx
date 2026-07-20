@@ -359,7 +359,17 @@ function HomeAR() {
       if (!root || typeof document === 'undefined' || !document.body) return;
 
       Array.from(document.body.children).forEach(child => {
-        if (child === root) return;
+        // 修正(4回目・重大バグ修正): document.body.children は body の
+        // "直接の子要素" のみを指すが、appRootRef を付与した div は
+        // Next.js 自体のルート要素（例: #__next 等）のさらに内側に
+        // ネストされているため、従来の `child === root` という比較は
+        // 常に false になっていた。その結果、自分のアプリ全体を包んでいる
+        // Next.js のルート要素そのものが「ストレイ要素」と誤判定され、
+        // display:none で画面ごと消えてしまう重大な不具合が発生していた。
+        // `contains()` を使い「このbody直下要素が自分のアプリのルートを
+        // 内包しているかどうか」で判定することで、Next.jsのDOM構造に
+        // 依存せず安全に自分自身のツリー全体を除外できるようにした。
+        if (child === root || child.contains(root)) return;
 
         const tag = child.tagName;
         // スクリプト/スタイル/メタ情報系タグや、既存処理で管理している
