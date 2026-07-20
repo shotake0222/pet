@@ -1253,39 +1253,56 @@ function HomeAR() {
   }, [viewMode, petId, supabase, isEgg, isSleeping, petCondition, isDataLoaded]);
 
   // マーカー検出イベント（targetFound / targetLost）のバインド
-  // 修正: 以前は aframeLoaded/extrasLoaded/mindarLoaded が true になった
-  // 時点で document.querySelector('#marker-target-N') を検索していたが、
-  // これらのスクリプトはキャッシュ済みだと isDataLoaded/sessionUserId より
-  // 先に true になることがあり、その場合 a-scene（と #marker-target-N）が
-  // まだ DOM に存在せず、リスナーが一切バインドされないまま終わっていた。
-  // これが「マーカーは認識しているのに卵発見ボタンが出ない」不具合の原因。
-  // targetFound/targetLost もクリック同様にバブリングするイベントなので、
-  // 常に存在する arViewportRef 1箇所にだけリスナーを貼るよう変更した。
+  // 修正(2回目): 以前は arViewportRef 1箇所に targetFound/targetLost を
+  // バブリングで拾わせる実装にしていたが、MindAR の A-Frame 版はこの
+  // イベントを bubbles:false で発火しているらしく、祖先要素では一切
+  // 拾えていなかった（「マーカーは認識しているのに卵発見ボタンが出ない」
+  // 不具合が解消しなかった直接の原因）。
+  // そのため直接 #marker-target-N 要素へリスナーを貼る方式に戻しつつ、
+  // その要素がまだ存在しない場合に備えて MutationObserver で監視し、
+  // 要素が DOM に現れた瞬間に自動でバインドするようにした。
+  // これにより「CDNスクリプトの読み込みタイミングによっては要素がまだ
+  // 存在せず、リスナーが一切登録されない」という当初の問題も同時に防げる。
   useEffect(() => {
     if (viewMode !== 'mindar') return;
     const viewport = arViewportRef.current;
     if (!viewport) return;
 
-    const parseIndex = (target: EventTarget | null) => {
-      const id = (target as HTMLElement | null)?.id || '';
-      const match = /^marker-target-(\d+)$/.exec(id);
-      return match ? Number(match[1]) : null;
+    const attached = new Map<Element, { onFound: EventListener; onLost: EventListener }>();
+
+    const bindIfNeeded = (el: Element) => {
+      if (attached.has(el)) return;
+      const match = /^marker-target-(\d+)$/.exec(el.id || '');
+      if (!match) return;
+      const idx = Number(match[1]);
+      const onFound = () => setDetectedTargetIndex(idx);
+      const onLost = () => setDetectedTargetIndex(prev => (prev === idx ? null : prev));
+      el.addEventListener('targetFound', onFound);
+      el.addEventListener('targetLost', onLost);
+      attached.set(el, { onFound, onLost });
     };
 
-    const onFound = (e: Event) => {
-      const idx = parseIndex(e.target);
-      if (idx !== null) setDetectedTargetIndex(idx);
-    };
-    const onLost = (e: Event) => {
-      const idx = parseIndex(e.target);
-      if (idx !== null) setDetectedTargetIndex(prev => (prev === idx ? null : prev));
+    const scanAndBind = () => {
+      Array.from({ length: MARKER_COUNT }).forEach((_, i) => {
+        const el = viewport.querySelector(`#marker-target-${i}`);
+        if (el) bindIfNeeded(el);
+      });
     };
 
-    viewport.addEventListener('targetFound', onFound);
-    viewport.addEventListener('targetLost', onLost);
+    // 既にDOMに存在する要素は即バインド
+    scanAndBind();
+
+    // a-scene の遅延マウントなどで後から要素が追加される場合にも対応
+    const observer = new MutationObserver(scanAndBind);
+    observer.observe(viewport, { childList: true, subtree: true });
+
     return () => {
-      viewport.removeEventListener('targetFound', onFound);
-      viewport.removeEventListener('targetLost', onLost);
+      observer.disconnect();
+      attached.forEach(({ onFound, onLost }, el) => {
+        el.removeEventListener('targetFound', onFound);
+        el.removeEventListener('targetLost', onLost);
+      });
+      attached.clear();
     };
   }, [viewMode, sceneKey]);
 
