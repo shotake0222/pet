@@ -306,7 +306,7 @@ function HomeAR() {
       });
 
       const canvases = viewport.querySelectorAll('canvas');
-      canuses.forEach(canvas => {
+      canvases.forEach(canvas => {
         const el = canvas as HTMLCanvasElement;
         el.style.position = 'absolute';
         el.style.inset = '0';
