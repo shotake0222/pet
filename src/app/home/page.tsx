@@ -306,7 +306,7 @@ function HomeAR() {
       });
 
       const canvases = viewport.querySelectorAll('canvas');
-      canvases.forEach(canvas => {
+      canuses.forEach(canvas => {
         const el = canvas as HTMLCanvasElement;
         el.style.position = 'absolute';
         el.style.inset = '0';
@@ -932,9 +932,9 @@ function HomeAR() {
     if (isEgg || isEggUnregistered) {
       return eggModelUrl;
     }
-    // 5の倍数ごとに管理画面設定されたモデル（V2, V3）があれば姿を変える
-    if (level >= 10 && petModelUrlV3) return petModelUrlV3;
-    if (level >= 5 && petModelUrlV2) return petModelUrlV2;
+    // レベル30でV2、レベル50でV3に進化
+    if (level >= 50 && petModelUrlV3) return petModelUrlV3;
+    if (level >= 30 && petModelUrlV2) return petModelUrlV2;
     return petModelUrlV1;
   };
   const activeModelUrl = getCurrentModelUrl();
@@ -1108,7 +1108,7 @@ function HomeAR() {
 
   const showLevelUpEffect = (newLevel: number) => {
     return new Promise<void>(resolve => {
-      const isMilestone = newLevel % 5 === 0;
+      const isMilestone = newLevel === 30 || newLevel === 50 || newLevel % 10 === 0 || newLevel === 99;
       const count = isMilestone ? 250 : 50;
 
       const colors = isMilestone ? ['#FFD700', '#FF73FA', '#7CF0FF', '#FF9F1C', '#FFFFFF'] : ['#60A5FA', '#34D399', '#FBBF24'];
@@ -1185,10 +1185,8 @@ function HomeAR() {
       }
 
       alert(`🌟 レベルアップ！ Lv.${newLevel} になりました！`);
-      if (newLevel % 5 === 0) {
-        if (newLevel === 5 && petModelUrlV2) alert('体が少し大きくなったみたい…！');
-        if (newLevel === 10 && petModelUrlV3) alert('姿が大きく変わった…！');
-      }
+      if (newLevel === 30 && petModelUrlV2) alert('体が少し大きくなったみたい…！');
+      if (newLevel === 50 && petModelUrlV3) alert('姿が大きく変わった…！');
 
       await triggerRandomSickness();
     }
@@ -1332,7 +1330,7 @@ function HomeAR() {
   // バブリングで拾わせる実装にしていたが、MindAR の A-Frame 版はこの
   // イベントを bubbles:false で発火しているらしく、祖先要素では一切
   // 拾えていなかった（「マーカーは認識しているのに卵発見ボタンが出ない」
-  // 不具合が解消しなかった直接の原因）。
+  // 不具合が解消し直接の原因）。
   // そのため直接 #marker-target-N 要素へリスナーを貼る方式に戻しつつ、
   // その要素がまだ存在しない場合に備えて MutationObserver で監視し、
   // 要素が DOM に現れた瞬間に自動でバインドするようにした。
@@ -2003,19 +2001,19 @@ function HomeAR() {
       )}
 
       {/* 修正(2回目): このオーバーレイが「ARが映っていない間だけナビが反応しない」
-          不具合の直接の原因だった。
-          1) z-[170] → z-10 に変更し、下部ナビ(z-[130])・右上ボタン群(z-[140])・
-             お世話メニュー(z-[150])より確実に下の z-index にした。
-          2) さらに重要な修正として、backdrop-blur-sm（backdrop-filter）を完全に
-             撤去した。backdrop-filter を持つ要素は、pointer-events: none を
-             指定していてもブラウザ（特にWebKit系）によっては独自の
-             コンポジットレイヤーが生成されるためヒットテストの対象から
-             正しく除外されず、下にあるはずのボタンへタップが届かなくなる
-             既知の不具合がある。このオーバーレイは cameraReady が false の間
-             （＝AR映像がまだ出ていない間）ずっと画面全体に存在し続けるため、
-             症状（「ARが映っている時しか操作できない」）と完全に一致していた。
-             視覚的な暗さは backdrop-blur なしの単純な半透明背景
-             （bg-black/80）で代替し、ぼかし効果は使わないようにした。 */}
+         不具合の直接の原因だった。
+         1) z-[170] → z-10 に変更し、下部ナビ(z-[130])・右上ボタン群(z-[140])・
+            お世話メニュー(z-[150])より確実に下の z-index にした。
+         2) さらに重要な修正として、backdrop-blur-sm（backdrop-filter）を完全に
+            撤去した。backdrop-filter を持つ要素は、pointer-events: none を
+            指定していてもブラウザ（特にWebKit系）によっては独自の
+            コンポジットレイヤーが生成されるためヒットテストの対象から
+            正しく除外されず、下にあるはずのボタンへタップが届かなくなる
+            既知の不具合がある。このオーバーレイは cameraReady が false の間
+            （＝AR映像がまだ出ていない間）ずっと画面全体に存在し続けるため、
+            症状（「ARが映っている時しか操作できない」）と完全に一致していた。
+            視覚的な暗さは backdrop-blur なしの単純な半透明背景
+            （bg-black/80）で代替し、ぼかし効果は使わないようにした。 */}
       {!cameraReady && viewMode !== 'report' && (
         <div className='absolute inset-0 z-10 bg-black/80 flex items-center justify-center pointer-events-none' style={{ pointerEvents: 'none' }}>
           <div className='text-center'>

@@ -909,11 +909,11 @@ export default function AdminDashboard() {
                       <input type="file" accept=".glb" onChange={e => setPetModelFile(e.target.files?.[0] || null)} className="w-full text-sm" required={!editingPetId} />
                     </div>
                     <div>
-                      <label className="block text-sm font-bold text-blue-800 mb-1">第2形態 (Lv5進化用) <span className="text-xs font-normal">※任意</span></label>
+                      <label className="block text-sm font-bold text-blue-800 mb-1">第2形態 (Lv30進化用) <span className="text-xs font-normal">※任意</span></label>
                       <input type="file" accept=".glb" onChange={e => setPetModelV2File(e.target.files?.[0] || null)} className="w-full text-sm" />
                     </div>
                     <div>
-                      <label className="block text-sm font-bold text-blue-800 mb-1">第3形態 (Lv10進化用) <span className="text-xs font-normal">※任意</span></label>
+                      <label className="block text-sm font-bold text-blue-800 mb-1">第3形態 (Lv50進化用) <span className="text-xs font-normal">※任意</span></label>
                       <input type="file" accept=".glb" onChange={e => setPetModelV3File(e.target.files?.[0] || null)} className="w-full text-sm" />
                     </div>
                   </div>
@@ -1315,8 +1315,8 @@ export default function AdminDashboard() {
                                 <div className="text-sm text-gray-500 mt-1 flex flex-wrap gap-x-3 gap-y-1">
                                   <span className="font-bold text-blue-600 bg-blue-50 px-1.5 rounded border border-blue-100">個別ウェイト: {pet.drop_weight}</span>
                                   <a href={pet.model_url} target="_blank" rel="noreferrer" className="text-blue-500 hover:underline">V1モデル</a>
-                                  {pet.model_url_v2 && <a href={pet.model_url_v2} target="_blank" rel="noreferrer" className="text-blue-500 hover:underline">V2モデル(Lv5)</a>}
-                                  {pet.model_url_v3 && <a href={pet.model_url_v3} target="_blank" rel="noreferrer" className="text-blue-500 hover:underline">V3モデル(Lv10)</a>}
+                                  {pet.model_url_v2 && <a href={pet.model_url_v2} target="_blank" rel="noreferrer" className="text-blue-500 hover:underline">V2モデル(Lv30)</a>}
+                                  {pet.model_url_v3 && <a href={pet.model_url_v3} target="_blank" rel="noreferrer" className="text-blue-500 hover:underline">V3モデル(Lv50)</a>}
                                 </div>
                                 {pet.attributes && pet.attributes.length > 0 && (
                                   <div className="mt-2 flex flex-wrap gap-2">
