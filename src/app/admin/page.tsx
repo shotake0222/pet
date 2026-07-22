@@ -50,9 +50,10 @@ export default function AdminDashboard() {
   const [facilityDropsList, setFacilityDropsList] = useState<any[]>([]);     // 施設別ドロップ報酬リスト
   const [raritiesList, setRaritiesList] = useState<any[]>([]);
   const [attributesList, setAttributesList] = useState<any[]>([]);
-  const [affinitiesList, setAffinitiesList] = useState<any[]>([]);           // 🌟 追加: 属性とアイテムの相性リスト
-  const [attributeWeaknessesList, setAttributeWeaknessesList] = useState<any[]>([]); // 🌟 追加: 属性同士の弱点リスト
-  const [eggsList, setEggsList] = useState<any[]>([]);                       // 🌟 追加: 卵リスト
+  const [affinitiesList, setAffinitiesList] = useState<any[]>([]);           // 🌟 属性とアイテムの相性リスト
+  const [attributeWeaknessesList, setAttributeWeaknessesList] = useState<any[]>([]); // 🌟 属性同士の弱点リスト
+  const [eggsList, setEggsList] = useState<any[]>([]);                       // 🌟 卵リスト
+  const [itemAttributesList, setItemAttributesList] = useState<any[]>([]);   // 🆕 アイテムと属性の中間データ
 
   // --- ペット用State ---
   const [petName, setPetName] = useState('');
@@ -111,6 +112,7 @@ export default function AdminDashboard() {
   const [itemPrice, setItemPrice] = useState('100');
   const [itemEffect, setItemEffect] = useState('10');
   const [itemImageFile, setItemImageFile] = useState<File | null>(null);
+  const [selectedItemAttributeIds, setSelectedItemAttributeIds] = useState<number[]>([]); // 🆕 アイテム登録フォーム用
 
   // --- クーポン用State ---
   const [couponName, setCouponName] = useState('');
@@ -155,9 +157,10 @@ export default function AdminDashboard() {
       petAttrsRes,
       userPetsRes,
       facilityDropsRes,
-      affinitiesRes, // 🌟 追加: 相性データ
-      eggsRes,       // 🌟 追加: 卵データ
-      weaknessesRes  // 🌟 追加: 属性弱点データ
+      affinitiesRes, // 🌟 相性データ
+      eggsRes,       // 🌟 卵データ
+      weaknessesRes, // 🌟 属性弱点データ
+      itemAttrsRes   // 🆕 アイテムと属性の中間データ
     ] = await Promise.all([
       supabase.from('pet_masters').select('*').order('id', { ascending: false }),
       supabase.from('landmark_masters').select('*').order('id', { ascending: false }),
@@ -173,7 +176,8 @@ export default function AdminDashboard() {
       supabase.from('facility_drop_masters').select('*, item_masters(name, image_url), coupon_masters(name, qr_image_url)').order('id', { ascending: false }),
       supabase.from('attribute_item_affinities').select('*, item_masters(name)').order('id', { ascending: true }),
       supabase.from('egg_masters').select('*').order('id', { ascending: true }),
-      supabase.from('attribute_weaknesses').select('*').order('id', { ascending: true }) // 🌟 新規
+      supabase.from('attribute_weaknesses').select('*').order('id', { ascending: true }),
+      supabase.from('item_master_attributes').select('*') // 🆕
     ]);
     
     if (petsRes.data) {
@@ -188,9 +192,24 @@ export default function AdminDashboard() {
       });
       setPetsList(petsRes.data.map((p: any) => ({ ...p, attributes: petAttrMap[p.id] || [] })));
     }
+
+    // 🆕 アイテムに属性をマッピング
+    if (itemsRes.data) {
+      const itemAttrs = (itemAttrsRes && itemAttrsRes.data) ? itemAttrsRes.data : [];
+      const attributes = (attributesRes && attributesRes.data) ? attributesRes.data : [];
+      const attrById = new Map<number, any>(attributes.map((a: any) => [a.id, a]));
+      const itemAttrMap: Record<number, any[]> = {};
+      itemAttrs.forEach((r: any) => {
+        if (!itemAttrMap[r.item_id]) itemAttrMap[r.item_id] = [];
+        const a = attrById.get(r.attribute_id);
+        if (a) itemAttrMap[r.item_id].push(a);
+      });
+      setItemsList(itemsRes.data.map((i: any) => ({ ...i, attributes: itemAttrMap[i.id] || [] })));
+    }
+    if (itemAttrsRes && itemAttrsRes.data) setItemAttributesList(itemAttrsRes.data);
+
     if (landmarkMastersRes.data) setLandmarkMastersList(landmarkMastersRes.data);
     if (landmarksRes.data) setLandmarksList(landmarksRes.data);
-    if (itemsRes.data) setItemsList(itemsRes.data);
     if (couponsRes.data) setCouponsList(couponsRes.data);
     if (newsRes.data) setNewsList(newsRes.data);
     if (usersRes.data) setUsersList(usersRes.data);
@@ -352,7 +371,7 @@ export default function AdminDashboard() {
     }
   };
 
-  // 🌟 新規: 属性のアイテム相性（強化/弱点）を追加
+  // 🌟 属性のアイテム相性（強化/弱点）を追加
   const handleAddAffinity = async (attributeId: number, itemId: string, affinityType: string) => {
     if (!itemId) return alert('アイテムを選択してください');
     try {
@@ -373,7 +392,7 @@ export default function AdminDashboard() {
     }
   };
 
-  // 🌟 新規: 属性のアイテム相性を削除
+  // 🌟 属性のアイテム相性を削除
   const handleDeleteAffinity = async (affinityId: number) => {
     if (!window.confirm('アイテム設定を削除しますか？')) return;
     try {
@@ -385,7 +404,7 @@ export default function AdminDashboard() {
     }
   };
 
-  // 🌟 新規: 弱点属性を追加
+  // 🌟 弱点属性を追加
   const handleAddAttributeWeakness = async (attributeId: number, weakAgainstId: string) => {
     if (!weakAgainstId) return alert('弱点属性を選択してください');
     if (attributeId === parseInt(weakAgainstId, 10)) return alert('自分自身を弱点にはできません');
@@ -406,11 +425,41 @@ export default function AdminDashboard() {
     }
   };
 
-  // 🌟 新規: 弱点属性を削除
+  // 🌟 弱点属性を削除
   const handleDeleteAttributeWeakness = async (weaknessId: number) => {
     if (!window.confirm('弱点属性の設定を削除しますか？')) return;
     try {
       const { error } = await supabase.from('attribute_weaknesses').delete().eq('id', weaknessId);
+      if (error) throw error;
+      await fetchData();
+    } catch (e: any) {
+      alert(`エラー: ${e.message}`);
+    }
+  };
+
+  // 🆕 アイテムに属性を追加
+  const handleAddItemAttribute = async (itemId: number, attributeId: string) => {
+    if (!attributeId) return alert('属性を選択してください');
+    try {
+      const { error } = await supabase.from('item_master_attributes').insert({
+        item_id: itemId,
+        attribute_id: parseInt(attributeId, 10)
+      });
+      if (error) throw error;
+      await fetchData();
+    } catch (e: any) {
+      if (e.code === '23505') {
+        alert('この属性は既に設定されています');
+      } else {
+        alert(`エラー: ${e.message}`);
+      }
+    }
+  };
+
+  // 🆕 アイテムの属性を削除
+  const handleDeleteItemAttribute = async (relationId: number) => {
+    try {
+      const { error } = await supabase.from('item_master_attributes').delete().eq('id', relationId);
       if (error) throw error;
       await fetchData();
     } catch (e: any) {
@@ -598,18 +647,27 @@ export default function AdminDashboard() {
         imageUrl = await uploadFile(itemImageFile, 'items');
       }
 
-      const { error } = await supabase.from('item_masters').insert({
+      const { data: insertedItem, error } = await supabase.from('item_masters').insert({
         name: itemName,
         description: itemDesc,
         item_type: itemType,
         price_jpy: parseInt(itemPrice, 10),
         effect_value: parseInt(itemEffect, 10),
         image_url: imageUrl
-      });
+      }).select('id').single(); // 🆕 挿入したアイテムのidを取得
       if (error) throw error;
+
+      // 🆕 選択した属性を中間テーブルに登録
+      const itemId = insertedItem?.id;
+      if (itemId && selectedItemAttributeIds && selectedItemAttributeIds.length > 0) {
+        const rels = selectedItemAttributeIds.map(attrId => ({ item_id: itemId, attribute_id: attrId }));
+        const { error: relErr } = await supabase.from('item_master_attributes').insert(rels);
+        if (relErr) throw relErr;
+      }
 
       alert(`アイテム「${itemName}」をショップに並べました！`);
       setItemName(''); setItemDesc(''); setItemPrice('100'); setItemEffect('10'); setItemImageFile(null);
+      setSelectedItemAttributeIds([]); // 🆕
       await fetchData(); 
     } catch (e: any) {
       alert(`エラー: ${e.message}`);
@@ -1120,6 +1178,27 @@ export default function AdminDashboard() {
                     <label className="block text-sm font-bold mb-1">アイテムの説明</label>
                     <textarea value={itemDesc} onChange={e => setItemDesc(e.target.value)} className="w-full border p-3 rounded-lg focus:ring-2 focus:ring-yellow-500" rows={2} required />
                   </div>
+
+                  {/* 🆕 アイテムの属性選択 */}
+                  <div>
+                    <label className="block text-sm font-bold mb-1">属性 (複数選択可)</label>
+                    <div className="w-full border p-3 rounded-lg bg-white max-h-40 overflow-y-auto">
+                      {attributesList && attributesList.length > 0 ? (
+                        attributesList.map(a => (
+                          <label key={a.id} className="flex items-center gap-2 text-sm mb-2 cursor-pointer">
+                            <input type="checkbox" checked={selectedItemAttributeIds.includes(a.id)} onChange={e => {
+                              if (e.target.checked) setSelectedItemAttributeIds(prev => [...prev, a.id]);
+                              else setSelectedItemAttributeIds(prev => prev.filter(id => id !== a.id));
+                            }} />
+                            <span>{a.name}{a.description ? ` — ${a.description}` : ''}</span>
+                          </label>
+                        ))
+                      ) : (
+                        <div className="text-xs text-gray-500">まだ属性が登録されていません</div>
+                      )}
+                    </div>
+                  </div>
+
                   <div className="flex gap-4">
                     <div className="flex-1">
                       <label className="block text-sm font-bold mb-1">価格 (円)</label>
@@ -1170,7 +1249,7 @@ export default function AdminDashboard() {
                 </form>
               )}
 
-              {/* 🌟 4. 新規: 施設別ドロップ報酬設定フォーム */}
+              {/* 🌟 4. 施設別ドロップ報酬設定フォーム */}
               {activeTab === 'drops' && (
                 <form onSubmit={handleAddFacilityDrop} className="space-y-5 bg-pink-50 p-6 rounded-2xl border border-pink-100">
                   <h2 className="text-xl font-bold text-pink-900">🎁 施設ドロップ報酬の設定</h2>
@@ -1488,28 +1567,65 @@ export default function AdminDashboard() {
                   <h2 className="text-xl font-bold mb-4 border-b pb-2">🛒 登録済みアイテム一覧</h2>
                   <div className="space-y-3">
                     {itemsList.map(item => (
-                      <div key={item.id} className="p-4 border rounded-xl bg-white hover:bg-gray-50 flex items-center gap-4 transition-colors group shadow-sm">
-                        {item.image_url ? (
-                          <img src={item.image_url} alt={item.name} className="w-16 h-16 object-cover rounded-lg shadow-sm border" />
-                        ) : (
-                          <div className="w-16 h-16 bg-gray-200 rounded-lg flex items-center justify-center text-2xl">📦</div>
-                        )}
-                        
-                        <div className="flex-1">
-                          <div className="flex items-center gap-2">
-                            <span className="font-bold text-lg">{item.name}</span>
-                            <span className="text-xs font-bold bg-yellow-100 text-yellow-800 px-2 py-1 rounded">{item.item_type}</span>
-                            <span className="font-bold text-blue-600 ml-auto">{item.price_jpy > 0 ? `¥${item.price_jpy}` : '無料'}</span>
+                      <div key={item.id} className="p-4 border rounded-xl bg-white hover:bg-gray-50 flex flex-col gap-3 transition-colors group shadow-sm">
+                        <div className="flex items-center gap-4">
+                          {item.image_url ? (
+                            <img src={item.image_url} alt={item.name} className="w-16 h-16 object-cover rounded-lg shadow-sm border" />
+                          ) : (
+                            <div className="w-16 h-16 bg-gray-200 rounded-lg flex items-center justify-center text-2xl">📦</div>
+                          )}
+                          
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2">
+                              <span className="font-bold text-lg">{item.name}</span>
+                              <span className="text-xs font-bold bg-yellow-100 text-yellow-800 px-2 py-1 rounded">{item.item_type}</span>
+                              <span className="font-bold text-blue-600 ml-auto">{item.price_jpy > 0 ? `¥${item.price_jpy}` : '無料'}</span>
+                            </div>
+                            <div className="text-sm text-gray-600 mt-1">{item.description}</div>
+                            <div className="text-xs text-gray-400 mt-1">効果値: {item.effect_value}</div>
                           </div>
-                          <div className="text-sm text-gray-600 mt-1">{item.description}</div>
-                          <div className="text-xs text-gray-400 mt-1">効果値: {item.effect_value}</div>
+                          <button 
+                            onClick={() => handleDeleteItem(item.id, item.image_url)}
+                            className="bg-red-50 text-red-600 font-bold px-4 py-2 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-100 border border-red-200"
+                          >
+                            削除
+                          </button>
                         </div>
-                        <button 
-                          onClick={() => handleDeleteItem(item.id, item.image_url)}
-                          className="bg-red-50 text-red-600 font-bold px-4 py-2 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-100 border border-red-200"
-                        >
-                          削除
-                        </button>
+
+                        {/* 🆕 アイテムの属性表示・管理 */}
+                        <div className="pt-2 border-t">
+                          <div className="text-xs font-bold text-gray-600 mb-1">属性</div>
+                          <div className="flex flex-wrap gap-1 mb-2 min-h-[24px]">
+                            {(item.attributes || []).map((a: any) => {
+                              const rel = itemAttributesList.find((r: any) => r.item_id === item.id && r.attribute_id === a.id);
+                              return (
+                                <span key={a.id} className="text-xs bg-gray-100 border text-gray-700 px-2 py-1 rounded flex items-center gap-1">
+                                  {a.name}
+                                  {rel && (
+                                    <button type="button" onClick={() => handleDeleteItemAttribute(rel.id)} className="text-red-400 font-bold ml-1 hover:text-red-600">×</button>
+                                  )}
+                                </span>
+                              );
+                            })}
+                            {(!item.attributes || item.attributes.length === 0) && (
+                              <span className="text-xs text-gray-400">未設定</span>
+                            )}
+                          </div>
+                          <div className="flex gap-1">
+                            <select id={`item_attr_${item.id}`} className="border p-1.5 text-xs rounded flex-1">
+                              <option value="">属性を選択して追加</option>
+                              {attributesList
+                                .filter(a => !(item.attributes || []).some((ia: any) => ia.id === a.id))
+                                .map(a => <option key={`item_attr_${item.id}_${a.id}`} value={a.id}>{a.name}</option>)
+                              }
+                            </select>
+                            <button type="button" onClick={() => {
+                              const select = document.getElementById(`item_attr_${item.id}`) as HTMLSelectElement;
+                              handleAddItemAttribute(item.id, select.value);
+                              select.value = '';
+                            }} className="bg-gray-200 text-gray-700 px-3 py-1 rounded text-xs font-bold hover:bg-gray-300">追加</button>
+                          </div>
+                        </div>
                       </div>
                     ))}
                     {itemsList.length === 0 && <p className="text-center text-gray-400 py-10">データがありません</p>}
@@ -1552,7 +1668,7 @@ export default function AdminDashboard() {
                 </>
               )}
 
-              {/* 🌟 4. 新規: 施設別ドロップ報酬一覧 */}
+              {/* 🌟 4. 施設別ドロップ報酬一覧 */}
               {activeTab === 'drops' && (
                 <>
                   <h2 className="text-xl font-bold mb-4 border-b pb-2 text-pink-900">🎁 登録済みのドロップルール</h2>
