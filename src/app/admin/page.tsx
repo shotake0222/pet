@@ -177,8 +177,8 @@ export default function AdminDashboard() {
 
   // --- ペット用State ---
   const [petName, setPetName] = useState('');
-  const [petEggType, setPetEggType] = useState('A'); 
-  const [petRarity, setPetRarity] = useState('N');
+  const [petEggType, setPetEggType] = useState(''); // 修正箇所: 初期値を空に変更
+  const [petRarity, setPetRarity] = useState('');   // 修正箇所: 初期値を空に変更
   const [petWeight, setPetWeight] = useState('100');
   const [petModelFile, setPetModelFile] = useState<File | null>(null);         
   const [petModelV2File, setPetModelV2File] = useState<File | null>(null);     
@@ -335,19 +335,33 @@ export default function AdminDashboard() {
     if (couponsRes.data) setCouponsList(couponsRes.data);
     if (newsRes.data) setNewsList(newsRes.data);
     if (usersRes.data) setUsersList(usersRes.data);
-    if (raritiesRes && raritiesRes.data) setRaritiesList(raritiesRes.data);
+    
+    // 修正箇所: 卵リストとレアリティリストの安全な初期値適用
+    if (raritiesRes && raritiesRes.data) {
+      setRaritiesList(raritiesRes.data);
+      setPetRarity(prev => {
+        if (!prev || !raritiesRes.data.some((r: any) => r.code === prev)) {
+          return raritiesRes.data.length > 0 ? raritiesRes.data[0].code : 'N';
+        }
+        return prev;
+      });
+    }
+
     if (attributesRes && attributesRes.data) setAttributesList(attributesRes.data);
     if (userPetsRes.data) setUserPetsList(userPetsRes.data);
     if (facilityDropsRes.data) setFacilityDropsList(facilityDropsRes.data);
     if (affinitiesRes && affinitiesRes.data) setAffinitiesList(affinitiesRes.data);
     if (weaknessesRes && weaknessesRes.data) setAttributeWeaknessesList(weaknessesRes.data);
     if (initialItemsRes && initialItemsRes.data) setInitialItemsList(initialItemsRes.data);
+    
     if (eggsRes && eggsRes.data) {
       setEggsList(eggsRes.data);
-      // 初回の卵タイプのセットアップ
-      if (!petEggType && eggsRes.data.length > 0) {
-        setPetEggType(eggsRes.data[0].name);
-      }
+      setPetEggType(prev => {
+        if (!prev || !eggsRes.data.some((e: any) => e.name === prev)) {
+          return eggsRes.data.length > 0 ? eggsRes.data[0].name : 'A';
+        }
+        return prev;
+      });
     }
   };
 
@@ -1180,7 +1194,7 @@ export default function AdminDashboard() {
                     {editingPetId && (
                       <button type="button" onClick={() => {
                         setEditingPetId(null);
-                        setPetName(''); setPetEggType(eggsList.length > 0 ? eggsList[0].name : 'A'); setPetRarity('N'); setPetWeight('100'); setSelectedAttributeIds([]);
+                        setPetName(''); setPetEggType(eggsList.length > 0 ? eggsList[0].name : 'A'); setPetRarity(raritiesList.length > 0 ? raritiesList[0].code : 'N'); setPetWeight('100'); setSelectedAttributeIds([]);
                         setPetModelFile(null); setPetModelV2File(null); setPetModelV3File(null);
                       }} className="bg-gray-200 text-gray-700 font-bold py-4 px-4 rounded-xl">キャンセル</button>
                     )}
@@ -1636,7 +1650,7 @@ export default function AdminDashboard() {
                                   setEditingPetId(pet.id);
                                   setPetName(pet.name || '');
                                   setPetEggType(pet.egg_type || (eggsList.length > 0 ? eggsList[0].name : 'A')); 
-                                  setPetRarity(pet.rarity || 'N');
+                                  setPetRarity(pet.rarity || (raritiesList.length > 0 ? raritiesList[0].code : 'N'));
                                   setPetWeight(String(pet.drop_weight || 100));
                                   setSelectedAttributeIds((pet.attributes || []).map((a: any) => a.id));
                                   setPetModelFile(null); setPetModelV2File(null); setPetModelV3File(null);
