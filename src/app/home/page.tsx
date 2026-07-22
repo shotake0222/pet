@@ -44,14 +44,16 @@ function HomeAR() {
   const [petMasterName, setPetMasterName] = useState('名無し');
   const [petRarity, setPetRarity] = useState('?');
 
+  // 🌟 追加: ペットの属性とアイテム相性情報
+  const [petAttributes, setPetAttributes] = useState<any[]>([]);
+  const [petAffinities, setPetAffinities] = useState<any[]>([]);
+
   const [viewMode, setViewMode] = useState<'mindar' | 'gps' | 'report'>((modeParam === 'gps' || modeParam === 'report') ? (modeParam as 'mindar' | 'gps' | 'report') : 'mindar');
   const [aframeLoaded, setAframeLoaded] = useState(false);
   const [extrasLoaded, setExtrasLoaded] = useState(false);
   const [mindarLoaded, setMindarLoaded] = useState(false);
   const [arjsLoaded, setArjsLoaded] = useState(false);
 
-  // NOTE: 元々はレンダー直前に宣言されていたが、カメラ準備完了判定の
-  // useEffect より前で参照する必要があるためここに移動した。
   const scriptsReadyForMindar = aframeLoaded && extrasLoaded && mindarLoaded;
   const scriptsReadyForGps = aframeLoaded && arjsLoaded;
 
@@ -138,7 +140,6 @@ function HomeAR() {
   const [userNotifications, setUserNotifications] = useState<any[]>([]);
   const [isNewsOpen, setIsNewsOpen] = useState(false);
 
-  // 追加モーダルState
   const [isFoodMenuOpen, setIsFoodMenuOpen] = useState(false);
   const [isSleepMenuOpen, setIsSleepMenuOpen] = useState(false);
   const [isCareMenuOpen, setIsCareMenuOpen] = useState(false);
@@ -184,14 +185,8 @@ function HomeAR() {
   const [cameraFacing, setCameraFacing] = useState<'environment' | 'user'>('environment');
   const [sceneKey, setSceneKey] = useState(0);
   const arViewportRef = useRef<HTMLDivElement>(null);
-  // 修正(3回目): MindAR/AR.js が React 管理外（document.body 直下）に
-  // 追加するUI要素（ローディング表示・パーミッション許可プロンプト・
-  // VRモード切替ボタンなど）を検出するため、自分自身のルート要素を
-  // 判別できるようにしておく参照。
   const appRootRef = useRef<HTMLDivElement>(null);
 
-  // ここで isSleeping を計算する（他の useEffect よりも前に宣言することで
-  // "used before its declaration" エラーを防ぐ）
   const isSleeping = sleepingUntil ? new Date(sleepingUntil) > new Date() : false;
 
   useEffect(() => {
@@ -224,18 +219,9 @@ function HomeAR() {
 
   const stepCount = Math.floor(walkDistance / 0.75);
 
-  // --- カメラリソースの解放処理（修正済み） ---
-  // 修正前は arViewportRef 配下の video のみを対象にしており、
-  // MindAR/AR.js が React 管理外（document.body 直下など）に生成した
-  // video 要素が停止されずに DOM へ残留し続けることがあった。
-  // 「さんぽ」等へモード切替 → 戻る、を繰り返すとカメラが起動しなくなる
-  // 不具合はこの残留 video が原因である可能性が高いため、
-  // document 全体から video を検索し、トラック停止に加えて要素自体を
-  // remove() して完全にクリーンアップするように変更した。
   const releaseCameraResources = useCallback(() => {
     try {
       const viewport = arViewportRef.current;
-
       const allVideos = document.querySelectorAll('video');
       allVideos.forEach(video => {
         try {
@@ -248,7 +234,6 @@ function HomeAR() {
           video.remove();
         } catch {}
       });
-
       if (viewport) {
         const scenes = viewport.querySelectorAll('a-scene') as NodeListOf<any>;
         scenes.forEach(scene => {
@@ -265,12 +250,10 @@ function HomeAR() {
     try {
       const viewport = arViewportRef.current;
       if (!viewport) return;
-
       const detachedCameraVideos = Array.from(document.querySelectorAll('video')).filter(video => {
         return !viewport.contains(video) && Boolean(video.srcObject);
       });
       detachedCameraVideos.forEach(video => viewport.prepend(video));
-
       const videos = viewport.querySelectorAll('video');
       videos.forEach(video => {
         const el = video as HTMLVideoElement;
@@ -287,10 +270,7 @@ function HomeAR() {
         el.style.margin = '0';
         el.style.top = '0';
         el.style.left = '0';
-        el.style.right = '';
-        el.style.bottom = '';
       });
-
       const scenes = viewport.querySelectorAll('a-scene') as NodeListOf<any>;
       scenes.forEach(scene => {
         const el = scene as HTMLElement;
@@ -300,11 +280,9 @@ function HomeAR() {
         el.style.width = '100%';
         el.style.height = '100%';
         el.style.zIndex = '1';
-        // pointer-events は CSS 側の .mindar-clickable クラスで制御するため、ここでは触らない
         el.style.transform = 'none';
         el.style.margin = '0';
       });
-
       const canvases = viewport.querySelectorAll('canvas');
       canvases.forEach(canvas => {
         const el = canvas as HTMLCanvasElement;
@@ -314,14 +292,11 @@ function HomeAR() {
         el.style.width = '100%';
         el.style.height = '100%';
         el.style.zIndex = '1';
-        // pointer-events は CSS 側の .mindar-clickable クラスで制御するため、ここでは触らない
         el.style.transform = 'none';
         el.style.margin = '0';
       });
-
       const { width, height } = viewport.getBoundingClientRect();
       if (width <= 0 || height <= 0) return;
-
       scenes.forEach(scene => {
         try {
           scene.resize?.();
@@ -338,51 +313,18 @@ function HomeAR() {
     } catch {}
   }, []);
 
-  // --- body直下ストレイ要素の無効化（新規追加） ---
-  // MindAR/AR.js/A-Frame は、ローディング表示・デバイス方向センサーの
-  // パーミッション許可プロンプト・VRモード切替ボタンなどのUI要素を、
-  // React の管理外である document.body 直下に直接追加することがある。
-  // これらは私たちのアプリのルート要素（.relative.isolate）とは別の
-  // 兄弟要素として body に追加されるため、アプリ内部でどれだけ
-  // z-index を調整しても効果がなく、通常のDOM描画順（後に追加された
-  // ものが上に乗る）に従って画面全体のタップを奪ってしまう。
-  // 「ARが映っている時だけナビが反応する」不具合は、まさにこの種の
-  // 要素がカメラ起動前後の一時的なタイミングで存在し、カメラが
-  // 完全に起動し終えると消える（あるいは動作が変わる）ために
-  // 発生していた可能性が高い。
-  // ここでは、自分のアプリのルート要素・スクリプト/スタイル関連タグ・
-  // 既存の video 要素（別処理で viewport 内に移動・管理済み）以外の
-  // body直下の要素を検出し、強制的に非表示・非インタラクティブ化する。
   const suppressStrayOverlays = useCallback(() => {
     try {
       const root = appRootRef.current;
       if (!root || typeof document === 'undefined' || !document.body) return;
-
       Array.from(document.body.children).forEach(child => {
-        // 修正(4回目・重大バグ修正): document.body.children は body の
-        // "直接の子要素" のみを指すが、appRootRef を付与した div は
-        // Next.js 自体のルート要素（例: #__next 等）のさらに内側に
-        // ネストされているため、従来の `child === root` という比較は
-        // 常に false になっていた。その結果、自分のアプリ全体を包んでいる
-        // Next.js のルート要素そのものが「ストレイ要素」と誤判定され、
-        // display:none で画面ごと消えてしまう重大な不具合が発生していた。
-        // `contains()` を使い「このbody直下要素が自分のアプリのルートを
-        // 内包しているかどうか」で判定することで、Next.jsのDOM構造に
-        // 依存せず安全に自分自身のツリー全体を除外できるようにした。
         if (child === root || child.contains(root)) return;
-
         const tag = child.tagName;
-        // スクリプト/スタイル/メタ情報系タグや、既存処理で管理している
-        // video要素は対象外（video は normalizeArLayers 側で
-        // viewport 内へ移動・スタイル管理されるため触らない）
         if (tag === 'SCRIPT' || tag === 'STYLE' || tag === 'LINK' || tag === 'META' || tag === 'NOSCRIPT' || tag === 'VIDEO' || tag === 'TITLE') {
           return;
         }
-
         const el = child as HTMLElement;
-        // 既に無効化済みなら再処理不要（負荷軽減）
         if (el.dataset.strayOverlaySuppressed === 'true') return;
-
         el.style.setProperty('pointer-events', 'none', 'important');
         el.style.setProperty('display', 'none', 'important');
         el.setAttribute('aria-hidden', 'true');
@@ -392,19 +334,12 @@ function HomeAR() {
   }, []);
 
   useEffect(() => {
-    // マウント直後に一度実行
     suppressStrayOverlays();
-
     if (typeof MutationObserver === 'undefined' || typeof document === 'undefined') return;
-
-    // document.body に要素が追加/削除されるたびに即座に検出・無効化する。
-    // ポーリングではなく MutationObserver によるイベント駆動にすることで、
-    // CDNスクリプトの読み込みタイミングに依存せず、常に最新の状態を保つ。
     const bodyObserver = new MutationObserver(() => {
       suppressStrayOverlays();
     });
     bodyObserver.observe(document.body, { childList: true });
-
     return () => bodyObserver.disconnect();
   }, [suppressStrayOverlays]);
 
@@ -425,41 +360,24 @@ function HomeAR() {
   const handleModeChange = (mode: 'mindar' | 'gps' | 'report') => {
     playSound('tap');
     if (mode === viewMode) return;
-
     const isCrossingArEngines = (mode === 'gps' && viewMode === 'mindar') || (mode === 'mindar' && viewMode === 'gps');
     if (isCrossingArEngines && arjsLoaded) {
       const nextParams = new URLSearchParams(searchParams.toString());
       nextParams.set('mode', mode);
-      if (tagIdParam) {
-        nextParams.set('tag_id', tagIdParam);
-      }
+      if (tagIdParam) nextParams.set('tag_id', tagIdParam);
       window.location.href = `${window.location.pathname}?${nextParams.toString()}`;
       return;
     }
-
     closeAllMenus();
-
     setIsSwitchingMode(true);
     setCameraReady(mode === 'report');
-
     setViewMode(mode);
     const nextParams = new URLSearchParams(searchParams.toString());
     nextParams.set('mode', mode);
-    if (tagIdParam) {
-      nextParams.set('tag_id', tagIdParam);
-    }
+    if (tagIdParam) nextParams.set('tag_id', tagIdParam);
     const query = nextParams.toString();
     const nextUrl = query ? `${window.location.pathname}?${query}` : window.location.pathname;
     window.history.replaceState(window.history.state, '', nextUrl);
-
-    // カメラデバイスの解放～再取得には端末によって時間がかかることがあるため、
-    // 350ms では短すぎてカメラが再起動できないケースがあった。600ms に延長。
-    // また、releaseCameraResources() は「React が古い a-scene を確実に
-    // アンマウントし終えた後」に呼び出すことで、A-Frame/MindAR/AR.js 自身の
-    // 後始末（disconnectedCallback 等）と衝突しないようにしている。
-    // (以前は setViewMode の直前で呼んでいたため、ライブラリ自身のクリーン
-    // アップと手動クリーンアップが競合し、次回のカメラ起動に失敗する
-    // 不具合の原因になっていた)
     window.setTimeout(() => {
       releaseCameraResources();
       setSceneKey(prev => prev + 1);
@@ -476,12 +394,9 @@ function HomeAR() {
     if (!rawModeParam) return;
     const isValid = rawModeParam === 'mindar' || rawModeParam === 'gps' || rawModeParam === 'report';
     if (isValid) return;
-
     const nextParams = new URLSearchParams(searchParams.toString());
     nextParams.set('mode', 'mindar');
-    if (tagIdParam) {
-      nextParams.set('tag_id', tagIdParam);
-    }
+    if (tagIdParam) nextParams.set('tag_id', tagIdParam);
     const query = nextParams.toString();
     const nextUrl = query ? `${window.location.pathname}?${query}` : window.location.pathname;
     window.history.replaceState(window.history.state, '', nextUrl);
@@ -500,9 +415,7 @@ function HomeAR() {
     const timer = window.setInterval(() => {
       normalizeArLayers();
       count += 1;
-      if (count >= 16) {
-        window.clearInterval(timer);
-      }
+      if (count >= 16) window.clearInterval(timer);
     }, 250);
     return () => window.clearInterval(timer);
   }, [viewMode, sceneKey, isSwitchingMode, normalizeArLayers]);
@@ -511,18 +424,15 @@ function HomeAR() {
     if (viewMode === 'report') return;
     const viewport = arViewportRef.current;
     if (!viewport || typeof ResizeObserver === 'undefined') return;
-
     const sync = () => {
       normalizeArLayers();
       window.requestAnimationFrame(normalizeArLayers);
     };
     const observer = new ResizeObserver(sync);
     observer.observe(viewport);
-
     const bodyObserver = new MutationObserver(sync);
     bodyObserver.observe(document.body, { childList: true });
     sync();
-
     return () => {
       observer.disconnect();
       bodyObserver.disconnect();
@@ -536,20 +446,10 @@ function HomeAR() {
 
   useEffect(() => {
     if (!isSwitchingMode) return;
-    // モード切替のフォールバック解除タイマー。releaseCameraResources 後の
-    // 再取得待ち(600ms)より長く取り、余裕を持って自動解除する。
     const timer = window.setTimeout(() => setIsSwitchingMode(false), 2000);
     return () => window.clearTimeout(timer);
   }, [isSwitchingMode]);
 
-  // --- カメラ準備完了判定（修正済み） ---
-  // 修正前は isDataLoaded になった時点で即座にポーリングを開始しており、
-  // aframe/aframe-extras/mind-ar(またはAR.js)の外部CDNスクリプトが
-  // まだ読み込み中の場合でも8秒のタイムアウトが先に発動し、
-  // 「カメラが起動していないのに起動完了扱いになる」不具合があった。
-  // NFCタグ経由の初回アクセス（キャッシュが効かずCDN読み込みが遅い）で
-  // 顕在化しやすいため、スクリプト読み込み完了を待ってからポーリングを
-  // 開始するように変更し、タイムアウトも15秒に延長した。
   useEffect(() => {
     if (viewMode === 'report') {
       setCameraReady(true);
@@ -559,29 +459,25 @@ function HomeAR() {
     if (!isClient || isAuthChecking || !isDataLoaded || isSwitchingMode) return;
     if (viewMode === 'mindar' && !scriptsReadyForMindar) return;
     if (viewMode === 'gps' && !scriptsReadyForGps) return;
-
     setCameraTrulyReady(false);
     let tries = 0;
-    const maxTries = 75; // 200ms × 75 = 15秒
+    const maxTries = 75; 
     const timer = window.setInterval(() => {
       const viewport = arViewportRef.current;
       const videos = Array.from(viewport?.querySelectorAll('video') ?? []) as HTMLVideoElement[];
       const ready = videos.some(v => v.readyState >= 2 && v.videoWidth > 0 && v.videoHeight > 0);
-
       if (ready) {
         setCameraReady(true);
         setCameraTrulyReady(true);
         window.clearInterval(timer);
         return;
       }
-
       tries += 1;
       if (tries >= maxTries) {
         setCameraReady(true);
         window.clearInterval(timer);
       }
     }, 200);
-
     return () => window.clearInterval(timer);
   }, [viewMode, isClient, isAuthChecking, isDataLoaded, isSwitchingMode, sceneKey, scriptsReadyForMindar, scriptsReadyForGps]);
 
@@ -608,12 +504,9 @@ function HomeAR() {
           router.push(`/login${queryString}`);
           return;
         }
-
         const userId = session.user.id;
         setSessionUserId(userId);
-
         const { data: profile } = await supabase.from('user_profiles').select('*').eq('id', userId).maybeSingle();
-
         if (!profile || !profile.birth_year) {
           setShowProfileSetup(true);
         } else {
@@ -631,7 +524,6 @@ function HomeAR() {
 
   useEffect(() => {
     if (!sessionUserId || !petId || isEgg) return;
-
     const tryTriggerMindfulness = () => {
       if (showMindfulness || isSleeping || petCondition !== 'healthy') return;
       if (Math.random() < 0.3) {
@@ -639,12 +531,10 @@ function HomeAR() {
         setMindPhase('intro');
       }
     };
-
     if (!hasTriggeredMindfulness.current) {
       hasTriggeredMindfulness.current = true;
       tryTriggerMindfulness();
     }
-
     const interval = window.setInterval(tryTriggerMindfulness, 5 * 60 * 1000);
     return () => window.clearInterval(interval);
   }, [sessionUserId, petId, isEgg, isSleeping, petCondition, showMindfulness]);
@@ -697,7 +587,6 @@ function HomeAR() {
 
   const grantLoginBonusItem = async (userId: string) => {
     let { data: item } = await supabase.from('item_masters').select('id').eq('name', 'ログボご飯').maybeSingle();
-
     if (!item) {
       const { data: newItem, error } = await supabase
         .from('item_masters')
@@ -711,22 +600,15 @@ function HomeAR() {
         })
         .select('id')
         .single();
-
       if (error) return;
       item = newItem;
     }
-
     const { data: inventoryItem } = await supabase.from('user_inventory').select('id, quantity').eq('user_id', userId).eq('item_id', item.id).maybeSingle();
-
     if (inventoryItem) {
-      await supabase
-        .from('user_inventory')
-        .update({ quantity: inventoryItem.quantity + 1 })
-        .eq('id', inventoryItem.id);
+      await supabase.from('user_inventory').update({ quantity: inventoryItem.quantity + 1 }).eq('id', inventoryItem.id);
     } else {
       await supabase.from('user_inventory').insert({ user_id: userId, item_id: item.id, quantity: 1 });
     }
-
     const { data: inv } = await supabase.from('user_inventory').select('id, quantity, item_masters(*)').eq('user_id', userId).gt('quantity', 0);
     if (inv) setInventory(inv);
   };
@@ -735,29 +617,15 @@ function HomeAR() {
     const today = new Date().toLocaleDateString('sv-SE');
     const lastLoginDate = profile.last_login_date;
     let currentLoginDays = profile.login_days || 0;
-
     if (lastLoginDate !== today) {
       currentLoginDays = currentLoginDays >= 7 ? 1 : currentLoginDays + 1;
-
       let gotBonus = false;
       if (currentLoginDays === 7) {
         await grantLoginBonusItem(userId);
         gotBonus = true;
       }
-
-      await supabase
-        .from('user_profiles')
-        .update({
-          last_login_date: today,
-          login_days: currentLoginDays,
-        })
-        .eq('id', userId);
-
-      setLoginBonusState({
-        days: currentLoginDays,
-        gotBonus: gotBonus,
-        showModal: true,
-      });
+      await supabase.from('user_profiles').update({ last_login_date: today, login_days: currentLoginDays }).eq('id', userId);
+      setLoginBonusState({ days: currentLoginDays, gotBonus: gotBonus, showModal: true });
       playSound('levelup');
     }
   };
@@ -766,7 +634,6 @@ function HomeAR() {
 
   const fetchGameData = useCallback(async () => {
     if (!sessionUserId) return;
-
     setDataLoadError(null);
     try {
       const { data: items } = await supabase.from('item_masters').select('*').order('id', { ascending: false });
@@ -855,6 +722,32 @@ function HomeAR() {
             setPetMasterName(petMasterData.name || '不明');
             setPetRarity(rarityPm);
           }
+
+          // 🌟 属性と相性データの取得
+          const { data: attrRels } = await supabase
+            .from('pet_master_attributes')
+            .select('attribute_id, attributes(id, name, description)')
+            .eq('pet_master_id', pet.pet_master_id);
+
+          if (attrRels && attrRels.length > 0) {
+            const attrs = attrRels.map((rel: any) => rel.attributes).filter(Boolean);
+            setPetAttributes(attrs);
+
+            const attrIds = attrs.map((a: any) => a.id);
+            const { data: affinities } = await supabase
+              .from('attribute_item_affinities')
+              .select('*')
+              .in('attribute_id', attrIds);
+            
+            if (affinities) setPetAffinities(affinities);
+            else setPetAffinities([]);
+          } else {
+            setPetAttributes([]);
+            setPetAffinities([]);
+          }
+        } else {
+          setPetAttributes([]);
+          setPetAffinities([]);
         }
 
         const { data: inv } = await supabase.from('user_inventory').select('id, quantity, item_masters(*)').eq('user_id', sessionUserId).gt('quantity', 0);
@@ -876,6 +769,8 @@ function HomeAR() {
         setIsEggUnregistered(true);
         setIsEgg(true);
         setEggModelUrl('/models/eggs/egg.glb');
+        setPetAttributes([]);
+        setPetAffinities([]);
       }
     } catch (error: any) {
       console.error('fetchGameData error', error);
@@ -892,12 +787,10 @@ function HomeAR() {
   const triggerRainbowBridge = async (targetPetId: string, currentGeneration: number) => {
     setShowRainbowBridge(true);
     setRainbowPhase(1);
-
     try {
       const newHallOfFameCount = hallOfFameCount + 1;
       await supabase.from('user_profiles').update({ hall_of_fame_count: newHallOfFameCount }).eq('id', sessionUserId);
       setHallOfFameCount(newHallOfFameCount);
-
       await supabase
         .from('pets')
         .update({
@@ -914,7 +807,6 @@ function HomeAR() {
           generation: currentGeneration + 1,
         })
         .eq('id', targetPetId);
-
       setTimeout(() => {
         setRainbowPhase(2);
       }, 4000);
@@ -929,10 +821,7 @@ function HomeAR() {
   };
 
   const getCurrentModelUrl = () => {
-    if (isEgg || isEggUnregistered) {
-      return eggModelUrl;
-    }
-    // レベル30でV2、レベル50でV3に進化
+    if (isEgg || isEggUnregistered) return eggModelUrl;
     if (level >= 50 && petModelUrlV3) return petModelUrlV3;
     if (level >= 30 && petModelUrlV2) return petModelUrlV2;
     return petModelUrlV1;
@@ -941,7 +830,6 @@ function HomeAR() {
   const displayName = customName || petMasterName || '名無し';
 
   const getLevelRequirement = (levelNumber: number) => ({
-    // 難易度を上げるためノルマを倍増
     distance: targetDistanceToHatch * levelNumber * 2,
     feed: targetFeedCount * levelNumber * 2,
     landmark: targetLandmarkVisits * levelNumber,
@@ -957,11 +845,10 @@ function HomeAR() {
   const isHatchReady = !isEggUnregistered && isEgg && petId && hatchProgress.distance >= 1 && hatchProgress.feed >= 1 && hatchProgress.landmark >= 1 && hatchProgress.event >= 1;
   const nextLevelRequirements = getLevelRequirement(level);
   const isNextLevelReady = !isEgg && petId && walkDistance >= nextLevelRequirements.distance && feedCount >= nextLevelRequirements.feed && landmarkVisitCount >= nextLevelRequirements.landmark && eventCount >= nextLevelRequirements.event;
-  const expNeededForNextLevel = level * 500; // レベルアップ難易度を大幅アップ
+  const expNeededForNextLevel = level * 500; 
 
   const resetPetToEgg = async (reason: string) => {
     if (!petId || isEgg || gameOverHandled) return;
-
     try {
       await supabase
         .from('pets')
@@ -1045,11 +932,9 @@ function HomeAR() {
 
   useEffect(() => {
     if (!petId || isEgg || !lastFedAt || gameOverHandled) return;
-
     const now = Date.now();
     const lastFedTime = new Date(lastFedAt).getTime();
     const hoursPassed = (now - lastFedTime) / (1000 * 60 * 60);
-
     if (hoursPassed >= 24) {
       void resetPetToEgg('体力が尽きて24時間が経過したため');
     }
@@ -1069,7 +954,6 @@ function HomeAR() {
 
   const showHatchEffect = (rarity: string) => {
     return new Promise<void>(resolve => {
-      // エフェクトをさらに極端に派手にする
       const multiplier = rarity === 'UR' ? 8 : rarity === 'SR' ? 4 : rarity === 'R' ? 2 : 1;
       const base = 30;
       const count = Math.min(300, Math.floor(base * multiplier));
@@ -1079,7 +963,6 @@ function HomeAR() {
         SR: ['#C7A3FF', '#FDE68A', '#FECACA', '#A7F3D0', '#FFFFFF'],
         UR: ['#FFD700', '#FF73FA', '#7CF0FF', '#FF9F1C', '#FFFFFF', '#00FF00'],
       } as Record<string, string[]>;
-
       const particles = Array.from({ length: count }).map((_, i) => {
         const angle = (Math.random() - 0.5) * Math.PI * 2;
         const distance = 80 + Math.random() * (rarity === 'UR' ? 500 : rarity === 'SR' ? 350 : rarity === 'R' ? 250 : 150);
@@ -1092,12 +975,10 @@ function HomeAR() {
           duration: 700 + Math.random() * (rarity === 'UR' ? 2000 : rarity === 'SR' ? 1500 : 800),
         };
       });
-
       setHatchOverlay({ active: true, particles, rarity });
       setTimeout(() => {
         setHatchOverlay(prev => (prev ? { ...prev, particles: prev.particles.map(p => ({ ...p, launched: true })) } : prev));
       }, 1000);
-
       const maxDuration = Math.max(...particles.map(p => p.duration)) + 300;
       setTimeout(() => {
         setHatchOverlay(null);
@@ -1110,9 +991,7 @@ function HomeAR() {
     return new Promise<void>(resolve => {
       const isMilestone = newLevel === 30 || newLevel === 50 || newLevel % 10 === 0 || newLevel === 99;
       const count = isMilestone ? 250 : 50;
-
       const colors = isMilestone ? ['#FFD700', '#FF73FA', '#7CF0FF', '#FF9F1C', '#FFFFFF'] : ['#60A5FA', '#34D399', '#FBBF24'];
-
       const particles = Array.from({ length: count }).map((_, i) => {
         const angle = (Math.random() - 0.5) * Math.PI * 2;
         const distance = isMilestone ? 150 + Math.random() * 350 : 80 + Math.random() * 150;
@@ -1125,13 +1004,10 @@ function HomeAR() {
           duration: isMilestone ? 1000 + Math.random() * 2000 : 700 + Math.random() * 800,
         };
       });
-
       setLevelUpOverlay({ active: true, particles, level: newLevel, isMilestone });
-
       setTimeout(() => {
         setLevelUpOverlay(prev => (prev ? { ...prev, particles: prev.particles.map(p => ({ ...p, launched: true })) } : prev));
       }, 40);
-
       const maxDuration = Math.max(...particles.map(p => p.duration)) + 300;
       setTimeout(() => {
         setLevelUpOverlay(null);
@@ -1166,28 +1042,23 @@ function HomeAR() {
       } else {
         setExp(newExp);
         await supabase.from('pets').update({ exp: newExp }).eq('id', petId);
-        return alert(`🌱 もうすぐレベルアップ！ でもまだ条件が揃っていません。
-必要: 歩行 ${nextRequirements.distance}m / 給餌 ${nextRequirements.feed}回 / ランドマーク ${nextRequirements.landmark}回 / イベント ${nextRequirements.event}回`);
+        return alert(`🌱 もうすぐレベルアップ！ でもまだ条件が揃っていません。\n必要: 歩行 ${nextRequirements.distance}m / 給餌 ${nextRequirements.feed}回 / ランドマーク ${nextRequirements.landmark}回 / イベント ${nextRequirements.event}回`);
       }
     }
     setExp(newExp);
     setLevel(newLevel);
     await supabase.from('pets').update({ exp: newExp, level: newLevel }).eq('id', petId);
-
     if (leveledUp) {
       playSound('levelup');
       await showLevelUpEffect(newLevel);
-
       if (newLevel >= 99) {
         alert('🎉 レベル99到達！おめでとうございます！！');
         triggerRainbowBridge(petId, generation);
         return;
       }
-
       alert(`🌟 レベルアップ！ Lv.${newLevel} になりました！`);
       if (newLevel === 30 && petModelUrlV2) alert('体が少し大きくなったみたい…！');
       if (newLevel === 50 && petModelUrlV3) alert('姿が大きく変わった…！');
-
       await triggerRandomSickness();
     }
   };
@@ -1197,29 +1068,22 @@ function HomeAR() {
     const now = Date.now();
     if (now - lastEncounterTime.current < 300000) return;
     lastEncounterTime.current = now;
-
     try {
       let { data: item } = await supabase.from('item_masters').select('id').eq('name', 'ぺたるの香り').maybeSingle();
       if (item) {
         const { data: inventoryItem } = await supabase.from('user_inventory').select('id, quantity').eq('user_id', sessionUserId).eq('item_id', item.id).maybeSingle();
-
         if (inventoryItem) {
-          await supabase
-            .from('user_inventory')
-            .update({ quantity: inventoryItem.quantity + 1 })
-            .eq('id', inventoryItem.id);
+          await supabase.from('user_inventory').update({ quantity: inventoryItem.quantity + 1 }).eq('id', inventoryItem.id);
         } else {
           await supabase.from('user_inventory').insert({ user_id: sessionUserId, item_id: item.id, quantity: 1 });
         }
       }
-
       const newNotification = {
         user_id: sessionUserId,
         title: 'すれ違い通信',
         content: 'ほかのユーザーとすれ違いました！「ぺたるの香り」を手に入れました。もちものから使用して経験値を獲得しましょう！',
       };
       await supabase.from('user_notifications').insert(newNotification);
-
       setUserNotifications(prev => [newNotification, ...prev]);
       alert('📡 すれ違い通信が発生しました！お知らせを確認してください。');
       playSound('item');
@@ -1230,15 +1094,12 @@ function HomeAR() {
 
   useEffect(() => {
     if (viewMode !== 'gps' || !navigator.geolocation) return;
-
     const watchId = navigator.geolocation.watchPosition(
       async position => {
         const newLoc = { lat: position.coords.latitude, lng: position.coords.longitude };
         const lastLoc = prevLocationRef.current;
-
         setLocation(newLoc);
         setPrevLocation(newLoc);
-
         if (lastLoc) {
           const dist = getDistance(lastLoc.lat, lastLoc.lng, newLoc.lat, newLoc.lng);
           if (dist > 2 && dist < 50) {
@@ -1249,19 +1110,16 @@ function HomeAR() {
               }
               return newDistance;
             });
-
             if (Math.random() < 0.1) {
               void triggerEncounter();
             }
           }
         }
-
         prevLocationRef.current = newLoc;
       },
       error => console.error('GPSエラー', error),
       { enableHighAccuracy: true, maximumAge: 0 },
     );
-
     return () => navigator.geolocation.clearWatch(watchId);
   }, [viewMode, petId, supabase]);
 
@@ -1277,25 +1135,14 @@ function HomeAR() {
     }
   }, [viewMode]);
 
-  // ペットタップ時のイベントバインド
-  // 修正: 以前は sceneKey などが変わるたびに document.querySelector で
-  // #pet-model-N を検索して直接リスナーを貼っていたが、CDN スクリプトの
-  // 読み込みタイミングによってはこの useEffect が発火した時点でまだ
-  // a-scene 自体がマウントされておらず、要素が見つからずリスナーが
-  // 一切登録されないことがあった（クリックしても何も起きない不具合）。
-  // クリックイベントは DOM をバブリングするため、常に存在する
-  // arViewportRef のコンテナ1箇所にだけリスナーを貼り、
-  // e.target の id で対象を判定するイベント委譲方式に変更した。
   useEffect(() => {
     if (viewMode !== 'mindar' || !petId || isEgg || isSleeping || !isDataLoaded) return;
     const viewport = arViewportRef.current;
     if (!viewport) return;
-
     const handlePetTap = (e: Event) => {
       const target = e.target as HTMLElement | null;
       const id = target?.id || '';
       if (!/^pet-model-\d+$/.test(id)) return;
-
       if (petCondition === 'starving' || petCondition === 'sick') {
         playSound('error');
         setActionAnim('Sad');
@@ -1303,7 +1150,6 @@ function HomeAR() {
         setShowConditionSOS(true);
         return;
       }
-
       playSound('tap');
       setAffection(prev => {
         const val = prev + 1;
@@ -1312,37 +1158,21 @@ function HomeAR() {
       });
       setEventCount(prev => prev + 1);
       supabase.from('activity_logs').insert({ pet_id: petId, action_type: 'event', points_earned: 5 }).then();
-
       const tapActions = ['Jump', 'Fly', 'Happy'];
       const randomAction = tapActions[Math.floor(Math.random() * tapActions.length)];
       setActionAnim(randomAction);
       setTimeout(() => setActionAnim(null), 1500);
-
       addExperience(5);
     };
-
     viewport.addEventListener('click', handlePetTap);
     return () => viewport.removeEventListener('click', handlePetTap);
   }, [viewMode, petId, supabase, isEgg, isSleeping, petCondition, isDataLoaded]);
 
-  // マーカー検出イベント（targetFound / targetLost）のバインド
-  // 修正(2回目): 以前は arViewportRef 1箇所に targetFound/targetLost を
-  // バブリングで拾わせる実装にしていたが、MindAR の A-Frame 版はこの
-  // イベントを bubbles:false で発火しているらしく、祖先要素では一切
-  // 拾えていなかった（「マーカーは認識しているのに卵発見ボタンが出ない」
-  // 不具合が解消し直接の原因）。
-  // そのため直接 #marker-target-N 要素へリスナーを貼る方式に戻しつつ、
-  // その要素がまだ存在しない場合に備えて MutationObserver で監視し、
-  // 要素が DOM に現れた瞬間に自動でバインドするようにした。
-  // これにより「CDNスクリプトの読み込みタイミングによっては要素がまだ
-  // 存在せず、リスナーが一切登録されない」という当初の問題も同時に防げる。
   useEffect(() => {
     if (viewMode !== 'mindar') return;
     const viewport = arViewportRef.current;
     if (!viewport) return;
-
     const attached = new Map<Element, { onFound: EventListener; onLost: EventListener }>();
-
     const bindIfNeeded = (el: Element) => {
       if (attached.has(el)) return;
       const match = /^marker-target-(\d+)$/.exec(el.id || '');
@@ -1354,21 +1184,15 @@ function HomeAR() {
       el.addEventListener('targetLost', onLost);
       attached.set(el, { onFound, onLost });
     };
-
     const scanAndBind = () => {
       Array.from({ length: MARKER_COUNT }).forEach((_, i) => {
         const el = viewport.querySelector(`#marker-target-${i}`);
         if (el) bindIfNeeded(el);
       });
     };
-
-    // 既にDOMに存在する要素は即バインド
     scanAndBind();
-
-    // a-scene の遅延マウントなどで後から要素が追加される場合にも対応
     const observer = new MutationObserver(scanAndBind);
     observer.observe(viewport, { childList: true, subtree: true });
-
     return () => {
       observer.disconnect();
       attached.forEach(({ onFound, onLost }, el) => {
@@ -1381,16 +1205,13 @@ function HomeAR() {
 
   useEffect(() => {
     if (viewMode !== 'mindar' || !(aframeLoaded && extrasLoaded && mindarLoaded) || isSwitchingMode) return;
-
     const cleanups: Array<() => void> = [];
-
     const assetEl = document.querySelector('#pet-asset');
     if (assetEl) {
       const onAssetError = (e: any) => console.error('🔴 モデルasset読み込みエラー(#pet-asset):', activeModelUrl, e?.detail || e);
       assetEl.addEventListener('error', onAssetError);
       cleanups.push(() => assetEl.removeEventListener('error', onAssetError));
     }
-
     Array.from({ length: MARKER_COUNT }).forEach((_, i) => {
       const el = document.querySelector(`#pet-model-${i}`);
       if (!el) return;
@@ -1403,7 +1224,6 @@ function HomeAR() {
         el.removeEventListener('model-loaded', onModelLoaded);
       });
     });
-
     return () => cleanups.forEach(fn => fn());
   }, [viewMode, aframeLoaded, extrasLoaded, mindarLoaded, isSwitchingMode, sceneKey, activeModelUrl]);
 
@@ -1414,9 +1234,7 @@ function HomeAR() {
       if (fetchError || !eggMasters || eggMasters.length === 0) {
         throw new Error('卵のマスターデータが見つかりません。データベースに卵を登録してください。');
       }
-
       const selectedEgg = eggMasters[Math.floor(Math.random() * eggMasters.length)];
-
       const { data: newPet, error: insertError } = await supabase
         .from('pets')
         .insert({
@@ -1433,7 +1251,6 @@ function HomeAR() {
         })
         .select('*')
         .single();
-
       if (insertError) throw insertError;
 
       setPetId(newPet.id);
@@ -1453,9 +1270,10 @@ function HomeAR() {
       setLevel(1);
       setExp(0);
       setAffection(0);
+      setPetAttributes([]);
+      setPetAffinities([]);
 
       setEggModelUrl(selectedEgg.model_url || '/models/eggs/egg.glb');
-
       playSound('item');
       alert(`不思議な卵を発見した！\nさんぽ、給餌、ランドマーク、イベントの全てをこなして孵化させよう！`);
       setNamingInput('');
@@ -1471,14 +1289,12 @@ function HomeAR() {
     if (!isHatchReady && !force) {
       return alert('まだ孵化条件が揃っていません。歩数・給餌・ランドマーク・イベントを全て満たしてから試してください。');
     }
-
     try {
       const { data: petMasters } = await supabase.from('pet_masters').select('*');
       if (!petMasters || petMasters.length === 0) {
         return alert('ペットのマスターデータが見つかりません。管理画面からペットを登録してください。');
       }
       const selectedMaster = petMasters[Math.floor(Math.random() * petMasters.length)];
-
       const rarityRes = selectedMaster.rarity || '?';
       const fallbackBase = `/models/pet/${rarityRes}`;
       const modelV1 = selectedMaster.model_url || `${fallbackBase}/v1.glb`;
@@ -1490,6 +1306,23 @@ function HomeAR() {
       setPetModelUrlV1(modelV1);
       setPetModelUrlV2(modelV2);
       setPetModelUrlV3(modelV3);
+
+      // 🌟 孵化時に属性データも再取得
+      const { data: attrRels } = await supabase
+        .from('pet_master_attributes')
+        .select('attribute_id, attributes(id, name, description)')
+        .eq('pet_master_id', selectedMaster.id);
+      
+      if (attrRels && attrRels.length > 0) {
+        const attrs = attrRels.map((rel: any) => rel.attributes).filter(Boolean);
+        setPetAttributes(attrs);
+        const attrIds = attrs.map((a: any) => a.id);
+        const { data: affinities } = await supabase.from('attribute_item_affinities').select('*').in('attribute_id', attrIds);
+        if (affinities) setPetAffinities(affinities);
+      } else {
+        setPetAttributes([]);
+        setPetAffinities([]);
+      }
 
       playSound('hatch');
       await showHatchEffect(rarityRes);
@@ -1503,7 +1336,6 @@ function HomeAR() {
         const today = new Date().toISOString().split('T')[0];
         setBirthday(today);
         setLastFedAt(new Date().toISOString());
-
         await supabase
           .from('pets')
           .update({
@@ -1547,17 +1379,25 @@ function HomeAR() {
       return;
     }
 
+    // 🌟 相性の計算
+    let multiplier = 1.0;
+    petAffinities.forEach(af => {
+      if (af.item_id === item.id) {
+        if (af.affinity_type === 'enhance' || af.affinity_type === 'good') multiplier *= 1.5;
+        if (af.affinity_type === 'weakness' || af.affinity_type === 'bad') multiplier *= 0.5;
+      }
+    });
+
+    const finalEffect = Math.max(1, Math.floor((item.effect_value || 0) * multiplier));
+    let affinityMessage = '';
+    if (multiplier > 1.0) affinityMessage = '\n✨ 属性相性バツグン！効果がアップした！';
+    else if (multiplier < 1.0) affinityMessage = '\n💦 苦手なアイテムだったみたい…効果が下がった。';
+
     try {
       const nextQuantity = invItem.quantity - 1;
-      const { error } = await supabase
-        .from('user_inventory')
-        .update({ quantity: nextQuantity })
-        .eq('id', invItem.id);
+      const { error } = await supabase.from('user_inventory').update({ quantity: nextQuantity }).eq('id', invItem.id);
       if (error) throw error;
-
-      setInventory(prev => prev
-        .map(i => (i.id === invItem.id ? { ...i, quantity: nextQuantity } : i))
-        .filter(i => i.quantity > 0));
+      setInventory(prev => prev.map(i => (i.id === invItem.id ? { ...i, quantity: nextQuantity } : i)).filter(i => i.quantity > 0));
       setIsInventoryOpen(false);
       setIsFoodMenuOpen(false);
       setIsSleepMenuOpen(false);
@@ -1569,18 +1409,18 @@ function HomeAR() {
     }
 
     if (item.item_type === 'food') {
-      const newAffection = affection + item.effect_value;
+      const newAffection = affection + finalEffect;
       const now = new Date().toISOString();
       setAffection(newAffection);
       setLastFedAt(now);
       setHungerPercent(100);
       setFeedCount(prev => prev + 1);
       await supabase.from('pets').update({ affection_level: newAffection, last_fed_at: now }).eq('id', petId);
-      await supabase.from('activity_logs').insert({ pet_id: petId, action_type: 'feed', points_earned: item.effect_value || 20 });
+      await supabase.from('activity_logs').insert({ pet_id: petId, action_type: 'feed', points_earned: finalEffect || 20 });
       setActionAnim('Eat');
       setTimeout(() => setActionAnim(null), 2000);
       addExperience(50);
-      alert(`✨ ${item.name} をあげました！`);
+      alert(`✨ ${item.name} をあげました！${affinityMessage}`);
       if (petCondition === 'starving') {
         setPetCondition('healthy');
         setShowConditionSOS(false);
@@ -1588,23 +1428,23 @@ function HomeAR() {
       }
     } else if (item.item_type === 'sleep') {
       const sleepEnd = new Date();
-      sleepEnd.setHours(sleepEnd.getHours() + item.effect_value);
+      sleepEnd.setHours(sleepEnd.getHours() + finalEffect);
       setSleepingUntil(sleepEnd.toISOString());
       await supabase.from('pets').update({ sleeping_until: sleepEnd.toISOString() }).eq('id', petId);
-      alert(`💤 ${item.name} を使って、ペットは ${item.effect_value} 時間眠りにつきました。しばらく面倒を見なくても大丈夫です。`);
+      alert(`💤 ${item.name} を使って、ペットは ${finalEffect} 時間眠りにつきました。しばらく面倒を見なくても大丈夫です。${affinityMessage}`);
     } else if (item.item_type === 'medicine') {
       setPetCondition('healthy');
       setShowConditionSOS(false);
       await supabase.from('pets').update({ condition_status: 'healthy' }).eq('id', petId);
       setActionAnim('Happy');
       setTimeout(() => setActionAnim(null), 2000);
-      alert('✨ お薬が効いて元気になりました！');
+      alert(`✨ お薬が効いて元気になりました！${affinityMessage}`);
     } else if (item.item_type === 'exp') {
-      addExperience(item.effect_value || 100);
-      alert(`✨ ${item.name} の香りに包まれて、経験値を獲得しました！`);
+      addExperience(finalEffect || 100);
+      alert(`✨ ${item.name} の香りに包まれて、経験値を獲得しました！${affinityMessage}`);
     } else {
-      addExperience(item.effect_value || 10);
-      alert(`✨ ${item.name} を使いました！`);
+      addExperience(finalEffect || 10);
+      alert(`✨ ${item.name} を使いました！${affinityMessage}`);
     }
   };
 
@@ -1612,15 +1452,11 @@ function HomeAR() {
     if (!sessionUserId) return;
     const confirmBuy = window.confirm(`${shopItem.name} を ¥${shopItem.price_jpy} で購入しますか？`);
     if (!confirmBuy) return;
-
     try {
       playSound('item');
       const existingItem = inventory.find(i => i.item_masters.id === shopItem.id);
       if (existingItem) {
-        await supabase
-          .from('user_inventory')
-          .update({ quantity: existingItem.quantity + 1 })
-          .eq('id', existingItem.id);
+        await supabase.from('user_inventory').update({ quantity: existingItem.quantity + 1 }).eq('id', existingItem.id);
       } else {
         await supabase.from('user_inventory').insert({ user_id: sessionUserId, item_id: shopItem.id, quantity: 1 });
       }
@@ -1677,7 +1513,6 @@ function HomeAR() {
   const handleCheckIn = async () => {
     if (!activeLandmark || !petId || !sessionUserId) return;
     const today = new Date().toLocaleDateString('sv-SE');
-
     const master = activeLandmark.landmark_masters;
     const facilityType = master?.facility_type && master.facility_type !== 'normal' ? master.facility_type : getFacilityType(activeLandmark.name);
 
@@ -1726,12 +1561,8 @@ function HomeAR() {
 
   const takeSnapshot = () => {
     playSound('camera');
-
     const viewport = arViewportRef.current;
-    if (!viewport) {
-      return alert('AR表示領域が見つかりません。少し待ってから再度お試しください。');
-    }
-
+    if (!viewport) return alert('AR表示領域が見つかりません。少し待ってから再度お試しください。');
     const video = viewport.querySelector('video');
     const aScene = viewport.querySelector('a-scene') as any;
     const aframeCanvas = viewport.querySelector('canvas.a-canvas') || aScene?.canvas || viewport.querySelector('canvas');
@@ -1753,7 +1584,6 @@ function HomeAR() {
         const videoRatio = v.videoWidth / v.videoHeight;
         const canvasRatio = canvas.width / canvas.height;
         let drawWidth, drawHeight, startX, startY;
-
         if (videoRatio > canvasRatio) {
           drawHeight = canvas.height;
           drawWidth = canvas.height * videoRatio;
@@ -1771,7 +1601,6 @@ function HomeAR() {
       if (aframeCanvas) {
         ctx.drawImage(aframeCanvas as HTMLCanvasElement, 0, 0, canvas.width, canvas.height);
       }
-
       const link = document.createElement('a');
       link.download = `straid-ar-snap-${Date.now()}.png`;
       link.href = canvas.toDataURL('image/png');
@@ -1788,18 +1617,15 @@ function HomeAR() {
       alert('セッションが見つかりません。再度ログインしてください。');
       return;
     }
-
     const birthYear = parseInt(inputBirthYear, 10);
     if (Number.isNaN(birthYear) || birthYear < 1900 || birthYear > new Date().getFullYear()) {
       alert('正しい誕生年を入力してください。');
       return;
     }
-
     if (!inputGender) {
       alert('性別を選択してください。');
       return;
     }
-
     setIsSetupSubmitting(true);
     try {
       const today = new Date().toLocaleDateString('sv-SE');
@@ -1815,19 +1641,11 @@ function HomeAR() {
         },
         { onConflict: 'id' },
       );
-
-      if (error) {
-        throw error;
-      }
+      if (error) throw error;
 
       setShowProfileSetup(false);
       alert('プロフィールを設定しました！');
-
-      setLoginBonusState({
-        days: 1,
-        gotBonus: false,
-        showModal: true,
-      });
+      setLoginBonusState({ days: 1, gotBonus: false, showModal: true });
       playSound('levelup');
       router.refresh();
     } catch (err: any) {
@@ -1841,7 +1659,6 @@ function HomeAR() {
   const handleNamingSubmit = async (e: FormEvent) => {
     e.preventDefault();
     if (!petId || !namingInput.trim()) return;
-
     setIsNamingSubmitting(true);
     try {
       const { error: nameUpdateError, data: updatedRows } = await supabase
@@ -1855,7 +1672,7 @@ function HomeAR() {
         throw nameUpdateError;
       }
       if (!updatedRows || updatedRows.length === 0) {
-        throw new Error('保存対象のペットが見つかりませんでした（RLS設定や所有者IDの不一致の可能性があります）。');
+        throw new Error('保存対象のペットが見つかりませんでした。');
       }
 
       setCustomName(namingInput.trim());
@@ -1868,7 +1685,7 @@ function HomeAR() {
       }
     } catch (err: any) {
       console.error('名付けエラー', err);
-      alert(`名前の保存に失敗しました。\n詳細: ${err?.message || '不明なエラー'}\n\nもう一度お試しいただくか、この詳細をサポートにお伝えください。`);
+      alert(`名前の保存に失敗しました。\n詳細: ${err?.message || '不明なエラー'}`);
     } finally {
       setIsNamingSubmitting(false);
     }
@@ -1926,10 +1743,6 @@ function HomeAR() {
           isolation: isolate;
           contain: layout paint;
           background: #000;
-          /* 修正: 起動中オーバーレイの pointer-events 透過に加えて、
-             AR側のcanvas/videoが誤ってブラウザ既定のタッチジェスチャー
-             （スクロール等）に絡んでナビゲーション操作を邪魔しないよう
-             touch-action も明示的に無効化しておく */
           touch-action: none;
         }
         .ar-camera-viewport a-scene,
@@ -1944,14 +1757,6 @@ function HomeAR() {
           max-height: none !important;
           min-width: 0 !important;
           min-height: 0 !important;
-          /* 修正: 以前はここで pointer-events を無条件に auto にしていたが、
-             これはカメラがまだ起動していない（AR映像が映っていない）間も
-             全画面サイズの a-scene/canvas がタップを奪ってしまい、下に重なる
-             はずのナビゲーションボタンが反応しなくなる不具合の原因になって
-             いた（GPSモードの a-scene 側で意図的に指定していた
-             pointerEvents:'none' も !important によって上書きされてしまって
-             いた）。既定では none にし、実際にタップ操作が必要になる場面
-             （下記 .mindar-clickable クラス付与時）だけ auto にする。 */
           pointer-events: none !important;
         }
         .ar-camera-viewport video {
@@ -1963,8 +1768,6 @@ function HomeAR() {
           z-index: 1 !important;
           background: transparent !important;
         }
-        /* カメラが起動しペットをタップできる状態のときだけ、MindAR の
-           raycaster/cursor がクリックを拾えるよう pointer-events を有効化する */
         .ar-camera-viewport.mindar-clickable a-scene,
         .ar-camera-viewport.mindar-clickable .a-canvas {
           pointer-events: auto !important;
@@ -2000,20 +1803,6 @@ function HomeAR() {
         </div>
       )}
 
-      {/* 修正(2回目): このオーバーレイが「ARが映っていない間だけナビが反応しない」
-         不具合の直接の原因だった。
-         1) z-[170] → z-10 に変更し、下部ナビ(z-[130])・右上ボタン群(z-[140])・
-            お世話メニュー(z-[150])より確実に下の z-index にした。
-         2) さらに重要な修正として、backdrop-blur-sm（backdrop-filter）を完全に
-            撤去した。backdrop-filter を持つ要素は、pointer-events: none を
-            指定していてもブラウザ（特にWebKit系）によっては独自の
-            コンポジットレイヤーが生成されるためヒットテストの対象から
-            正しく除外されず、下にあるはずのボタンへタップが届かなくなる
-            既知の不具合がある。このオーバーレイは cameraReady が false の間
-            （＝AR映像がまだ出ていない間）ずっと画面全体に存在し続けるため、
-            症状（「ARが映っている時しか操作できない」）と完全に一致していた。
-            視覚的な暗さは backdrop-blur なしの単純な半透明背景
-            （bg-black/80）で代替し、ぼかし効果は使わないようにした。 */}
       {!cameraReady && viewMode !== 'report' && (
         <div className='absolute inset-0 z-10 bg-black/80 flex items-center justify-center pointer-events-none' style={{ pointerEvents: 'none' }}>
           <div className='text-center'>
@@ -2038,7 +1827,6 @@ function HomeAR() {
         </div>
       )}
 
-      {/* --- 左下デバッグボタン --- */}
       <button
         onClick={() => setIsDebugModalOpen(true)}
         className='absolute bottom-24 left-4 z-[260] bg-black/50 text-white p-3 rounded-full shadow-2xl active:scale-95 text-xl backdrop-blur-sm border border-gray-600'
@@ -2047,7 +1835,6 @@ function HomeAR() {
         🐞
       </button>
 
-      {/* --- デバッグモーダル --- */}
       {isDebugModalOpen && (
         <div className='absolute inset-0 z-[300] bg-black/80 backdrop-blur-md flex items-center justify-center p-4 pointer-events-auto'>
           <div className='bg-white rounded-3xl p-6 w-full max-w-sm shadow-2xl space-y-4 max-h-[80vh] overflow-y-auto relative text-black'>
@@ -2125,7 +1912,6 @@ function HomeAR() {
         </div>
       )}
 
-      {/* --- レベルアップエフェクトオーバーレイ --- */}
       {levelUpOverlay?.active && (
         <div className='pointer-events-none absolute inset-0 z-[140] overflow-hidden flex items-center justify-center'>
           {levelUpOverlay.particles.map((p: any) => (
@@ -2154,7 +1940,6 @@ function HomeAR() {
         </div>
       )}
 
-      {/* --- 孵化エフェクトオーバーレイ --- */}
       {hatchOverlay?.active && (
         <div className='pointer-events-none absolute inset-0 z-[130] overflow-hidden'>
           {hatchOverlay.particles.map((p: any) => (
@@ -2180,7 +1965,6 @@ function HomeAR() {
         </div>
       )}
 
-      {/* --- 虹の橋（殿堂入り）エフェクトオーバーレイ --- */}
       {showRainbowBridge && (
         <div className='absolute inset-0 z-[200] bg-black flex flex-col items-center justify-center p-6 text-center text-white transition-opacity duration-1000'>
           {rainbowPhase === 1 && (
@@ -2217,7 +2001,6 @@ function HomeAR() {
         </div>
       )}
 
-      {/* --- 初回プロフィール設定モーダル --- */}
       {showProfileSetup && (
         <div className='absolute inset-0 z-[120] bg-black/80 backdrop-blur-md flex items-center justify-center p-4 pointer-events-auto'>
           <form onSubmit={handleProfileSubmit} className='bg-white rounded-3xl p-6 w-full max-w-sm shadow-2xl space-y-5 relative text-black'>
@@ -2246,7 +2029,6 @@ function HomeAR() {
         </div>
       )}
 
-      {/* --- 名付け設定モーダル --- */}
       {showNamingScreen && (
         <div className='absolute inset-0 z-[125] bg-black/80 backdrop-blur-md flex items-center justify-center p-4 pointer-events-auto'>
           <form onSubmit={handleNamingSubmit} className='bg-white rounded-3xl p-6 w-full max-w-sm shadow-2xl space-y-5 relative text-black'>
@@ -2279,7 +2061,6 @@ function HomeAR() {
         </div>
       )}
 
-      {/* --- マインドフルネス機能 モーダル --- */}
       {showMindfulness && (
         <div className='absolute inset-0 z-[160] bg-black/90 backdrop-blur-xl flex flex-col items-center justify-center p-6 text-white text-center pointer-events-auto'>
           {mindPhase === 'intro' && (
@@ -2332,7 +2113,6 @@ function HomeAR() {
         </div>
       )}
 
-      {/* --- 歩く(さんぽ)誘いモーダル --- */}
       {isWalkPromptOpen && (
         <div className='absolute inset-0 z-[160] bg-black/80 backdrop-blur-md flex items-center justify-center p-4 pointer-events-auto'>
           <div className='bg-white rounded-3xl p-6 w-full max-w-sm shadow-2xl text-center space-y-4 text-black'>
@@ -2355,7 +2135,6 @@ function HomeAR() {
         </div>
       )}
 
-      {/* --- お世話（ごはん・おやすみ）分岐メニュー --- */}
       {isCareMenuOpen && (
         <div className='absolute bottom-24 left-1/2 -translate-x-1/2 z-[150] flex gap-3 pointer-events-auto'>
           <button
@@ -2375,7 +2154,6 @@ function HomeAR() {
         </div>
       )}
 
-      {/* --- ごはん選択モーダル --- */}
       {isFoodMenuOpen && (
         <div className='absolute bottom-24 left-4 right-4 bg-white/95 p-5 rounded-3xl shadow-2xl backdrop-blur-md z-[150] border border-gray-200 pointer-events-auto'>
           <div className='flex justify-between items-center mb-4 border-b pb-3'>
@@ -2404,7 +2182,6 @@ function HomeAR() {
         </div>
       )}
 
-      {/* --- おやすみ選択モーダル --- */}
       {isSleepMenuOpen && (
         <div className='absolute bottom-24 left-4 right-4 bg-white/95 p-5 rounded-3xl shadow-2xl backdrop-blur-md z-[150] border border-gray-200 pointer-events-auto'>
           <div className='flex justify-between items-center mb-4 border-b pb-3'>
@@ -2440,7 +2217,6 @@ function HomeAR() {
         </div>
       )}
 
-      {/* --- 遊び方(ヘルプ)モーダル --- */}
       {isHelpModalOpen && (
         <div className='absolute inset-0 z-[200] bg-black/80 backdrop-blur-md flex items-center justify-center p-4 pointer-events-auto'>
           <div className='bg-white rounded-3xl p-6 w-full max-w-sm shadow-2xl relative text-black max-h-[85vh] overflow-y-auto'>
@@ -2480,7 +2256,6 @@ function HomeAR() {
         </div>
       )}
 
-      {/* --- 地図でスポットを探すモーダル --- */}
       {isSpotMapOpen && (
         <div className='absolute inset-0 z-[320] bg-black/80 backdrop-blur-md flex items-center justify-center p-4 pointer-events-auto' onClick={() => setIsSpotMapOpen(false)}>
           <div className='bg-white rounded-3xl p-6 w-full max-w-sm shadow-2xl relative max-h-[90vh] flex flex-col' onClick={e => e.stopPropagation()}>
@@ -2508,20 +2283,16 @@ function HomeAR() {
                     src={`https://www.openstreetmap.org/export/embed.html?bbox=${location.lng - 0.005}%2C${location.lat - 0.005}%2C${location.lng + 0.005}%2C${location.lat + 0.005}&layer=mapnik`}
                     className='absolute inset-0 z-0 pointer-events-none'
                   ></iframe>
-
                   <div className='absolute inset-0 z-10 flex items-center justify-center pointer-events-none'>
                     <div className='w-5 h-5 bg-red-500 rounded-full border-2 border-white shadow-md animate-pulse'></div>
                   </div>
-
                   <div className='absolute inset-0 z-20 pointer-events-none'>
                     {landmarks.map(spot => {
                       const master = spot.landmark_masters;
                       const facilityType = master?.facility_type && master.facility_type !== 'normal' ? master.facility_type : getFacilityType(spot.name);
                       const typeIcon = facilityType === 'hospital' ? '🏥' : facilityType === 'restaurant' ? '🍽️' : facilityType === 'hotel' ? '🏨' : '📍';
-
                       const topPercent = 50 - ((spot.latitude - location.lat) / 0.01) * 100;
                       const leftPercent = 50 + ((spot.longitude - location.lng) / 0.01) * 100;
-
                       return (
                         <div key={`radar-${spot.id}`} className='absolute w-8 h-8 -ml-4 -mt-4 text-xl flex items-center justify-center filter drop-shadow bg-white/90 rounded-full border border-gray-300 shadow-sm' style={{ top: `${topPercent}%`, left: `${leftPercent}%` }} title={spot.name}>
                           {typeIcon}
@@ -2536,7 +2307,6 @@ function HomeAR() {
                     const dist = getDistance(location.lat, location.lng, spot.latitude, spot.longitude);
                     const master = spot.landmark_masters;
                     const facilityType = master?.facility_type && master.facility_type !== 'normal' ? master.facility_type : getFacilityType(spot.name);
-
                     return (
                       <div key={`list-${spot.id}`} className='bg-gray-50 border rounded-xl p-3 flex justify-between items-center shadow-sm'>
                         <div>
@@ -2570,7 +2340,6 @@ function HomeAR() {
         </div>
       )}
 
-      {/* --- ウィークリーログインボーナス モーダル --- */}
       {loginBonusState.showModal && (
         <div className='absolute inset-0 z-[110] bg-black/80 backdrop-blur-md flex items-center justify-center p-4 pointer-events-auto'>
           <div className='bg-white rounded-3xl p-6 w-full max-w-sm shadow-2xl flex flex-col items-center text-black'>
@@ -2605,7 +2374,6 @@ function HomeAR() {
         </div>
       )}
 
-      {/* --- お知らせ(News) モーダル --- */}
       {isNewsOpen && (
         <div className='absolute top-20 left-4 right-4 bg-white/95 p-5 rounded-3xl shadow-2xl backdrop-blur-md z-50 border border-gray-200 pointer-events-auto'>
           <div className='flex justify-between items-center mb-4 border-b pb-3'>
@@ -2651,7 +2419,6 @@ function HomeAR() {
         </div>
       )}
 
-      {/* --- ステータスモーダル --- */}
       {isStatusModalOpen && (
         <div className='absolute inset-0 z-[150] bg-black/80 backdrop-blur-md flex items-center justify-center p-4 pointer-events-auto'>
           <div className='bg-gray-900 border border-gray-700 rounded-3xl p-6 w-full max-w-sm shadow-2xl relative text-white space-y-4'>
@@ -2705,6 +2472,20 @@ function HomeAR() {
 
             {!isEgg && !isEggUnregistered && petId && (
               <>
+                {/* 🌟 属性表示エリアを追加 */}
+                {petAttributes.length > 0 && (
+                  <div className='mb-2'>
+                    <div className='text-xs font-bold text-gray-400 mb-1.5'>🔮 属性</div>
+                    <div className='flex flex-wrap gap-2'>
+                      {petAttributes.map(attr => (
+                        <span key={attr.id} className='bg-gray-800 border border-gray-600 px-2 py-1 rounded text-xs font-bold text-gray-200 shadow-sm'>
+                          {attr.name}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
                 <div className='space-y-4'>
                   <div>
                     <div className='flex justify-between text-xs font-bold text-gray-300 mb-1'>
@@ -2776,7 +2557,6 @@ function HomeAR() {
         </div>
       )}
 
-      {/* --- 状態異常SOS モーダル --- */}
       {showConditionSOS && !isEgg && petCondition !== 'healthy' && (
         <div className='absolute top-24 left-4 right-4 z-[100] animate-bounce pointer-events-auto'>
           <div className={`p-4 rounded-2xl shadow-2xl border-4 flex items-start gap-4 ${petCondition === 'sick' ? 'bg-purple-100 border-purple-400 text-purple-900' : 'bg-red-100 border-red-400 text-red-900'}`}>
@@ -2794,7 +2574,6 @@ function HomeAR() {
         </div>
       )}
 
-      {/* --- UIレイヤー (ヘッダー: スッキリ化) --- */}
       {sessionUserId && viewMode !== 'report' && (
         <div className='absolute top-4 left-4 right-4 z-20 flex flex-col gap-3 pointer-events-none'>
           <div className='flex justify-between items-end'>
@@ -2813,7 +2592,6 @@ function HomeAR() {
         </div>
       )}
 
-      {/* --- 右上ボタン群 --- */}
       {viewMode !== 'report' && (
         <div className='absolute top-20 right-4 z-[140] flex flex-col gap-4 pointer-events-auto'>
           {!isEggUnregistered && (
@@ -2828,7 +2606,6 @@ function HomeAR() {
             {(newsList.length > 0 || userNotifications.length > 0) && <span className='absolute top-0 right-0 w-4 h-4 bg-red-500 rounded-full border-2 border-white'></span>}
           </button>
 
-          {/* 遊び方アイコンを追加 */}
           <button onClick={() => { setIsHelpModalOpen(true); playSound('tap'); }} className='bg-white/90 p-3 rounded-full shadow-2xl border border-gray-200 active:scale-90 flex items-center justify-center w-14 h-14 relative' aria-label='遊び方'>
             <span className='text-2xl font-bold text-gray-700'>❓</span>
           </button>
@@ -2872,7 +2649,6 @@ function HomeAR() {
         </div>
       )}
 
-      {/* --- きろく（Report）画面 --- */}
       {viewMode === 'report' && (
         <div className='absolute inset-0 z-30 bg-black/90 text-white overflow-y-auto pb-32 pt-10 px-6 backdrop-blur-md pointer-events-auto'>
           <h2 className='text-3xl font-bold mb-6 text-center text-purple-400'>📊 育成とマインドフルネスの記録</h2>
@@ -2928,7 +2704,6 @@ function HomeAR() {
         </div>
       )}
 
-      {/* --- UIレイヤー (ボトム) --- */}
       <div
         className='absolute bottom-0 left-0 right-0 z-[130] p-4 flex flex-col gap-4 pointer-events-auto'
         style={{ paddingBottom: 'calc(1rem + env(safe-area-inset-bottom, 24px))' }}
@@ -3092,7 +2867,6 @@ function HomeAR() {
         </div>
       </div>
 
-      {/* --- 背面：ARレイヤー。refの範囲内でのみカメラを表示する。 --- */}
       <div
         ref={arViewportRef}
         className={`ar-camera-viewport absolute inset-0 z-[1] pointer-events-none${

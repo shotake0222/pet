@@ -51,6 +51,7 @@ export default function AdminDashboard() {
   const [raritiesList, setRaritiesList] = useState<any[]>([]);
   const [attributesList, setAttributesList] = useState<any[]>([]);
   const [affinitiesList, setAffinitiesList] = useState<any[]>([]);           // 🌟 追加: 属性とアイテムの相性リスト
+  const [attributeWeaknessesList, setAttributeWeaknessesList] = useState<any[]>([]); // 🌟 追加: 属性同士の弱点リスト
   const [eggsList, setEggsList] = useState<any[]>([]);                       // 🌟 追加: 卵リスト
 
   // --- ペット用State ---
@@ -155,7 +156,8 @@ export default function AdminDashboard() {
       userPetsRes,
       facilityDropsRes,
       affinitiesRes, // 🌟 追加: 相性データ
-      eggsRes        // 🌟 追加: 卵データ
+      eggsRes,       // 🌟 追加: 卵データ
+      weaknessesRes  // 🌟 追加: 属性弱点データ
     ] = await Promise.all([
       supabase.from('pet_masters').select('*').order('id', { ascending: false }),
       supabase.from('landmark_masters').select('*').order('id', { ascending: false }),
@@ -169,8 +171,9 @@ export default function AdminDashboard() {
       supabase.from('pet_master_attributes').select('*'),
       supabase.from('pets').select('*, pet_masters(name)').order('created_at', { ascending: false }),
       supabase.from('facility_drop_masters').select('*, item_masters(name, image_url), coupon_masters(name, qr_image_url)').order('id', { ascending: false }),
-      supabase.from('attribute_item_affinities').select('*, item_masters(name)').order('id', { ascending: true }), // 🌟 追加
-      supabase.from('egg_masters').select('*').order('id', { ascending: true }) // 🌟 追加: 卵マスターが必要
+      supabase.from('attribute_item_affinities').select('*, item_masters(name)').order('id', { ascending: true }),
+      supabase.from('egg_masters').select('*').order('id', { ascending: true }),
+      supabase.from('attribute_weaknesses').select('*').order('id', { ascending: true }) // 🌟 新規
     ]);
     
     if (petsRes.data) {
@@ -196,6 +199,7 @@ export default function AdminDashboard() {
     if (userPetsRes.data) setUserPetsList(userPetsRes.data);
     if (facilityDropsRes.data) setFacilityDropsList(facilityDropsRes.data);
     if (affinitiesRes && affinitiesRes.data) setAffinitiesList(affinitiesRes.data);
+    if (weaknessesRes && weaknessesRes.data) setAttributeWeaknessesList(weaknessesRes.data);
     if (eggsRes && eggsRes.data) {
       setEggsList(eggsRes.data);
       // 初回の卵タイプのセットアップ
@@ -216,17 +220,16 @@ export default function AdminDashboard() {
     if (!newEggModelFile) return alert('卵の3Dモデル（.glb）を選択してください');
     setIsSubmitting(true);
     try {
-      // 🌟 卵のモデルをアップロード
       const modelUrl = await uploadFile(newEggModelFile, 'models');
 
       const { error } = await supabase.from('egg_masters').insert({ 
         name: newEggName, 
         drop_weight: parseInt(newEggWeight, 10),
-        model_url: modelUrl // 🌟 URLを保存
+        model_url: modelUrl 
       });
       if (error) throw error;
       setNewEggName(''); setNewEggWeight('100'); setNewEggModelFile(null);
-      await fetchData(); // 🌟 await にして確実な反映
+      await fetchData(); 
       alert('卵を追加しました');
     } catch (e: any) {
       alert(`追加に失敗しました: ${e.message}`);
@@ -254,7 +257,6 @@ export default function AdminDashboard() {
   const handleDeleteEgg = async (id: number, modelUrl: string | null) => {
     if (!window.confirm('この卵を削除しますか？既存のペットに影響が出る可能性があります')) return;
     try {
-      // 🌟 卵のモデルをストレージから削除
       const modelPath = extractFilePath(modelUrl);
       if (modelPath) {
         await supabase.storage.from('ar_assets').remove([modelPath]);
@@ -280,11 +282,11 @@ export default function AdminDashboard() {
         code: newRarityCode, 
         label: newRarityLabel, 
         color: newRarityColor,
-        drop_weight: parseInt(newRarityWeight, 10) // 🌟 ウェイトの保存
+        drop_weight: parseInt(newRarityWeight, 10) 
       });
       if (error) throw error;
       setNewRarityCode(''); setNewRarityLabel(''); setNewRarityColor('#ffffff'); setNewRarityWeight('100');
-      await fetchData(); // 🌟 await に変更
+      await fetchData(); 
       alert('レアリティを追加しました');
     } catch (e: any) {
       alert(`追加に失敗しました: ${e.message}`);
@@ -293,17 +295,16 @@ export default function AdminDashboard() {
     }
   };
 
-  // 🌟 既存レアリティのウェイト更新機能
   const handleUpdateRarityWeight = async (id: number, currentWeight: number) => {
     const newWeightStr = window.prompt('新しい排出ウェイトを入力してください（整数）\n※数値が大きいほど出やすくなります。', String(currentWeight));
-    if (newWeightStr === null) return; // キャンセル時
+    if (newWeightStr === null) return; 
     const newWeight = parseInt(newWeightStr, 10);
     if (isNaN(newWeight) || newWeight < 0) return alert('正しい数値を入力してください');
 
     try {
       const { error } = await supabase.from('rarities').update({ drop_weight: newWeight }).eq('id', id);
       if (error) throw error;
-      await fetchData(); // 🌟 await に変更
+      await fetchData(); 
       alert('ウェイトを更新しました');
     } catch (e: any) {
       alert(`更新に失敗しました: ${e.message}`);
@@ -315,7 +316,7 @@ export default function AdminDashboard() {
     try {
       const { error } = await supabase.from('rarities').delete().eq('id', id);
       if (error) throw error;
-      await fetchData(); // 🌟 await に変更
+      await fetchData(); 
       alert('削除しました');
     } catch (e: any) {
       alert(`削除に失敗しました: ${e.message}`);
@@ -330,7 +331,7 @@ export default function AdminDashboard() {
       const { error } = await supabase.from('attributes').insert({ name: newAttributeName, description: newAttributeDesc });
       if (error) throw error;
       setNewAttributeName(''); setNewAttributeDesc('');
-      await fetchData(); // 🌟 await にして追加の即時反映を確実にする
+      await fetchData(); 
       alert('属性を追加しました');
     } catch (e: any) {
       alert(`追加に失敗しました: ${e.message}`);
@@ -344,14 +345,14 @@ export default function AdminDashboard() {
     try {
       const { error } = await supabase.from('attributes').delete().eq('id', id);
       if (error) throw error;
-      await fetchData(); // 🌟 await に変更
+      await fetchData(); 
       alert('削除しました');
     } catch (e: any) {
       alert(`削除に失敗しました: ${e.message}`);
     }
   };
 
-  // 🌟 新規: 属性のアイテム相性を追加
+  // 🌟 新規: 属性のアイテム相性（強化/弱点）を追加
   const handleAddAffinity = async (attributeId: number, itemId: string, affinityType: string) => {
     if (!itemId) return alert('アイテムを選択してください');
     try {
@@ -361,7 +362,7 @@ export default function AdminDashboard() {
         affinity_type: affinityType
       });
       if (error) throw error;
-      await fetchData(); // 🌟 await に変更
+      await fetchData(); 
       alert('相性を設定しました');
     } catch (e: any) {
       if (e.code === '23505') {
@@ -374,15 +375,49 @@ export default function AdminDashboard() {
 
   // 🌟 新規: 属性のアイテム相性を削除
   const handleDeleteAffinity = async (affinityId: number) => {
-    if (!window.confirm('相性設定を削除しますか？')) return;
+    if (!window.confirm('アイテム設定を削除しますか？')) return;
     try {
       const { error } = await supabase.from('attribute_item_affinities').delete().eq('id', affinityId);
       if (error) throw error;
-      await fetchData(); // 🌟 await に変更
+      await fetchData(); 
     } catch (e: any) {
       alert(`エラー: ${e.message}`);
     }
   };
+
+  // 🌟 新規: 弱点属性を追加
+  const handleAddAttributeWeakness = async (attributeId: number, weakAgainstId: string) => {
+    if (!weakAgainstId) return alert('弱点属性を選択してください');
+    if (attributeId === parseInt(weakAgainstId, 10)) return alert('自分自身を弱点にはできません');
+    try {
+      const { error } = await supabase.from('attribute_weaknesses').insert({
+        attribute_id: attributeId,
+        weak_against_id: parseInt(weakAgainstId, 10)
+      });
+      if (error) throw error;
+      await fetchData();
+      alert('弱点属性を設定しました');
+    } catch (e: any) {
+      if (e.code === '23505') {
+        alert('この属性は既に弱点として設定されています');
+      } else {
+        alert(`エラー: ${e.message}`);
+      }
+    }
+  };
+
+  // 🌟 新規: 弱点属性を削除
+  const handleDeleteAttributeWeakness = async (weaknessId: number) => {
+    if (!window.confirm('弱点属性の設定を削除しますか？')) return;
+    try {
+      const { error } = await supabase.from('attribute_weaknesses').delete().eq('id', weaknessId);
+      if (error) throw error;
+      await fetchData();
+    } catch (e: any) {
+      alert(`エラー: ${e.message}`);
+    }
+  };
+
 
   // ==========================================
   //  追加 (Create) アクション
@@ -460,7 +495,7 @@ export default function AdminDashboard() {
       setPetEggType(eggsList.length > 0 ? eggsList[0].name : 'A');
       setSelectedAttributeIds([]);
       setEditingPetId(null);
-      await fetchData(); // 🌟 awaitに変更
+      await fetchData(); 
     } catch (e: any) {
       alert(`エラー: ${e.message}`);
     } finally {
@@ -497,7 +532,7 @@ export default function AdminDashboard() {
 
       setLmMasterName(''); setLmMasterDesc(''); setLmMasterFacilityType('normal'); setLmMasterModelFile(null); setLmAutoGenerate(false);
       setLmGenStartTime(''); setLmGenEndTime(''); setLmGenCount('100');
-      await fetchData(); // 🌟 awaitに変更
+      await fetchData(); 
     } catch (e: any) {
       alert(`エラー: ${e.message}`);
     } finally {
@@ -524,7 +559,7 @@ export default function AdminDashboard() {
 
       alert(`スポット「${landmarkName}」を地図上に設置しました！`);
       setLandmarkName(''); setLandmarkDesc(''); setLandmarkLat(''); setLandmarkLng(''); setLandmarkModelFile(null);
-      await fetchData(); // 🌟 awaitに変更
+      await fetchData(); 
     } catch (e: any) {
       alert(`エラー: ${e.message}`);
     } finally {
@@ -545,7 +580,7 @@ export default function AdminDashboard() {
       alert(`スケジュールを設定し、全国に ${count} 箇所を発生させました！`);
       setActiveMassGenMaster(null);
       setLmGenStartTime(''); setLmGenEndTime(''); setLmGenCount('100');
-      await fetchData(); // 🌟 awaitに変更
+      await fetchData(); 
     } catch (err: any) {
       alert(`エラー: ${err.message}`);
     } finally {
@@ -575,7 +610,7 @@ export default function AdminDashboard() {
 
       alert(`アイテム「${itemName}」をショップに並べました！`);
       setItemName(''); setItemDesc(''); setItemPrice('100'); setItemEffect('10'); setItemImageFile(null);
-      await fetchData(); // 🌟 awaitに変更
+      await fetchData(); 
     } catch (e: any) {
       alert(`エラー: ${e.message}`);
     } finally {
@@ -603,7 +638,7 @@ export default function AdminDashboard() {
 
       alert(`クーポン「${couponName}」を登録しました！`);
       setCouponName(''); setCouponDesc(''); setCouponCode(''); setCouponQrFile(null);
-      await fetchData(); // 🌟 awaitに変更
+      await fetchData(); 
     } catch (e: any) {
       alert(`エラー: ${e.message}`);
     } finally {
@@ -628,7 +663,7 @@ export default function AdminDashboard() {
       if (error) throw error;
       alert('ドロップ報酬を設定しました！');
       setDropItemId(''); setDropCouponId(''); setDropAmount('1'); setDropRate('100');
-      await fetchData(); // 🌟 awaitに変更
+      await fetchData(); 
     } catch (e: any) {
       alert(`エラー: ${e.message}`);
     } finally {
@@ -649,7 +684,7 @@ export default function AdminDashboard() {
 
       alert('お知らせを配信しました！');
       setNewsTitle(''); setNewsContent('');
-      await fetchData(); // 🌟 awaitに変更
+      await fetchData(); 
     } catch (e: any) {
       alert(`エラー: ${e.message}`);
     } finally {
@@ -663,7 +698,7 @@ export default function AdminDashboard() {
       const { error } = await supabase.from('pets').update({ condition_status: newCondition }).eq('id', petId);
       if (error) throw error;
       alert('ステータスを更新しました。');
-      await fetchData(); // 🌟 awaitに変更
+      await fetchData(); 
     } catch (e: any) {
       alert(`エラー: ${e.message}`);
     }
@@ -688,7 +723,7 @@ export default function AdminDashboard() {
       const { error } = await supabase.from('pet_masters').delete().eq('id', id);
       if (error) throw error;
       alert('削除しました。');
-      await fetchData(); // 🌟 awaitに変更
+      await fetchData(); 
     } catch (e: any) {
       alert(`削除に失敗しました: ${e.message}`);
     }
@@ -702,7 +737,7 @@ export default function AdminDashboard() {
       const { error } = await supabase.from('landmark_masters').delete().eq('id', id);
       if (error) throw error;
       alert('スポットリストから削除しました。');
-      await fetchData(); // 🌟 awaitに変更
+      await fetchData(); 
     } catch (e: any) {
       alert(`削除に失敗しました: ${e.message}`);
     }
@@ -712,7 +747,7 @@ export default function AdminDashboard() {
     try {
       const { error } = await supabase.from('landmark_masters').update({ is_public: !current }).eq('id', id);
       if (error) throw error;
-      await fetchData(); // 🌟 awaitに変更
+      await fetchData(); 
     } catch (e: any) {
       alert(`エラー: ${e.message}`);
     }
@@ -724,7 +759,7 @@ export default function AdminDashboard() {
       const { error } = await supabase.from('landmarks').delete().eq('id', id);
       if (error) throw error;
       alert('スポットを撤去しました。');
-      await fetchData(); // 🌟 awaitに変更
+      await fetchData(); 
     } catch (e: any) {
       alert(`削除に失敗しました: ${e.message}`);
     }
@@ -740,7 +775,7 @@ export default function AdminDashboard() {
       const { error } = await supabase.from('item_masters').delete().eq('id', id);
       if (error) throw error;
       alert('削除しました。');
-      await fetchData(); // 🌟 awaitに変更
+      await fetchData(); 
     } catch (e: any) {
       alert(`削除に失敗しました: ${e.message}`);
     }
@@ -756,7 +791,7 @@ export default function AdminDashboard() {
       const { error } = await supabase.from('coupon_masters').delete().eq('id', id);
       if (error) throw error;
       alert('削除しました。');
-      await fetchData(); // 🌟 awaitに変更
+      await fetchData(); 
     } catch (e: any) {
       alert(`削除に失敗しました: ${e.message}`);
     }
@@ -768,7 +803,7 @@ export default function AdminDashboard() {
       const { error } = await supabase.from('facility_drop_masters').delete().eq('id', id);
       if (error) throw error;
       alert('削除しました。');
-      await fetchData(); // 🌟 awaitに変更
+      await fetchData(); 
     } catch (e: any) {
       alert(`削除に失敗しました: ${e.message}`);
     }
@@ -778,7 +813,7 @@ export default function AdminDashboard() {
     try {
       const { error } = await supabase.from('announcements').update({ is_active: !currentStatus }).eq('id', id);
       if (error) throw error;
-      await fetchData(); // 🌟 awaitに変更
+      await fetchData(); 
     } catch (e: any) {
       alert(`エラー: ${e.message}`);
     }
@@ -1826,7 +1861,7 @@ export default function AdminDashboard() {
                 </form>
 
                 <div className="mt-6">
-                  <h4 className="font-bold mb-2 border-b pb-2 text-gray-800">登録済み属性とアイテム相性</h4>
+                  <h4 className="font-bold mb-2 border-b pb-2 text-gray-800">登録済み属性と設定</h4>
                   <div className="space-y-4 mt-3">
                     {attributesList.length === 0 && <div className="text-sm text-gray-500 text-center py-4 bg-white rounded border">まだ登録されていません</div>}
                     
@@ -1843,60 +1878,91 @@ export default function AdminDashboard() {
                           </button>
                         </div>
                         
-                        {/* 相性設定セクション */}
+                        {/* 🌟 弱点・強化設定セクション */}
                         <div className="pt-3 border-t text-sm bg-gray-50 -mx-3 -mb-3 p-3 rounded-b-lg">
-                          <div className="font-bold text-gray-700 mb-2 text-xs">アイテム相性設定</div>
+                          <div className="font-bold text-gray-700 mb-2 text-xs">弱点・強化設定</div>
                           
                           <div className="grid grid-cols-1 gap-4">
-                            {/* 効くアイテム */}
+                            
+                            {/* ⚔️ 弱点属性 */}
                             <div>
-                              <div className="text-xs font-bold text-green-700 mb-1">👍 効くアイテム (効果UP)</div>
+                              <div className="text-xs font-bold text-purple-700 mb-1">⚔️ 弱点属性 (被ダメージUP)</div>
                               <div className="flex flex-wrap gap-1 mb-2 min-h-[24px]">
-                                {affinitiesList.filter(af => af.attribute_id === a.id && af.affinity_type === 'good').map(af => (
-                                  <span key={af.id} className="text-xs bg-white border border-green-300 text-green-800 px-2 py-1 rounded flex items-center gap-1 shadow-sm">
-                                    {af.item_masters?.name}
-                                    <button type="button" onClick={() => handleDeleteAffinity(af.id)} className="text-red-400 font-bold ml-1 hover:text-red-600">×</button>
-                                  </span>
-                                ))}
-                                {affinitiesList.filter(af => af.attribute_id === a.id && af.affinity_type === 'good').length === 0 && (
+                                {attributeWeaknessesList.filter(aw => aw.attribute_id === a.id).map(aw => {
+                                  const weakAttr = attributesList.find(attr => attr.id === aw.weak_against_id);
+                                  return (
+                                    <span key={aw.id} className="text-xs bg-white border border-purple-300 text-purple-800 px-2 py-1 rounded flex items-center gap-1 shadow-sm">
+                                      {weakAttr?.name || '不明'}
+                                      <button type="button" onClick={() => handleDeleteAttributeWeakness(aw.id)} className="text-red-400 font-bold ml-1 hover:text-red-600">×</button>
+                                    </span>
+                                  );
+                                })}
+                                {attributeWeaknessesList.filter(aw => aw.attribute_id === a.id).length === 0 && (
                                   <span className="text-xs text-gray-400">設定なし</span>
                                 )}
                               </div>
                               <div className="flex gap-1">
-                                <select id={`good_item_${a.id}`} className="border p-1.5 text-xs rounded flex-1 focus:ring-green-500">
-                                  <option value="">アイテムを選択</option>
-                                  {itemsList.map(item => <option key={`good_${a.id}_${item.id}`} value={item.id}>{item.name}</option>)}
+                                <select id={`weak_attr_${a.id}`} className="border p-1.5 text-xs rounded flex-1 focus:ring-purple-500">
+                                  <option value="">属性を選択</option>
+                                  {attributesList.filter(attr => attr.id !== a.id).map(attr => <option key={`weak_${a.id}_${attr.id}`} value={attr.id}>{attr.name}</option>)}
                                 </select>
                                 <button type="button" onClick={() => {
-                                  const select = document.getElementById(`good_item_${a.id}`) as HTMLSelectElement;
-                                  handleAddAffinity(a.id, select.value, 'good');
+                                  const select = document.getElementById(`weak_attr_${a.id}`) as HTMLSelectElement;
+                                  handleAddAttributeWeakness(a.id, select.value);
                                   select.value = '';
-                                }} className="bg-green-100 border border-green-300 text-green-700 px-3 py-1 rounded text-xs font-bold hover:bg-green-200">追加</button>
+                                }} className="bg-purple-100 border border-purple-300 text-purple-700 px-3 py-1 rounded text-xs font-bold hover:bg-purple-200">追加</button>
                               </div>
                             </div>
 
-                            {/* 効かないアイテム */}
+                            {/* ✨ 強化アイテム */}
                             <div>
-                              <div className="text-xs font-bold text-red-700 mb-1">👎 効かないアイテム (効果ダウン)</div>
+                              <div className="text-xs font-bold text-blue-700 mb-1">✨ 強化アイテム (効果UP)</div>
                               <div className="flex flex-wrap gap-1 mb-2 min-h-[24px]">
-                                {affinitiesList.filter(af => af.attribute_id === a.id && af.affinity_type === 'bad').map(af => (
+                                {affinitiesList.filter(af => af.attribute_id === a.id && ['enhance', 'good'].includes(af.affinity_type)).map(af => (
+                                  <span key={af.id} className="text-xs bg-white border border-blue-300 text-blue-800 px-2 py-1 rounded flex items-center gap-1 shadow-sm">
+                                    {af.item_masters?.name}
+                                    <button type="button" onClick={() => handleDeleteAffinity(af.id)} className="text-red-400 font-bold ml-1 hover:text-red-600">×</button>
+                                  </span>
+                                ))}
+                                {affinitiesList.filter(af => af.attribute_id === a.id && ['enhance', 'good'].includes(af.affinity_type)).length === 0 && (
+                                  <span className="text-xs text-gray-400">設定なし</span>
+                                )}
+                              </div>
+                              <div className="flex gap-1">
+                                <select id={`enhance_item_${a.id}`} className="border p-1.5 text-xs rounded flex-1 focus:ring-blue-500">
+                                  <option value="">アイテムを選択</option>
+                                  {itemsList.map(item => <option key={`enhance_${a.id}_${item.id}`} value={item.id}>{item.name}</option>)}
+                                </select>
+                                <button type="button" onClick={() => {
+                                  const select = document.getElementById(`enhance_item_${a.id}`) as HTMLSelectElement;
+                                  handleAddAffinity(a.id, select.value, 'enhance');
+                                  select.value = '';
+                                }} className="bg-blue-100 border border-blue-300 text-blue-700 px-3 py-1 rounded text-xs font-bold hover:bg-blue-200">追加</button>
+                              </div>
+                            </div>
+
+                            {/* 💀 弱点アイテム */}
+                            <div>
+                              <div className="text-xs font-bold text-red-700 mb-1">💀 弱点アイテム (ダメージ・効果ダウン)</div>
+                              <div className="flex flex-wrap gap-1 mb-2 min-h-[24px]">
+                                {affinitiesList.filter(af => af.attribute_id === a.id && ['weakness', 'bad'].includes(af.affinity_type)).map(af => (
                                   <span key={af.id} className="text-xs bg-white border border-red-300 text-red-800 px-2 py-1 rounded flex items-center gap-1 shadow-sm">
                                     {af.item_masters?.name}
                                     <button type="button" onClick={() => handleDeleteAffinity(af.id)} className="text-red-400 font-bold ml-1 hover:text-red-600">×</button>
                                   </span>
                                 ))}
-                                {affinitiesList.filter(af => af.attribute_id === a.id && af.affinity_type === 'bad').length === 0 && (
+                                {affinitiesList.filter(af => af.attribute_id === a.id && ['weakness', 'bad'].includes(af.affinity_type)).length === 0 && (
                                   <span className="text-xs text-gray-400">設定なし</span>
                                 )}
                               </div>
                               <div className="flex gap-1">
-                                <select id={`bad_item_${a.id}`} className="border p-1.5 text-xs rounded flex-1 focus:ring-red-500">
+                                <select id={`weakness_item_${a.id}`} className="border p-1.5 text-xs rounded flex-1 focus:ring-red-500">
                                   <option value="">アイテムを選択</option>
-                                  {itemsList.map(item => <option key={`bad_${a.id}_${item.id}`} value={item.id}>{item.name}</option>)}
+                                  {itemsList.map(item => <option key={`weakness_${a.id}_${item.id}`} value={item.id}>{item.name}</option>)}
                                 </select>
                                 <button type="button" onClick={() => {
-                                  const select = document.getElementById(`bad_item_${a.id}`) as HTMLSelectElement;
-                                  handleAddAffinity(a.id, select.value, 'bad');
+                                  const select = document.getElementById(`weakness_item_${a.id}`) as HTMLSelectElement;
+                                  handleAddAffinity(a.id, select.value, 'weakness');
                                   select.value = '';
                                 }} className="bg-red-100 border border-red-300 text-red-700 px-3 py-1 rounded text-xs font-bold hover:bg-red-200">追加</button>
                               </div>
