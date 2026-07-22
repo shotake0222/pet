@@ -73,6 +73,9 @@ function HomeAR() {
 
   const [hatchOverlay, setHatchOverlay] = useState<{ active: boolean; particles: any[]; rarity: string } | null>(null);
 
+  // 🌟 追加: ランドマークでのアイテム獲得演出モーダル
+  const [itemRewardOverlay, setItemRewardOverlay] = useState<{ active: boolean; items: any[]; facilityName: string; facilityIcon: string } | null>(null);
+
   const petMarkerUrl = '/markers/targets.mind';
   const MARKER_COUNT = 4;
 
@@ -1510,6 +1513,51 @@ function HomeAR() {
     return 'normal';
   };
 
+  // 🌟 追加: 施設タイプに応じてランダムにアイテムを付与する
+  // itemType が null の場合は全アイテム種別からランダムに選出する
+  const grantRandomItems = async (itemType: string | null, count: number) => {
+    if (!sessionUserId) return [];
+    let query = supabase.from('item_masters').select('*');
+    if (itemType) query = query.eq('item_type', itemType);
+    const { data: candidates } = await query;
+    if (!candidates || candidates.length === 0) return [];
+
+    const granted: any[] = [];
+    for (let i = 0; i < count; i++) {
+      const picked = candidates[Math.floor(Math.random() * candidates.length)];
+      granted.push(picked);
+
+      const { data: existingItem } = await supabase
+        .from('user_inventory')
+        .select('id, quantity')
+        .eq('user_id', sessionUserId)
+        .eq('item_id', picked.id)
+        .maybeSingle();
+
+      if (existingItem) {
+        await supabase.from('user_inventory').update({ quantity: existingItem.quantity + 1 }).eq('id', existingItem.id);
+      } else {
+        await supabase.from('user_inventory').insert({ user_id: sessionUserId, item_id: picked.id, quantity: 1 });
+      }
+    }
+
+    const { data: inv } = await supabase
+      .from('user_inventory')
+      .select('id, quantity, item_masters(*)')
+      .eq('user_id', sessionUserId)
+      .gt('quantity', 0);
+    if (inv) setInventory(inv);
+
+    return granted;
+  };
+
+  // 🌟 追加: アイテム獲得の演出モーダルを表示する
+  const showItemReward = (items: any[], facilityName: string, facilityIcon: string) => {
+    if (!items || items.length === 0) return;
+    playSound('item');
+    setItemRewardOverlay({ active: true, items, facilityName, facilityIcon });
+  };
+
   const handleCheckIn = async () => {
     if (!activeLandmark || !petId || !sessionUserId) return;
     const today = new Date().toLocaleDateString('sv-SE');
@@ -1541,6 +1589,10 @@ function HomeAR() {
       setLastFedAt(now);
       setHungerPercent(100);
       await supabase.from('pets').update({ last_fed_at: now }).eq('id', petId);
+
+      // 🌟 ご飯アイテムをランダムに3つ付与
+      const grantedFood = await grantRandomItems('food', 3);
+      showItemReward(grantedFood, activeLandmark.name, '🍽️');
     } else if (facilityType === 'hospital') {
       alert(`🏥 ${activeLandmark.name} で診察を受けました！\n体調が全回復しました！`);
       if (petCondition === 'sick') {
@@ -1549,11 +1601,26 @@ function HomeAR() {
         await supabase.from('pets').update({ condition_status: 'healthy' }).eq('id', petId);
       }
       setMotivationPercent(100);
+
+      // 🌟 寝かしつけ薬(sleepタイプ)をランダムに3つ付与
+      const grantedSleep = await grantRandomItems('sleep', 3);
+      showItemReward(grantedSleep, activeLandmark.name, '🏥');
     } else if (facilityType === 'hotel') {
       alert(`🏨 ${activeLandmark.name} でぐっすり休憩！\nごきげんがMAXになりました！`);
       setMotivationPercent(100);
+
+      // 🌟 追加: ホテルでもボーナスアイテムを付与（expタイプ優先、無ければ全種別からランダム）
+      let grantedHotel = await grantRandomItems('exp', 3);
+      if (grantedHotel.length === 0) {
+        grantedHotel = await grantRandomItems(null, 3);
+      }
+      showItemReward(grantedHotel, activeLandmark.name, '🏨');
     } else {
       alert(`🎉 ${activeLandmark.name} で ${activeLandmark.bonus_points} ポイント獲得！\n経験値が大幅にアップ！`);
+
+      // 🌟 追加: 通常スポットでも全アイテム種別からランダムにボーナスアイテムを付与
+      const grantedNormal = await grantRandomItems(null, 3);
+      showItemReward(grantedNormal, activeLandmark.name, '📍');
     }
 
     addExperience(100);
@@ -1877,6 +1944,9 @@ function HomeAR() {
               <button onClick={() => triggerRainbowBridge(petId!, generation)} className='w-full bg-black text-white font-bold py-2 rounded-lg shadow text-sm'>
                 🌈 寿命(殿堂入り)テスト
               </button>
+              <button onClick={() => showItemReward([{ id: 'debug1', name: 'デバッグご飯', item_type: 'food', image_url: null }, { id: 'debug2', name: 'デバッグ薬', item_type: 'sleep', image_url: null }, { id: 'debug3', name: 'デバッグ香り', item_type: 'exp', image_url: null }], 'デバッグスポット', '🧪')} className='w-full bg-teal-500 text-white font-bold py-2 rounded-lg shadow text-sm'>
+                🎁 アイテム獲得演出テスト
+              </button>
             </div>
 
             <div className='space-y-2 mt-4 bg-gray-100 p-3 rounded-lg text-black'>
@@ -1961,6 +2031,58 @@ function HomeAR() {
           ))}
           <div className='absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-center text-white drop-shadow-2xl pointer-events-none'>
             <div className='text-5xl font-extrabold animate-bounce'>{hatchOverlay.rarity === 'UR' ? '🌈 UR!' : hatchOverlay.rarity === 'SR' ? '✨ SR' : hatchOverlay.rarity === 'R' ? '⭐ R' : 'N'}</div>
+          </div>
+        </div>
+      )}
+
+      {/* 🌟 追加: ランドマークでのアイテム獲得演出モーダル */}
+      {itemRewardOverlay?.active && (
+        <div className='absolute inset-0 z-[210] bg-black/80 backdrop-blur-md flex items-center justify-center p-4 pointer-events-auto'>
+          <div className='bg-white rounded-3xl p-6 w-full max-w-sm shadow-2xl text-center space-y-4 text-black relative overflow-hidden'>
+            <div className='absolute inset-0 pointer-events-none overflow-hidden'>
+              {Array.from({ length: 24 }).map((_, i) => (
+                <div
+                  key={i}
+                  className='absolute w-2 h-2 rounded-full opacity-70 animate-bounce'
+                  style={{
+                    left: `${Math.random() * 100}%`,
+                    top: `${Math.random() * 100}%`,
+                    background: ['#FDE68A', '#FCA5A5', '#FBCFE8', '#A7F3D0', '#93C5FD'][i % 5],
+                    animationDelay: `${Math.random() * 0.6}s`,
+                    animationDuration: `${1 + Math.random()}s`,
+                  }}
+                />
+              ))}
+            </div>
+            <div className='relative'>
+              <div className='text-5xl animate-bounce'>🎁</div>
+              <h2 className='text-xl font-bold text-orange-600 mt-2'>
+                {itemRewardOverlay.facilityIcon} {itemRewardOverlay.facilityName} からおみやげ！
+              </h2>
+              <p className='text-xs text-gray-500 mt-1'>アイテムを {itemRewardOverlay.items.length} つ手に入れました</p>
+            </div>
+            <div className='relative space-y-2 max-h-64 overflow-y-auto'>
+              {itemRewardOverlay.items.map((item: any, idx: number) => (
+                <div key={`${item.id}-${idx}`} className='bg-orange-50 border border-orange-100 rounded-xl p-3 flex items-center gap-3 text-left shadow-sm'>
+                  {item.image_url ? (
+                    <img src={item.image_url} className='w-12 h-12 object-cover rounded-lg flex-shrink-0' />
+                  ) : (
+                    <div className='w-12 h-12 bg-orange-100 rounded-lg flex items-center justify-center text-2xl flex-shrink-0'>
+                      {item.item_type === 'food' ? '🍙' : item.item_type === 'sleep' ? '💤' : item.item_type === 'medicine' ? '💊' : item.item_type === 'exp' ? '✨' : '🎁'}
+                    </div>
+                  )}
+                  <div className='min-w-0'>
+                    <div className='font-bold text-orange-900 text-sm truncate'>{item.name}</div>
+                    <div className='text-[10px] text-gray-500'>
+                      {item.item_type === 'food' ? 'ごはん' : item.item_type === 'sleep' ? 'おやすみ薬' : item.item_type === 'medicine' ? 'お薬' : item.item_type === 'exp' ? '経験値アイテム' : 'アイテム'}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <button onClick={() => setItemRewardOverlay(null)} className='relative w-full bg-gradient-to-r from-orange-400 to-pink-500 text-white font-bold py-3 rounded-xl shadow-lg active:scale-95 transition-transform'>
+              受け取る
+            </button>
           </div>
         </div>
       )}
@@ -2239,7 +2361,7 @@ function HomeAR() {
               <div className='bg-blue-50 p-3 rounded-xl border border-blue-100'>
                 <h3 className='font-bold text-blue-700 mb-1'>📍 スポットに行く</h3>
                 <p className='text-gray-700 leading-relaxed'>
-                  マップ上にあるランドマーク（施設）に近づいてチェックイン！<br/>大量の経験値や回復ボーナスがもらえます。
+                  マップ上にあるランドマーク（施設）に近づいてチェックイン！<br/>大量の経験値や回復ボーナスがもらえます。訪問先の種類に応じて、ごはん・おやすみ薬などのアイテムもおみやげとしてもらえます。
                 </p>
               </div>
               <div className='bg-yellow-50 p-3 rounded-xl border border-yellow-100'>

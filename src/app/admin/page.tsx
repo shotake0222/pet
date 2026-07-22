@@ -1,6 +1,14 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+/*
+  🌟 今回のUI改修に伴い、Supabase側で以下のカラム追加が必要です。
+  まだ追加していない場合は、Supabase の SQL Editor で実行してください。
+
+  ALTER TABLE item_masters ADD COLUMN IF NOT EXISTS drop_weight integer NOT NULL DEFAULT 100;
+  ALTER TABLE item_masters ADD COLUMN IF NOT EXISTS price_type text NOT NULL DEFAULT 'paid'; -- 'paid'（有料） | 'free'（無料）
+*/
+
+import { useState, useEffect, useRef } from 'react';
 import { createClient } from '@/utils/supabase/client';
 
 // Supabaseの公開URLから、Storageのファイルパス（バケット名以降）を抽出するヘルパー関数
@@ -33,6 +41,109 @@ const generateRandomSpots = (master: any, count: number, startTime: string, endT
   return spots;
 };
 
+// =====================================================================
+// 🌟 共通コンポーネント: プルダウン形式の複数選択（チェックボックス内蔵）
+// クリックで開閉し、選択済みの項目はタグとして折りたたんで表示する。
+// =====================================================================
+type MultiSelectOption = { id: number; label: string };
+
+function MultiSelectDropdown({
+  options,
+  selectedIds,
+  onChange,
+  placeholder = '選択してください',
+  disabled = false,
+}: {
+  options: MultiSelectOption[];
+  selectedIds: number[];
+  onChange: (ids: number[]) => void;
+  placeholder?: string;
+  disabled?: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setOpen(false);
+        setQuery('');
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const toggleId = (id: number) => {
+    if (selectedIds.includes(id)) onChange(selectedIds.filter(i => i !== id));
+    else onChange([...selectedIds, id]);
+  };
+
+  const filteredOptions = options.filter(o => o.label.toLowerCase().includes(query.toLowerCase()));
+  const selectedOptions = options.filter(o => selectedIds.includes(o.id));
+
+  return (
+    <div ref={containerRef} className="relative w-full">
+      <button
+        type="button"
+        disabled={disabled}
+        onClick={() => setOpen(o => !o)}
+        className={`w-full border p-3 rounded-lg bg-white flex items-center justify-between gap-2 text-left transition-shadow ${open ? 'ring-2 ring-blue-500' : ''} ${disabled ? 'opacity-50 cursor-not-allowed' : 'hover:border-gray-400'}`}
+      >
+        <div className="flex flex-wrap gap-1 flex-1 min-h-[1.4rem] items-center">
+          {selectedOptions.length === 0 ? (
+            <span className="text-gray-400 text-sm">{placeholder}</span>
+          ) : (
+            selectedOptions.map(o => (
+              <span key={o.id} className="text-xs font-bold bg-blue-50 text-blue-700 border border-blue-200 px-2 py-0.5 rounded-full whitespace-nowrap">
+                {o.label}
+              </span>
+            ))
+          )}
+        </div>
+        <span className={`text-gray-400 text-xs transition-transform shrink-0 ${open ? 'rotate-180' : ''}`}>▼</span>
+      </button>
+
+      {open && !disabled && (
+        <div className="absolute z-30 mt-1 w-full bg-white border rounded-xl shadow-lg max-h-64 overflow-hidden flex flex-col">
+          {options.length > 6 && (
+            <div className="p-2 border-b sticky top-0 bg-white">
+              <input
+                autoFocus
+                type="text"
+                value={query}
+                onChange={e => setQuery(e.target.value)}
+                placeholder="検索..."
+                className="w-full border p-2 rounded text-sm focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+          )}
+          <div className="overflow-y-auto">
+            {filteredOptions.length === 0 && (
+              <div className="text-xs text-gray-400 p-3 text-center">該当する項目がありません</div>
+            )}
+            {filteredOptions.map(o => (
+              <label key={o.id} className="flex items-center gap-2 text-sm px-3 py-2 hover:bg-blue-50 cursor-pointer">
+                <input type="checkbox" checked={selectedIds.includes(o.id)} onChange={() => toggleId(o.id)} className="w-4 h-4" />
+                <span>{o.label}</span>
+              </label>
+            ))}
+          </div>
+          {selectedIds.length > 0 && (
+            <div className="border-t p-2 flex justify-between items-center bg-gray-50 sticky bottom-0">
+              <span className="text-xs text-gray-500">{selectedIds.length} 件選択中</span>
+              <button type="button" onClick={() => onChange([])} className="text-xs font-bold text-red-500 hover:underline">
+                すべて解除
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function AdminDashboard() {
   const supabase = createClient();
   const [activeTab, setActiveTab] = useState<'pets' | 'landmarks' | 'items' | 'coupons' | 'drops' | 'news' | 'users' | 'settings'>('pets');
@@ -53,7 +164,6 @@ export default function AdminDashboard() {
   const [affinitiesList, setAffinitiesList] = useState<any[]>([]);           // 🌟 属性とアイテムの相性リスト
   const [attributeWeaknessesList, setAttributeWeaknessesList] = useState<any[]>([]); // 🌟 属性同士の弱点リスト
   const [eggsList, setEggsList] = useState<any[]>([]);                       // 🌟 卵リスト
-  const [itemAttributesList, setItemAttributesList] = useState<any[]>([]);   // 🆕 アイテムと属性の中間データ
 
   // --- ペット用State ---
   const [petName, setPetName] = useState('');
@@ -76,6 +186,18 @@ export default function AdminDashboard() {
   const [newRarityWeight, setNewRarityWeight] = useState('100'); // 🌟 レアリティの排出ウェイト
   const [newAttributeName, setNewAttributeName] = useState('');
   const [newAttributeDesc, setNewAttributeDesc] = useState('');
+
+  // 🌟 設定タブ「登録済み属性と設定」: プルダウンで編集対象の属性を選択する方式に変更
+  const [selectedSettingsAttributeId, setSelectedSettingsAttributeId] = useState<number | null>(null);
+  const [pendingWeakAttrIds, setPendingWeakAttrIds] = useState<number[]>([]);       // 追加待ちの弱点属性(複数選択)
+  const [pendingEnhanceItemIds, setPendingEnhanceItemIds] = useState<number[]>([]); // 追加待ちの強化アイテム(複数選択)
+  const [pendingWeaknessItemIds, setPendingWeaknessItemIds] = useState<number[]>([]); // 追加待ちの弱点アイテム(複数選択)
+
+  useEffect(() => {
+    setPendingWeakAttrIds([]);
+    setPendingEnhanceItemIds([]);
+    setPendingWeaknessItemIds([]);
+  }, [selectedSettingsAttributeId]);
 
   // --- ランドマーク用State ---
   const [landmarkInputMode, setLandmarkInputMode] = useState<'master' | 'manual'>('master');
@@ -110,9 +232,10 @@ export default function AdminDashboard() {
   const [itemDesc, setItemDesc] = useState('');
   const [itemType, setItemType] = useState('food');
   const [itemPrice, setItemPrice] = useState('100');
+  const [itemPriceType, setItemPriceType] = useState<'paid' | 'free'>('paid'); // 🌟 有料/無料の区分け
+  const [itemDropWeight, setItemDropWeight] = useState('100');                 // 🌟 出現確率ウェイト
   const [itemEffect, setItemEffect] = useState('10');
   const [itemImageFile, setItemImageFile] = useState<File | null>(null);
-  const [selectedItemAttributeIds, setSelectedItemAttributeIds] = useState<number[]>([]); // 🆕 アイテム登録フォーム用
 
   // --- クーポン用State ---
   const [couponName, setCouponName] = useState('');
@@ -159,8 +282,7 @@ export default function AdminDashboard() {
       facilityDropsRes,
       affinitiesRes, // 🌟 相性データ
       eggsRes,       // 🌟 卵データ
-      weaknessesRes, // 🌟 属性弱点データ
-      itemAttrsRes   // 🆕 アイテムと属性の中間データ
+      weaknessesRes  // 🌟 属性弱点データ
     ] = await Promise.all([
       supabase.from('pet_masters').select('*').order('id', { ascending: false }),
       supabase.from('landmark_masters').select('*').order('id', { ascending: false }),
@@ -176,8 +298,7 @@ export default function AdminDashboard() {
       supabase.from('facility_drop_masters').select('*, item_masters(name, image_url), coupon_masters(name, qr_image_url)').order('id', { ascending: false }),
       supabase.from('attribute_item_affinities').select('*, item_masters(name)').order('id', { ascending: true }),
       supabase.from('egg_masters').select('*').order('id', { ascending: true }),
-      supabase.from('attribute_weaknesses').select('*').order('id', { ascending: true }),
-      supabase.from('item_master_attributes').select('*') // 🆕
+      supabase.from('attribute_weaknesses').select('*').order('id', { ascending: true }) // 🌟 新規
     ]);
     
     if (petsRes.data) {
@@ -192,24 +313,9 @@ export default function AdminDashboard() {
       });
       setPetsList(petsRes.data.map((p: any) => ({ ...p, attributes: petAttrMap[p.id] || [] })));
     }
-
-    // 🆕 アイテムに属性をマッピング
-    if (itemsRes.data) {
-      const itemAttrs = (itemAttrsRes && itemAttrsRes.data) ? itemAttrsRes.data : [];
-      const attributes = (attributesRes && attributesRes.data) ? attributesRes.data : [];
-      const attrById = new Map<number, any>(attributes.map((a: any) => [a.id, a]));
-      const itemAttrMap: Record<number, any[]> = {};
-      itemAttrs.forEach((r: any) => {
-        if (!itemAttrMap[r.item_id]) itemAttrMap[r.item_id] = [];
-        const a = attrById.get(r.attribute_id);
-        if (a) itemAttrMap[r.item_id].push(a);
-      });
-      setItemsList(itemsRes.data.map((i: any) => ({ ...i, attributes: itemAttrMap[i.id] || [] })));
-    }
-    if (itemAttrsRes && itemAttrsRes.data) setItemAttributesList(itemAttrsRes.data);
-
     if (landmarkMastersRes.data) setLandmarkMastersList(landmarkMastersRes.data);
     if (landmarksRes.data) setLandmarksList(landmarksRes.data);
+    if (itemsRes.data) setItemsList(itemsRes.data);
     if (couponsRes.data) setCouponsList(couponsRes.data);
     if (newsRes.data) setNewsList(newsRes.data);
     if (usersRes.data) setUsersList(usersRes.data);
@@ -371,24 +477,26 @@ export default function AdminDashboard() {
     }
   };
 
-  // 🌟 属性のアイテム相性（強化/弱点）を追加
-  const handleAddAffinity = async (attributeId: number, itemId: string, affinityType: string) => {
-    if (!itemId) return alert('アイテムを選択してください');
+  // 🌟 属性のアイテム相性（強化/弱点）をまとめて追加
+  const handleAddAffinityBulk = async (attributeId: number, itemIds: number[], affinityType: string) => {
+    if (!itemIds || itemIds.length === 0) return alert('アイテムを選択してください');
+    setIsSubmitting(true);
     try {
-      const { error } = await supabase.from('attribute_item_affinities').insert({
-        attribute_id: attributeId,
-        item_id: parseInt(itemId, 10),
-        affinity_type: affinityType
-      });
+      const rows = itemIds.map(itemId => ({ attribute_id: attributeId, item_id: itemId, affinity_type: affinityType }));
+      const { error } = await supabase.from('attribute_item_affinities').insert(rows);
       if (error) throw error;
+      if (affinityType === 'enhance') setPendingEnhanceItemIds([]);
+      else setPendingWeaknessItemIds([]);
       await fetchData(); 
-      alert('相性を設定しました');
+      alert(`アイテムを ${itemIds.length} 件、相性設定に追加しました`);
     } catch (e: any) {
       if (e.code === '23505') {
-        alert('このアイテムは既に相性設定がされています');
+        alert('選択したアイテムの中に、既に相性設定済みのものが含まれています。1件ずつ設定し直してください。');
       } else {
         alert(`エラー: ${e.message}`);
       }
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -404,24 +512,25 @@ export default function AdminDashboard() {
     }
   };
 
-  // 🌟 弱点属性を追加
-  const handleAddAttributeWeakness = async (attributeId: number, weakAgainstId: string) => {
-    if (!weakAgainstId) return alert('弱点属性を選択してください');
-    if (attributeId === parseInt(weakAgainstId, 10)) return alert('自分自身を弱点にはできません');
+  // 🌟 弱点属性をまとめて追加
+  const handleAddAttributeWeaknessBulk = async (attributeId: number, weakIds: number[]) => {
+    if (!weakIds || weakIds.length === 0) return alert('弱点属性を選択してください');
+    setIsSubmitting(true);
     try {
-      const { error } = await supabase.from('attribute_weaknesses').insert({
-        attribute_id: attributeId,
-        weak_against_id: parseInt(weakAgainstId, 10)
-      });
+      const rows = weakIds.map(weakId => ({ attribute_id: attributeId, weak_against_id: weakId }));
+      const { error } = await supabase.from('attribute_weaknesses').insert(rows);
       if (error) throw error;
+      setPendingWeakAttrIds([]);
       await fetchData();
-      alert('弱点属性を設定しました');
+      alert(`弱点属性を ${weakIds.length} 件追加しました`);
     } catch (e: any) {
       if (e.code === '23505') {
-        alert('この属性は既に弱点として設定されています');
+        alert('選択した属性の中に、既に弱点として設定済みのものが含まれています。1件ずつ設定し直してください。');
       } else {
         alert(`エラー: ${e.message}`);
       }
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -430,36 +539,6 @@ export default function AdminDashboard() {
     if (!window.confirm('弱点属性の設定を削除しますか？')) return;
     try {
       const { error } = await supabase.from('attribute_weaknesses').delete().eq('id', weaknessId);
-      if (error) throw error;
-      await fetchData();
-    } catch (e: any) {
-      alert(`エラー: ${e.message}`);
-    }
-  };
-
-  // 🆕 アイテムに属性を追加
-  const handleAddItemAttribute = async (itemId: number, attributeId: string) => {
-    if (!attributeId) return alert('属性を選択してください');
-    try {
-      const { error } = await supabase.from('item_master_attributes').insert({
-        item_id: itemId,
-        attribute_id: parseInt(attributeId, 10)
-      });
-      if (error) throw error;
-      await fetchData();
-    } catch (e: any) {
-      if (e.code === '23505') {
-        alert('この属性は既に設定されています');
-      } else {
-        alert(`エラー: ${e.message}`);
-      }
-    }
-  };
-
-  // 🆕 アイテムの属性を削除
-  const handleDeleteItemAttribute = async (relationId: number) => {
-    try {
-      const { error } = await supabase.from('item_master_attributes').delete().eq('id', relationId);
       if (error) throw error;
       await fetchData();
     } catch (e: any) {
@@ -647,32 +726,60 @@ export default function AdminDashboard() {
         imageUrl = await uploadFile(itemImageFile, 'items');
       }
 
-      const { data: insertedItem, error } = await supabase.from('item_masters').insert({
+      const { error } = await supabase.from('item_masters').insert({
         name: itemName,
         description: itemDesc,
         item_type: itemType,
-        price_jpy: parseInt(itemPrice, 10),
+        price_jpy: itemPriceType === 'free' ? 0 : parseInt(itemPrice, 10),
+        price_type: itemPriceType,           // 🌟 有料/無料の区分け
+        drop_weight: parseInt(itemDropWeight, 10), // 🌟 出現確率ウェイト
         effect_value: parseInt(itemEffect, 10),
         image_url: imageUrl
-      }).select('id').single(); // 🆕 挿入したアイテムのidを取得
+      });
       if (error) throw error;
-
-      // 🆕 選択した属性を中間テーブルに登録
-      const itemId = insertedItem?.id;
-      if (itemId && selectedItemAttributeIds && selectedItemAttributeIds.length > 0) {
-        const rels = selectedItemAttributeIds.map(attrId => ({ item_id: itemId, attribute_id: attrId }));
-        const { error: relErr } = await supabase.from('item_master_attributes').insert(rels);
-        if (relErr) throw relErr;
-      }
 
       alert(`アイテム「${itemName}」をショップに並べました！`);
       setItemName(''); setItemDesc(''); setItemPrice('100'); setItemEffect('10'); setItemImageFile(null);
-      setSelectedItemAttributeIds([]); // 🆕
+      setItemPriceType('paid'); setItemDropWeight('100');
       await fetchData(); 
     } catch (e: any) {
       alert(`エラー: ${e.message}`);
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  // 🌟 アイテムの出現確率ウェイトを更新
+  const handleUpdateItemWeight = async (id: number, currentWeight: number) => {
+    const newWeightStr = window.prompt('新しい出現確率ウェイトを入力してください（整数）\n※数値が大きいほど、抽選や排出演出で選ばれやすくなります。', String(currentWeight || 0));
+    if (newWeightStr === null) return;
+    const newWeight = parseInt(newWeightStr, 10);
+    if (isNaN(newWeight) || newWeight < 0) return alert('正しい数値を入力してください');
+    try {
+      const { error } = await supabase.from('item_masters').update({ drop_weight: newWeight }).eq('id', id);
+      if (error) throw error;
+      await fetchData();
+      alert('出現確率ウェイトを更新しました');
+    } catch (e: any) {
+      alert(`更新に失敗しました: ${e.message}`);
+    }
+  };
+
+  // 🌟 アイテムの有料/無料区分けを切り替え
+  const handleToggleItemPriceType = async (id: number, current: string) => {
+    const next = current === 'free' ? 'paid' : 'free';
+    const confirmMsg = next === 'free'
+      ? 'このアイテムを「無料」に変更しますか？（価格は自動的に0円になります）'
+      : 'このアイテムを「有料」に変更しますか？';
+    if (!window.confirm(confirmMsg)) return;
+    try {
+      const payload: any = { price_type: next };
+      if (next === 'free') payload.price_jpy = 0;
+      const { error } = await supabase.from('item_masters').update(payload).eq('id', id);
+      if (error) throw error;
+      await fetchData();
+    } catch (e: any) {
+      alert(`エラー: ${e.message}`);
     }
   };
 
@@ -892,6 +999,9 @@ export default function AdminDashboard() {
   // レアリティの全体のウェイト合計（表示用）
   const totalRarityWeight = raritiesList.reduce((sum, r) => sum + (r.drop_weight || 0), 0);
 
+  // 🌟 アイテムの全体のウェイト合計（出現確率の表示用）
+  const totalItemWeight = itemsList.reduce((sum, i) => sum + (Number(i.drop_weight) || 0), 0);
+
   return (
     <div className="max-w-7xl mx-auto p-6 bg-white shadow-xl rounded-3xl mt-8 mb-20">
       <h1 className="text-2xl font-bold mb-6 text-gray-800">⚙️ Straid AR 全体管理ダッシュボード</h1>
@@ -973,22 +1083,18 @@ export default function AdminDashboard() {
                       </select>
                     </div>
                     <div className="flex-1">
+                      {/* 🌟 属性選択をプルダウン形式（複数選択可）に変更 */}
                       <label className="block text-sm font-bold mb-1">属性 (複数選択可)</label>
-                      <div className="w-full border p-3 rounded-lg bg-white max-h-40 overflow-y-auto">
-                        {attributesList && attributesList.length > 0 ? (
-                          attributesList.map(a => (
-                            <label key={a.id} className="flex items-center gap-2 text-sm mb-2 cursor-pointer">
-                              <input type="checkbox" checked={selectedAttributeIds.includes(a.id)} onChange={e => {
-                                if (e.target.checked) setSelectedAttributeIds(prev => [...prev, a.id]);
-                                else setSelectedAttributeIds(prev => prev.filter(id => id !== a.id));
-                              }} />
-                              <span>{a.name}{a.description ? ` — ${a.description}` : ''}</span>
-                            </label>
-                          ))
-                        ) : (
-                          <div className="text-xs text-gray-500">まだ属性が登録されていません</div>
-                        )}
-                      </div>
+                      {attributesList && attributesList.length > 0 ? (
+                        <MultiSelectDropdown
+                          options={attributesList.map(a => ({ id: a.id, label: a.name + (a.description ? ` — ${a.description}` : '') }))}
+                          selectedIds={selectedAttributeIds}
+                          onChange={setSelectedAttributeIds}
+                          placeholder="属性を選択..."
+                        />
+                      ) : (
+                        <div className="w-full border p-3 rounded-lg bg-white text-xs text-gray-500">まだ属性が登録されていません</div>
+                      )}
                     </div>
                     <div className="flex-1">
                       <label className="block text-sm font-bold mb-1 text-blue-700">個別ウェイト</label>
@@ -1179,36 +1285,40 @@ export default function AdminDashboard() {
                     <textarea value={itemDesc} onChange={e => setItemDesc(e.target.value)} className="w-full border p-3 rounded-lg focus:ring-2 focus:ring-yellow-500" rows={2} required />
                   </div>
 
-                  {/* 🆕 アイテムの属性選択 */}
+                  {/* 🌟 有料/無料の区分け */}
                   <div>
-                    <label className="block text-sm font-bold mb-1">属性 (複数選択可)</label>
-                    <div className="w-full border p-3 rounded-lg bg-white max-h-40 overflow-y-auto">
-                      {attributesList && attributesList.length > 0 ? (
-                        attributesList.map(a => (
-                          <label key={a.id} className="flex items-center gap-2 text-sm mb-2 cursor-pointer">
-                            <input type="checkbox" checked={selectedItemAttributeIds.includes(a.id)} onChange={e => {
-                              if (e.target.checked) setSelectedItemAttributeIds(prev => [...prev, a.id]);
-                              else setSelectedItemAttributeIds(prev => prev.filter(id => id !== a.id));
-                            }} />
-                            <span>{a.name}{a.description ? ` — ${a.description}` : ''}</span>
-                          </label>
-                        ))
-                      ) : (
-                        <div className="text-xs text-gray-500">まだ属性が登録されていません</div>
-                      )}
+                    <label className="block text-sm font-bold mb-1">価格区分</label>
+                    <div className="flex gap-2 p-1 bg-gray-200 rounded-xl">
+                      <button type="button" onClick={() => setItemPriceType('paid')} className={`flex-1 font-bold text-sm py-2 rounded-lg transition-colors ${itemPriceType === 'paid' ? 'bg-white shadow text-yellow-700' : 'text-gray-500 hover:bg-gray-300'}`}>💰 有料</button>
+                      <button type="button" onClick={() => setItemPriceType('free')} className={`flex-1 font-bold text-sm py-2 rounded-lg transition-colors ${itemPriceType === 'free' ? 'bg-white shadow text-green-700' : 'text-gray-500 hover:bg-gray-300'}`}>🆓 無料</button>
                     </div>
                   </div>
 
                   <div className="flex gap-4">
                     <div className="flex-1">
                       <label className="block text-sm font-bold mb-1">価格 (円)</label>
-                      <input type="number" value={itemPrice} onChange={e => setItemPrice(e.target.value)} className="w-full border p-3 rounded-lg focus:ring-2 focus:ring-yellow-500" required />
+                      <input
+                        type="number"
+                        value={itemPriceType === 'free' ? 0 : itemPrice}
+                        onChange={e => setItemPrice(e.target.value)}
+                        disabled={itemPriceType === 'free'}
+                        className={`w-full border p-3 rounded-lg focus:ring-2 focus:ring-yellow-500 ${itemPriceType === 'free' ? 'bg-gray-100 text-gray-400' : ''}`}
+                        required={itemPriceType === 'paid'}
+                      />
                     </div>
                     <div className="flex-1">
                       <label className="block text-sm font-bold mb-1">効果値</label>
                       <input type="number" value={itemEffect} onChange={e => setItemEffect(e.target.value)} className="w-full border p-3 rounded-lg focus:ring-2 focus:ring-yellow-500" required />
                     </div>
                   </div>
+
+                  {/* 🌟 出現確率ウェイト */}
+                  <div>
+                    <label className="block text-sm font-bold mb-1 text-purple-700">出現確率ウェイト 🌟</label>
+                    <input type="number" value={itemDropWeight} onChange={e => setItemDropWeight(e.target.value)} className="w-full border p-3 rounded-lg focus:ring-2 focus:ring-purple-500 bg-purple-50" required />
+                    <p className="text-xs text-gray-500 mt-1">※ショップの抽選演出やおまけ演出などで、他のアイテムとの相対的な出現しやすさを決める数値です。数値が大きいほど出やすくなります。</p>
+                  </div>
+
                   <div className="bg-yellow-50 p-4 rounded-xl border border-yellow-100">
                     <label className="block text-sm font-bold text-yellow-900 mb-2">アイテムのアイコン画像 (.png, .jpg)</label>
                     <input type="file" accept="image/*" onChange={e => setItemImageFile(e.target.files?.[0] || null)} className="w-full text-sm" />
@@ -1564,25 +1674,47 @@ export default function AdminDashboard() {
               {/* 3. アイテム一覧 */}
               {activeTab === 'items' && (
                 <>
-                  <h2 className="text-xl font-bold mb-4 border-b pb-2">🛒 登録済みアイテム一覧</h2>
-                  <div className="space-y-3">
-                    {itemsList.map(item => (
-                      <div key={item.id} className="p-4 border rounded-xl bg-white hover:bg-gray-50 flex flex-col gap-3 transition-colors group shadow-sm">
-                        <div className="flex items-center gap-4">
+                  <h2 className="text-xl font-bold mb-2 border-b pb-2 flex items-center justify-between">
+                    <span>🛒 登録済みアイテム一覧</span>
+                    <span className="text-xs font-normal text-gray-500 bg-purple-50 border border-purple-200 text-purple-700 px-2 py-1 rounded">総出現ウェイト: {totalItemWeight}</span>
+                  </h2>
+                  <div className="space-y-3 mt-4">
+                    {itemsList.map(item => {
+                      const pct = totalItemWeight > 0 ? (((Number(item.drop_weight) || 0) / totalItemWeight) * 100).toFixed(1) : '0.0';
+                      const isFree = item.price_type === 'free' || (!item.price_type && Number(item.price_jpy) === 0);
+                      return (
+                        <div key={item.id} className="p-4 border rounded-xl bg-white hover:bg-gray-50 flex items-center gap-4 transition-colors group shadow-sm">
                           {item.image_url ? (
                             <img src={item.image_url} alt={item.name} className="w-16 h-16 object-cover rounded-lg shadow-sm border" />
                           ) : (
                             <div className="w-16 h-16 bg-gray-200 rounded-lg flex items-center justify-center text-2xl">📦</div>
                           )}
-                          
+
                           <div className="flex-1">
-                            <div className="flex items-center gap-2">
+                            <div className="flex items-center gap-2 flex-wrap">
                               <span className="font-bold text-lg">{item.name}</span>
                               <span className="text-xs font-bold bg-yellow-100 text-yellow-800 px-2 py-1 rounded">{item.item_type}</span>
-                              <span className="font-bold text-blue-600 ml-auto">{item.price_jpy > 0 ? `¥${item.price_jpy}` : '無料'}</span>
+                              <button
+                                onClick={() => handleToggleItemPriceType(item.id, item.price_type || 'paid')}
+                                title="クリックで有料/無料を切り替え"
+                                className={`text-xs font-bold px-2 py-1 rounded-full border ${isFree ? 'bg-green-100 text-green-800 border-green-300' : 'bg-blue-50 text-blue-700 border-blue-200'}`}
+                              >
+                                {isFree ? '🆓 無料' : `💰 ¥${item.price_jpy}`}
+                              </button>
+                              <span className="text-xs font-bold text-purple-700 bg-purple-50 border border-purple-200 px-2 py-1 rounded ml-auto">
+                                出現率 {pct}%
+                              </span>
                             </div>
                             <div className="text-sm text-gray-600 mt-1">{item.description}</div>
-                            <div className="text-xs text-gray-400 mt-1">効果値: {item.effect_value}</div>
+                            <div className="text-xs text-gray-400 mt-1 flex items-center gap-3">
+                              <span>効果値: {item.effect_value}</span>
+                              <button
+                                onClick={() => handleUpdateItemWeight(item.id, item.drop_weight || 0)}
+                                className="text-blue-500 hover:underline opacity-0 group-hover:opacity-100 transition-opacity"
+                              >
+                                出現ウェイト変更 (現在: {item.drop_weight ?? 0})
+                              </button>
+                            </div>
                           </div>
                           <button 
                             onClick={() => handleDeleteItem(item.id, item.image_url)}
@@ -1591,43 +1723,8 @@ export default function AdminDashboard() {
                             削除
                           </button>
                         </div>
-
-                        {/* 🆕 アイテムの属性表示・管理 */}
-                        <div className="pt-2 border-t">
-                          <div className="text-xs font-bold text-gray-600 mb-1">属性</div>
-                          <div className="flex flex-wrap gap-1 mb-2 min-h-[24px]">
-                            {(item.attributes || []).map((a: any) => {
-                              const rel = itemAttributesList.find((r: any) => r.item_id === item.id && r.attribute_id === a.id);
-                              return (
-                                <span key={a.id} className="text-xs bg-gray-100 border text-gray-700 px-2 py-1 rounded flex items-center gap-1">
-                                  {a.name}
-                                  {rel && (
-                                    <button type="button" onClick={() => handleDeleteItemAttribute(rel.id)} className="text-red-400 font-bold ml-1 hover:text-red-600">×</button>
-                                  )}
-                                </span>
-                              );
-                            })}
-                            {(!item.attributes || item.attributes.length === 0) && (
-                              <span className="text-xs text-gray-400">未設定</span>
-                            )}
-                          </div>
-                          <div className="flex gap-1">
-                            <select id={`item_attr_${item.id}`} className="border p-1.5 text-xs rounded flex-1">
-                              <option value="">属性を選択して追加</option>
-                              {attributesList
-                                .filter(a => !(item.attributes || []).some((ia: any) => ia.id === a.id))
-                                .map(a => <option key={`item_attr_${item.id}_${a.id}`} value={a.id}>{a.name}</option>)
-                              }
-                            </select>
-                            <button type="button" onClick={() => {
-                              const select = document.getElementById(`item_attr_${item.id}`) as HTMLSelectElement;
-                              handleAddItemAttribute(item.id, select.value);
-                              select.value = '';
-                            }} className="bg-gray-200 text-gray-700 px-3 py-1 rounded text-xs font-bold hover:bg-gray-300">追加</button>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                     {itemsList.length === 0 && <p className="text-center text-gray-400 py-10">データがありません</p>}
                   </div>
                 </>
@@ -1959,7 +2056,7 @@ export default function AdminDashboard() {
                 </div>
               </div>
 
-              {/* 🌟 属性と相性管理エリア */}
+              {/* 🌟 属性と相性管理エリア（登録済み属性はプルダウンで選択する方式に変更） */}
               <div className="bg-gray-50 p-4 rounded-xl border">
                 <h3 className="font-bold mb-3">属性を追加</h3>
                 <form onSubmit={handleAddAttribute} className="space-y-3 bg-white p-4 rounded-lg border shadow-sm">
@@ -1978,116 +2075,178 @@ export default function AdminDashboard() {
 
                 <div className="mt-6">
                   <h4 className="font-bold mb-2 border-b pb-2 text-gray-800">登録済み属性と設定</h4>
-                  <div className="space-y-4 mt-3">
-                    {attributesList.length === 0 && <div className="text-sm text-gray-500 text-center py-4 bg-white rounded border">まだ登録されていません</div>}
-                    
-                    {/* 🌟 各属性ごとの相性設定カード */}
-                    {attributesList.map(a => (
-                      <div key={a.id} className="flex flex-col bg-white p-3 rounded-lg border shadow-sm">
-                        <div className="flex items-center justify-between mb-3">
-                          <div>
-                            <div className="text-sm font-bold text-gray-800">{a.name}</div>
-                            {a.description && <div className="text-xs text-gray-500 mt-0.5">{a.description}</div>}
-                          </div>
-                          <button onClick={() => handleDeleteAttribute(a.id)} className="text-red-600 text-xs font-bold bg-red-50 border border-red-200 px-2 py-1 rounded hover:bg-red-100">
-                            属性を削除
-                          </button>
-                        </div>
-                        
-                        {/* 🌟 弱点・強化設定セクション */}
-                        <div className="pt-3 border-t text-sm bg-gray-50 -mx-3 -mb-3 p-3 rounded-b-lg">
-                          <div className="font-bold text-gray-700 mb-2 text-xs">弱点・強化設定</div>
-                          
-                          <div className="grid grid-cols-1 gap-4">
-                            
-                            {/* ⚔️ 弱点属性 */}
-                            <div>
-                              <div className="text-xs font-bold text-purple-700 mb-1">⚔️ 弱点属性 (被ダメージUP)</div>
-                              <div className="flex flex-wrap gap-1 mb-2 min-h-[24px]">
-                                {attributeWeaknessesList.filter(aw => aw.attribute_id === a.id).map(aw => {
-                                  const weakAttr = attributesList.find(attr => attr.id === aw.weak_against_id);
-                                  return (
-                                    <span key={aw.id} className="text-xs bg-white border border-purple-300 text-purple-800 px-2 py-1 rounded flex items-center gap-1 shadow-sm">
-                                      {weakAttr?.name || '不明'}
-                                      <button type="button" onClick={() => handleDeleteAttributeWeakness(aw.id)} className="text-red-400 font-bold ml-1 hover:text-red-600">×</button>
-                                    </span>
-                                  );
-                                })}
-                                {attributeWeaknessesList.filter(aw => aw.attribute_id === a.id).length === 0 && (
-                                  <span className="text-xs text-gray-400">設定なし</span>
-                                )}
-                              </div>
-                              <div className="flex gap-1">
-                                <select id={`weak_attr_${a.id}`} className="border p-1.5 text-xs rounded flex-1 focus:ring-purple-500">
-                                  <option value="">属性を選択</option>
-                                  {attributesList.filter(attr => attr.id !== a.id).map(attr => <option key={`weak_${a.id}_${attr.id}`} value={attr.id}>{attr.name}</option>)}
-                                </select>
-                                <button type="button" onClick={() => {
-                                  const select = document.getElementById(`weak_attr_${a.id}`) as HTMLSelectElement;
-                                  handleAddAttributeWeakness(a.id, select.value);
-                                  select.value = '';
-                                }} className="bg-purple-100 border border-purple-300 text-purple-700 px-3 py-1 rounded text-xs font-bold hover:bg-purple-200">追加</button>
-                              </div>
-                            </div>
 
-                            {/* ✨ 強化アイテム */}
-                            <div>
-                              <div className="text-xs font-bold text-blue-700 mb-1">✨ 強化アイテム (効果UP)</div>
-                              <div className="flex flex-wrap gap-1 mb-2 min-h-[24px]">
-                                {affinitiesList.filter(af => af.attribute_id === a.id && ['enhance', 'good'].includes(af.affinity_type)).map(af => (
-                                  <span key={af.id} className="text-xs bg-white border border-blue-300 text-blue-800 px-2 py-1 rounded flex items-center gap-1 shadow-sm">
-                                    {af.item_masters?.name}
-                                    <button type="button" onClick={() => handleDeleteAffinity(af.id)} className="text-red-400 font-bold ml-1 hover:text-red-600">×</button>
-                                  </span>
-                                ))}
-                                {affinitiesList.filter(af => af.attribute_id === a.id && ['enhance', 'good'].includes(af.affinity_type)).length === 0 && (
-                                  <span className="text-xs text-gray-400">設定なし</span>
-                                )}
-                              </div>
-                              <div className="flex gap-1">
-                                <select id={`enhance_item_${a.id}`} className="border p-1.5 text-xs rounded flex-1 focus:ring-blue-500">
-                                  <option value="">アイテムを選択</option>
-                                  {itemsList.map(item => <option key={`enhance_${a.id}_${item.id}`} value={item.id}>{item.name}</option>)}
-                                </select>
-                                <button type="button" onClick={() => {
-                                  const select = document.getElementById(`enhance_item_${a.id}`) as HTMLSelectElement;
-                                  handleAddAffinity(a.id, select.value, 'enhance');
-                                  select.value = '';
-                                }} className="bg-blue-100 border border-blue-300 text-blue-700 px-3 py-1 rounded text-xs font-bold hover:bg-blue-200">追加</button>
-                              </div>
-                            </div>
-
-                            {/* 💀 弱点アイテム */}
-                            <div>
-                              <div className="text-xs font-bold text-red-700 mb-1">💀 弱点アイテム (ダメージ・効果ダウン)</div>
-                              <div className="flex flex-wrap gap-1 mb-2 min-h-[24px]">
-                                {affinitiesList.filter(af => af.attribute_id === a.id && ['weakness', 'bad'].includes(af.affinity_type)).map(af => (
-                                  <span key={af.id} className="text-xs bg-white border border-red-300 text-red-800 px-2 py-1 rounded flex items-center gap-1 shadow-sm">
-                                    {af.item_masters?.name}
-                                    <button type="button" onClick={() => handleDeleteAffinity(af.id)} className="text-red-400 font-bold ml-1 hover:text-red-600">×</button>
-                                  </span>
-                                ))}
-                                {affinitiesList.filter(af => af.attribute_id === a.id && ['weakness', 'bad'].includes(af.affinity_type)).length === 0 && (
-                                  <span className="text-xs text-gray-400">設定なし</span>
-                                )}
-                              </div>
-                              <div className="flex gap-1">
-                                <select id={`weakness_item_${a.id}`} className="border p-1.5 text-xs rounded flex-1 focus:ring-red-500">
-                                  <option value="">アイテムを選択</option>
-                                  {itemsList.map(item => <option key={`weakness_${a.id}_${item.id}`} value={item.id}>{item.name}</option>)}
-                                </select>
-                                <button type="button" onClick={() => {
-                                  const select = document.getElementById(`weakness_item_${a.id}`) as HTMLSelectElement;
-                                  handleAddAffinity(a.id, select.value, 'weakness');
-                                  select.value = '';
-                                }} className="bg-red-100 border border-red-300 text-red-700 px-3 py-1 rounded text-xs font-bold hover:bg-red-200">追加</button>
-                              </div>
-                            </div>
-                          </div>
-                        </div>
+                  {attributesList.length === 0 ? (
+                    <div className="text-sm text-gray-500 text-center py-4 bg-white rounded border mt-3">まだ登録されていません</div>
+                  ) : (
+                    <>
+                      {/* 🌟 編集対象の属性をプルダウンで選択 */}
+                      <div className="mt-3 mb-4">
+                        <label className="text-xs font-bold text-gray-600 block mb-1">編集する属性を選択してください</label>
+                        <select
+                          value={selectedSettingsAttributeId ?? ''}
+                          onChange={e => setSelectedSettingsAttributeId(e.target.value ? Number(e.target.value) : null)}
+                          className="w-full border p-2.5 rounded-lg text-sm bg-white font-bold focus:ring-2 focus:ring-blue-500"
+                        >
+                          <option value="">-- 属性を選択 --</option>
+                          {attributesList.map(a => (
+                            <option key={a.id} value={a.id}>{a.name}</option>
+                          ))}
+                        </select>
                       </div>
-                    ))}
-                  </div>
+
+                      {(() => {
+                        const a = attributesList.find(attr => attr.id === selectedSettingsAttributeId);
+                        if (!a) {
+                          return (
+                            <div className="text-xs text-gray-400 text-center py-6 bg-white rounded border">
+                              属性を選択すると、弱点・強化アイテムの設定が表示されます
+                            </div>
+                          );
+                        }
+
+                        const existingWeakIds = attributeWeaknessesList.filter(w => w.attribute_id === a.id).map(w => w.weak_against_id);
+                        const weakAttrOptions: MultiSelectOption[] = attributesList
+                          .filter(attr => attr.id !== a.id && !existingWeakIds.includes(attr.id))
+                          .map(attr => ({ id: attr.id, label: attr.name }));
+
+                        const existingAffinityItemIds = affinitiesList.filter(af => af.attribute_id === a.id).map(af => af.item_id);
+                        const availableItemOptions: MultiSelectOption[] = itemsList
+                          .filter(item => !existingAffinityItemIds.includes(item.id))
+                          .map(item => ({ id: item.id, label: item.name }));
+
+                        return (
+                          <div className="flex flex-col bg-white p-3 rounded-lg border shadow-sm">
+                            <div className="flex items-center justify-between mb-3">
+                              <div>
+                                <div className="text-sm font-bold text-gray-800">{a.name}</div>
+                                {a.description && <div className="text-xs text-gray-500 mt-0.5">{a.description}</div>}
+                              </div>
+                              <button
+                                onClick={() => { handleDeleteAttribute(a.id); setSelectedSettingsAttributeId(null); }}
+                                className="text-red-600 text-xs font-bold bg-red-50 border border-red-200 px-2 py-1 rounded hover:bg-red-100"
+                              >
+                                属性を削除
+                              </button>
+                            </div>
+
+                            {/* 🌟 弱点・強化設定セクション */}
+                            <div className="pt-3 border-t text-sm bg-gray-50 -mx-3 -mb-3 p-3 rounded-b-lg">
+                              <div className="font-bold text-gray-700 mb-2 text-xs">弱点・強化設定</div>
+
+                              <div className="grid grid-cols-1 gap-4">
+
+                                {/* ⚔️ 弱点属性（複数選択可） */}
+                                <div>
+                                  <div className="text-xs font-bold text-purple-700 mb-1">⚔️ 弱点属性 (被ダメージUP・複数選択可)</div>
+                                  <div className="flex flex-wrap gap-1 mb-2 min-h-[24px]">
+                                    {attributeWeaknessesList.filter(aw => aw.attribute_id === a.id).map(aw => {
+                                      const weakAttr = attributesList.find(attr => attr.id === aw.weak_against_id);
+                                      return (
+                                        <span key={aw.id} className="text-xs bg-white border border-purple-300 text-purple-800 px-2 py-1 rounded flex items-center gap-1 shadow-sm">
+                                          {weakAttr?.name || '不明'}
+                                          <button type="button" onClick={() => handleDeleteAttributeWeakness(aw.id)} className="text-red-400 font-bold ml-1 hover:text-red-600">×</button>
+                                        </span>
+                                      );
+                                    })}
+                                    {attributeWeaknessesList.filter(aw => aw.attribute_id === a.id).length === 0 && (
+                                      <span className="text-xs text-gray-400">設定なし</span>
+                                    )}
+                                  </div>
+                                  <div className="flex gap-1 items-start">
+                                    <div className="flex-1">
+                                      <MultiSelectDropdown
+                                        options={weakAttrOptions}
+                                        selectedIds={pendingWeakAttrIds}
+                                        onChange={setPendingWeakAttrIds}
+                                        placeholder="追加する弱点属性を選択..."
+                                      />
+                                    </div>
+                                    <button
+                                      type="button"
+                                      disabled={isSubmitting}
+                                      onClick={() => handleAddAttributeWeaknessBulk(a.id, pendingWeakAttrIds)}
+                                      className="bg-purple-100 border border-purple-300 text-purple-700 px-3 py-3 rounded text-xs font-bold hover:bg-purple-200 disabled:opacity-50 shrink-0"
+                                    >
+                                      まとめて追加
+                                    </button>
+                                  </div>
+                                </div>
+
+                                {/* ✨ 強化アイテム（複数選択可） */}
+                                <div>
+                                  <div className="text-xs font-bold text-blue-700 mb-1">✨ 強化アイテム (効果UP・複数選択可)</div>
+                                  <div className="flex flex-wrap gap-1 mb-2 min-h-[24px]">
+                                    {affinitiesList.filter(af => af.attribute_id === a.id && ['enhance', 'good'].includes(af.affinity_type)).map(af => (
+                                      <span key={af.id} className="text-xs bg-white border border-blue-300 text-blue-800 px-2 py-1 rounded flex items-center gap-1 shadow-sm">
+                                        {af.item_masters?.name}
+                                        <button type="button" onClick={() => handleDeleteAffinity(af.id)} className="text-red-400 font-bold ml-1 hover:text-red-600">×</button>
+                                      </span>
+                                    ))}
+                                    {affinitiesList.filter(af => af.attribute_id === a.id && ['enhance', 'good'].includes(af.affinity_type)).length === 0 && (
+                                      <span className="text-xs text-gray-400">設定なし</span>
+                                    )}
+                                  </div>
+                                  <div className="flex gap-1 items-start">
+                                    <div className="flex-1">
+                                      <MultiSelectDropdown
+                                        options={availableItemOptions}
+                                        selectedIds={pendingEnhanceItemIds}
+                                        onChange={setPendingEnhanceItemIds}
+                                        placeholder="追加する強化アイテムを選択..."
+                                      />
+                                    </div>
+                                    <button
+                                      type="button"
+                                      disabled={isSubmitting}
+                                      onClick={() => handleAddAffinityBulk(a.id, pendingEnhanceItemIds, 'enhance')}
+                                      className="bg-blue-100 border border-blue-300 text-blue-700 px-3 py-3 rounded text-xs font-bold hover:bg-blue-200 disabled:opacity-50 shrink-0"
+                                    >
+                                      まとめて追加
+                                    </button>
+                                  </div>
+                                </div>
+
+                                {/* 💀 弱点アイテム（複数選択可） */}
+                                <div>
+                                  <div className="text-xs font-bold text-red-700 mb-1">💀 弱点アイテム (ダメージ・効果ダウン・複数選択可)</div>
+                                  <div className="flex flex-wrap gap-1 mb-2 min-h-[24px]">
+                                    {affinitiesList.filter(af => af.attribute_id === a.id && ['weakness', 'bad'].includes(af.affinity_type)).map(af => (
+                                      <span key={af.id} className="text-xs bg-white border border-red-300 text-red-800 px-2 py-1 rounded flex items-center gap-1 shadow-sm">
+                                        {af.item_masters?.name}
+                                        <button type="button" onClick={() => handleDeleteAffinity(af.id)} className="text-red-400 font-bold ml-1 hover:text-red-600">×</button>
+                                      </span>
+                                    ))}
+                                    {affinitiesList.filter(af => af.attribute_id === a.id && ['weakness', 'bad'].includes(af.affinity_type)).length === 0 && (
+                                      <span className="text-xs text-gray-400">設定なし</span>
+                                    )}
+                                  </div>
+                                  <div className="flex gap-1 items-start">
+                                    <div className="flex-1">
+                                      <MultiSelectDropdown
+                                        options={availableItemOptions}
+                                        selectedIds={pendingWeaknessItemIds}
+                                        onChange={setPendingWeaknessItemIds}
+                                        placeholder="追加する弱点アイテムを選択..."
+                                      />
+                                    </div>
+                                    <button
+                                      type="button"
+                                      disabled={isSubmitting}
+                                      onClick={() => handleAddAffinityBulk(a.id, pendingWeaknessItemIds, 'weakness')}
+                                      className="bg-red-100 border border-red-300 text-red-700 px-3 py-3 rounded text-xs font-bold hover:bg-red-200 disabled:opacity-50 shrink-0"
+                                    >
+                                      まとめて追加
+                                    </button>
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })()}
+                    </>
+                  )}
                 </div>
               </div>
 
