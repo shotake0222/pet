@@ -27,13 +27,72 @@ const extractFilePath = (url: string | null) => {
   return parts.length > 1 ? parts[1] : null;
 };
 
-// 全国ランダム配置用の座標ジェネレーター（おおよその日本領域）
+// =====================================================================
+// 🌟 全国ランダム配置用の座標ジェネレーター（都市中心ベースの分散配置に改良）
+// =====================================================================
+const PREFECTURE_CENTERS = [
+  { lat: 43.0621, lng: 141.3544 }, // 北海道
+  { lat: 40.8221, lng: 140.7474 }, // 青森
+  { lat: 39.7020, lng: 141.1545 }, // 岩手
+  { lat: 38.2682, lng: 140.8694 }, // 宮城
+  { lat: 39.7169, lng: 140.1017 }, // 秋田
+  { lat: 38.2404, lng: 140.3633 }, // 山形
+  { lat: 37.7608, lng: 140.4733 }, // 福島
+  { lat: 36.3685, lng: 140.4468 }, // 茨城
+  { lat: 36.5583, lng: 139.8826 }, // 栃木
+  { lat: 36.3911, lng: 139.0608 }, // 群馬
+  { lat: 35.8569, lng: 139.6489 }, // 埼玉
+  { lat: 35.6048, lng: 140.1233 }, // 千葉
+  { lat: 35.6895, lng: 139.6917 }, // 東京
+  { lat: 35.4478, lng: 139.6425 }, // 神奈川
+  { lat: 37.9162, lng: 139.0364 }, // 新潟
+  { lat: 36.6953, lng: 137.2113 }, // 富山
+  { lat: 36.5947, lng: 136.6256 }, // 石川
+  { lat: 36.0652, lng: 136.2215 }, // 福井
+  { lat: 35.6623, lng: 138.5683 }, // 山梨
+  { lat: 36.6513, lng: 138.1812 }, // 長野
+  { lat: 35.3912, lng: 136.7223 }, // 岐阜
+  { lat: 34.9769, lng: 138.3831 }, // 静岡
+  { lat: 35.1815, lng: 136.9064 }, // 愛知
+  { lat: 34.7303, lng: 136.5086 }, // 三重
+  { lat: 35.0116, lng: 135.7680 }, // 京都
+  { lat: 34.6937, lng: 135.5023 }, // 大阪
+  { lat: 34.6913, lng: 135.1830 }, // 兵庫
+  { lat: 34.6853, lng: 135.8049 }, // 奈良
+  { lat: 34.2260, lng: 135.1675 }, // 和歌山
+  { lat: 35.5011, lng: 134.2351 }, // 鳥取
+  { lat: 35.4723, lng: 133.0505 }, // 島根
+  { lat: 34.6618, lng: 133.9344 }, // 岡山
+  { lat: 34.3853, lng: 132.4553 }, // 広島
+  { lat: 34.1860, lng: 131.4706 }, // 山口
+  { lat: 34.0704, lng: 134.5594 }, // 徳島
+  { lat: 34.3402, lng: 134.0433 }, // 香川
+  { lat: 33.8392, lng: 132.7663 }, // 愛媛
+  { lat: 33.5597, lng: 133.5311 }, // 高知
+  { lat: 33.5902, lng: 130.4017 }, // 福岡
+  { lat: 33.2635, lng: 130.3009 }, // 佐賀
+  { lat: 32.7503, lng: 129.8777 }, // 長崎
+  { lat: 32.8032, lng: 130.7079 }, // 熊本
+  { lat: 33.2382, lng: 131.6126 }, // 大分
+  { lat: 31.9077, lng: 131.4205 }, // 宮崎
+  { lat: 31.5966, lng: 130.5571 }, // 鹿児島
+  { lat: 26.2124, lng: 127.6809 }  // 沖縄
+];
+
 const generateRandomSpots = (master: any, count: number, startTime: string, endTime: string) => {
   const spots = [];
   for (let i = 0; i < count; i++) {
-    // 緯度: 約31.0 ~ 45.0, 経度: 約130.0 ~ 145.0
-    const lat = 31.0 + Math.random() * (45.0 - 31.0);
-    const lng = 130.0 + Math.random() * (145.0 - 130.0);
+    // 47都道府県の中心からランダムに1つ選択
+    const center = PREFECTURE_CENTERS[Math.floor(Math.random() * PREFECTURE_CENTERS.length)];
+    
+    // 都市の中心から半径約0〜50km圏内（緯度経度で約0.45度）に散らす
+    // sqrtを使うことで中心に固まりすぎず、円内全体に均等に散らばるように調整
+    const r = Math.sqrt(Math.random()) * 0.45;
+    const theta = Math.random() * 2 * Math.PI;
+    
+    const latOffset = r * Math.cos(theta);
+    const lngOffset = r * Math.sin(theta);
+
     spots.push({
       master_id: master.id,
       name: master.name,
@@ -41,8 +100,8 @@ const generateRandomSpots = (master: any, count: number, startTime: string, endT
       radius_meters: master.radius_meters,
       bonus_points: master.bonus_points,
       model_url: master.model_url,
-      latitude: lat,
-      longitude: lng,
+      latitude: center.lat + latOffset,
+      longitude: center.lng + lngOffset,
       start_time: startTime ? new Date(startTime).toISOString() : null,
       end_time: endTime ? new Date(endTime).toISOString() : null
     });
@@ -52,7 +111,6 @@ const generateRandomSpots = (master: any, count: number, startTime: string, endT
 
 // =====================================================================
 // 🌟 共通コンポーネント: プルダウン形式の複数選択（チェックボックス内蔵）
-// クリックで開閉し、選択済みの項目はタグとして折りたたんで表示する。
 // =====================================================================
 type MultiSelectOption = { id: number; label: string };
 
@@ -177,8 +235,8 @@ export default function AdminDashboard() {
 
   // --- ペット用State ---
   const [petName, setPetName] = useState('');
-  const [petEggType, setPetEggType] = useState(''); // 修正箇所: 初期値を空に変更
-  const [petRarity, setPetRarity] = useState('');   // 修正箇所: 初期値を空に変更
+  const [petEggType, setPetEggType] = useState(''); 
+  const [petRarity, setPetRarity] = useState('');   
   const [petWeight, setPetWeight] = useState('100');
   const [petModelFile, setPetModelFile] = useState<File | null>(null);         
   const [petModelV2File, setPetModelV2File] = useState<File | null>(null);     
@@ -188,20 +246,20 @@ export default function AdminDashboard() {
   
   // --- 設定用State: 卵 / レアリティ / 属性 ---
   const [newEggName, setNewEggName] = useState('');
-  const [newEggWeight, setNewEggWeight] = useState('100'); // 🌟 卵の排出ウェイト
-  const [newEggModelFile, setNewEggModelFile] = useState<File | null>(null); // 🌟 卵のモデルファイル
+  const [newEggWeight, setNewEggWeight] = useState('100'); 
+  const [newEggModelFile, setNewEggModelFile] = useState<File | null>(null); 
   const [newRarityCode, setNewRarityCode] = useState('');
   const [newRarityLabel, setNewRarityLabel] = useState('');
   const [newRarityColor, setNewRarityColor] = useState('#ffffff');
-  const [newRarityWeight, setNewRarityWeight] = useState('100'); // 🌟 レアリティの排出ウェイト
+  const [newRarityWeight, setNewRarityWeight] = useState('100'); 
   const [newAttributeName, setNewAttributeName] = useState('');
   const [newAttributeDesc, setNewAttributeDesc] = useState('');
 
   // 🌟 設定タブ「登録済み属性と設定」: プルダウンで編集対象の属性を選択する方式に変更
   const [selectedSettingsAttributeId, setSelectedSettingsAttributeId] = useState<number | null>(null);
-  const [pendingWeakAttrIds, setPendingWeakAttrIds] = useState<number[]>([]);       // 追加待ちの弱点属性(複数選択)
-  const [pendingEnhanceItemIds, setPendingEnhanceItemIds] = useState<number[]>([]); // 追加待ちの強化アイテム(複数選択)
-  const [pendingWeaknessItemIds, setPendingWeaknessItemIds] = useState<number[]>([]); // 追加待ちの弱点アイテム(複数選択)
+  const [pendingWeakAttrIds, setPendingWeakAttrIds] = useState<number[]>([]);       
+  const [pendingEnhanceItemIds, setPendingEnhanceItemIds] = useState<number[]>([]); 
+  const [pendingWeaknessItemIds, setPendingWeaknessItemIds] = useState<number[]>([]); 
 
   useEffect(() => {
     setPendingWeakAttrIds([]);
@@ -242,8 +300,8 @@ export default function AdminDashboard() {
   const [itemDesc, setItemDesc] = useState('');
   const [itemType, setItemType] = useState('food');
   const [itemPrice, setItemPrice] = useState('100');
-  const [itemPriceType, setItemPriceType] = useState<'paid' | 'free'>('paid'); // 🌟 有料/無料の区分け
-  const [itemDropWeight, setItemDropWeight] = useState('100');                 // 🌟 出現確率ウェイト
+  const [itemPriceType, setItemPriceType] = useState<'paid' | 'free'>('paid'); 
+  const [itemDropWeight, setItemDropWeight] = useState('100');                 
   const [itemEffect, setItemEffect] = useState('10');
   const [itemImageFile, setItemImageFile] = useState<File | null>(null);
 
@@ -294,10 +352,10 @@ export default function AdminDashboard() {
       petAttrsRes,
       userPetsRes,
       facilityDropsRes,
-      affinitiesRes, // 🌟 相性データ
-      eggsRes,       // 🌟 卵データ
-      weaknessesRes,  // 🌟 属性弱点データ
-      initialItemsRes // 🌟 初期持ち物データ
+      affinitiesRes, 
+      eggsRes,       
+      weaknessesRes,  
+      initialItemsRes 
     ] = await Promise.all([
       supabase.from('pet_masters').select('*').order('id', { ascending: false }),
       supabase.from('landmark_masters').select('*').order('id', { ascending: false }),
@@ -313,8 +371,8 @@ export default function AdminDashboard() {
       supabase.from('facility_drop_masters').select('*, item_masters(name, image_url), coupon_masters(name, qr_image_url)').order('id', { ascending: false }),
       supabase.from('attribute_item_affinities').select('*, item_masters(name)').order('id', { ascending: true }),
       supabase.from('egg_masters').select('*').order('id', { ascending: true }),
-      supabase.from('attribute_weaknesses').select('*').order('id', { ascending: true }), // 🌟 新規
-      supabase.from('initial_items').select('*, item_masters(name)').order('id', { ascending: true }) // 🌟 初期持ち物
+      supabase.from('attribute_weaknesses').select('*').order('id', { ascending: true }), 
+      supabase.from('initial_items').select('*, item_masters(name)').order('id', { ascending: true }) 
     ]);
     
     if (petsRes.data) {
@@ -336,7 +394,6 @@ export default function AdminDashboard() {
     if (newsRes.data) setNewsList(newsRes.data);
     if (usersRes.data) setUsersList(usersRes.data);
     
-    // 修正箇所: 卵リストとレアリティリストの安全な初期値適用
     if (raritiesRes && raritiesRes.data) {
       setRaritiesList(raritiesRes.data);
       setPetRarity(prev => {
@@ -375,7 +432,6 @@ export default function AdminDashboard() {
     if (!initItemId) return alert('アイテムを選択してください');
     setIsSubmitting(true);
     try {
-      // 既に登録されているかチェック
       const exists = initialItemsList.find(i => String(i.item_id) === initItemId);
       if (exists) {
         alert('そのアイテムは既に初期持ち物に設定されています。');
@@ -721,8 +777,15 @@ export default function AdminDashboard() {
       if (lmAutoGenerate) {
         const count = parseInt(lmGenCount, 10);
         const spots = generateRandomSpots(master, count, lmGenStartTime, lmGenEndTime);
-        const { error: genErr } = await supabase.from('landmarks').insert(spots);
-        if (genErr) throw genErr;
+        
+        // 大量のデータをチャンクに分割してインサート
+        const chunkSize = 1000;
+        for (let i = 0; i < spots.length; i += chunkSize) {
+          const chunk = spots.slice(i, i + chunkSize);
+          const { error: genErr } = await supabase.from('landmarks').insert(chunk);
+          if (genErr) throw genErr;
+        }
+        
         alert(`スポット「${master.name}」をリストに登録し、全国に ${count} 箇所ランダム配置しました！`);
       } else {
         alert(`スポット「${master.name}」をリストに登録しました！`);
@@ -772,8 +835,14 @@ export default function AdminDashboard() {
     try {
       const count = parseInt(lmGenCount, 10);
       const spots = generateRandomSpots(activeMassGenMaster, count, lmGenStartTime, lmGenEndTime);
-      const { error } = await supabase.from('landmarks').insert(spots);
-      if (error) throw error;
+      
+      // 大量のデータをチャンクに分割してインサート
+      const chunkSize = 1000;
+      for (let i = 0; i < spots.length; i += chunkSize) {
+        const chunk = spots.slice(i, i + chunkSize);
+        const { error } = await supabase.from('landmarks').insert(chunk);
+        if (error) throw error;
+      }
 
       alert(`スケジュールを設定し、全国に ${count} 箇所を発生させました！`);
       setActiveMassGenMaster(null);
@@ -801,8 +870,8 @@ export default function AdminDashboard() {
         description: itemDesc,
         item_type: itemType,
         price_jpy: itemPriceType === 'free' ? 0 : parseInt(itemPrice, 10),
-        price_type: itemPriceType,           // 🌟 有料/無料の区分け
-        drop_weight: parseInt(itemDropWeight, 10), // 🌟 出現確率ウェイト
+        price_type: itemPriceType,           
+        drop_weight: parseInt(itemDropWeight, 10), 
         effect_value: parseInt(itemEffect, 10),
         image_url: imageUrl
       });
