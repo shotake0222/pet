@@ -1080,6 +1080,10 @@ function HomeAR() {
         } else {
           await supabase.from('user_inventory').insert({ user_id: sessionUserId, item_id: item.id, quantity: 1 });
         }
+        
+        // ローカルステートを更新してUIに反映
+        const { data: inv } = await supabase.from('user_inventory').select('id, quantity, item_masters(*)').eq('user_id', sessionUserId).gt('quantity', 0);
+        if (inv) setInventory(inv);
       }
       const newNotification = {
         user_id: sessionUserId,
