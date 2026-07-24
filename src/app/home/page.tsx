@@ -5,6 +5,20 @@ import Script from 'next/script';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { createClient } from '@/utils/supabase/client';
 
+declare global {
+  namespace JSX {
+    interface IntrinsicElements {
+      'model-viewer': React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement> & {
+        src?: string;
+        'camera-controls'?: string | boolean;
+        'auto-rotate'?: string | boolean;
+        style?: React.CSSProperties;
+        [key: string]: any;
+      };
+    }
+  }
+}
+
 function HomeAR() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -2484,7 +2498,6 @@ function HomeAR() {
                         <div key={pm.id} className='relative bg-gray-50 border border-gray-200 rounded-xl p-2 flex flex-col items-center shadow-sm'>
                           {isHallOfFame && <div className='absolute -top-3 -right-3 text-4xl z-20 drop-shadow-md'>⭐</div>}
                           <div className='w-full h-28 rounded-lg overflow-hidden bg-white border border-gray-100 relative flex items-center justify-center'>
-                            {/* @ts-ignore */}
                             <model-viewer
                               src={pm.model_url || fallbackBase}
                               camera-controls="false"
