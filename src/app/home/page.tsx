@@ -5,18 +5,8 @@ import Script from 'next/script';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { createClient } from '@/utils/supabase/client';
 
-declare global {
-  namespace JSX {
-    interface IntrinsicElements {
-      'model-viewer': React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement> & {
-        src?: string;
-        'camera-controls'?: string | boolean;
-        'auto-rotate'?: string | boolean;
-        style?: React.CSSProperties;
-      };
-    }
-  }
-}
+// ▼ これを1行追加（'model-viewer'タグをReactコンポーネントとして認識させ、型チェックを無効化します）
+const ModelViewer = 'model-viewer' as any;
 
 function HomeAR() {
   const router = useRouter();
@@ -2497,13 +2487,13 @@ function HomeAR() {
                         <div key={pm.id} className='relative bg-gray-50 border border-gray-200 rounded-xl p-2 flex flex-col items-center shadow-sm'>
                           {isHallOfFame && <div className='absolute -top-3 -right-3 text-4xl z-20 drop-shadow-md'>⭐</div>}
                           <div className='w-full h-28 rounded-lg overflow-hidden bg-white border border-gray-100 relative flex items-center justify-center'>
-                            <model-viewer
-                              src={pm.model_url || fallbackBase}
-                              camera-controls="false"
-                              auto-rotate="true"
-                              style={{ width: '100%', height: '100%', backgroundColor: 'transparent', filter: isAcquired ? 'none' : 'brightness(0)' }}
-                            ></model-viewer>
-                          </div>
+  <ModelViewer
+    src={pm.model_url || fallbackBase}
+    camera-controls="false"
+    auto-rotate="true"
+    style={{ width: '100%', height: '100%', backgroundColor: 'transparent', filter: isAcquired ? 'none' : 'brightness(0)' }}
+  ></ModelViewer>
+</div>
                           <div className={`mt-2 text-sm font-bold truncate w-full text-center ${isAcquired ? 'text-gray-800' : 'text-gray-400'}`}>
                             {isAcquired ? pm.name : '？？？？'}
                           </div>
