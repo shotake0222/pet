@@ -44,9 +44,20 @@ function HomeAR() {
   const [petMasterName, setPetMasterName] = useState('名無し');
   const [petRarity, setPetRarity] = useState('?');
 
-  // 🌟 追加: ペットの属性とアイテム相性情報
   const [petAttributes, setPetAttributes] = useState<any[]>([]);
   const [petAffinities, setPetAffinities] = useState<any[]>([]);
+
+  // 🌟 図鑑機能用のState
+  const [isEncyclopediaOpen, setIsEncyclopediaOpen] = useState(false);
+  const [encyclopediaTab, setEncyclopediaTab] = useState<'pets' | 'spots'>('pets');
+  const [allPetMasters, setAllPetMasters] = useState<any[]>([]);
+  const [acquiredPetIds, setAcquiredPetIds] = useState<Set<string>>(new Set());
+  const [hallOfFamePetIds, setHallOfFamePetIds] = useState<Set<string>>(new Set());
+  const [customSpots, setCustomSpots] = useState<any[]>([]);
+  
+  const [newSpotName, setNewSpotName] = useState('');
+  const [newSpotFile, setNewSpotFile] = useState<File | null>(null);
+  const [isUploadingSpot, setIsUploadingSpot] = useState(false);
 
   const [viewMode, setViewMode] = useState<'mindar' | 'gps' | 'report'>((modeParam === 'gps' || modeParam === 'report') ? (modeParam as 'mindar' | 'gps' | 'report') : 'mindar');
   const [aframeLoaded, setAframeLoaded] = useState(false);
@@ -73,7 +84,6 @@ function HomeAR() {
 
   const [hatchOverlay, setHatchOverlay] = useState<{ active: boolean; particles: any[]; rarity: string } | null>(null);
 
-  // 🌟 追加: ランドマークでのアイテム獲得演出モーダル
   const [itemRewardOverlay, setItemRewardOverlay] = useState<{ active: boolean; items: any[]; facilityName: string; facilityIcon: string } | null>(null);
 
   const petMarkerUrl = '/markers/targets.mind';
@@ -358,6 +368,7 @@ function HomeAR() {
     setIsCareMenuOpen(false);
     setIsWalkPromptOpen(false);
     setIsHelpModalOpen(false);
+    setIsEncyclopediaOpen(false); // 🌟 図鑑も閉じるように追加
   };
 
   const handleModeChange = (mode: 'mindar' | 'gps' | 'report') => {
@@ -651,6 +662,26 @@ function HomeAR() {
       const { data: notifications } = await supabase.from('user_notifications').select('*').eq('user_id', sessionUserId).order('created_at', { ascending: false }).limit(20);
       if (notifications) setUserNotifications(notifications);
 
+      // 🌟 図鑑用のデータを取得 (pet_masters, petsの履歴, custom_spots)
+      const { data: pm } = await supabase.from('pet_masters').select('*').order('id', { ascending: true });
+      if (pm) setAllPetMasters(pm);
+
+      const { data: up } = await supabase.from('pets').select('pet_master_id, is_deceased').eq('owner_id', sessionUserId).not('pet_master_id', 'is', null);
+      if (up) {
+        const acquired = new Set<string>();
+        const hof = new Set<string>();
+        up.forEach((p: any) => {
+          if (p.pet_master_id) acquired.add(p.pet_master_id);
+          if (p.pet_master_id && p.is_deceased) hof.add(p.pet_master_id);
+        });
+        setAcquiredPetIds(acquired);
+        setHallOfFamePetIds(hof);
+      }
+
+      const { data: cs } = await supabase.from('custom_spots').select('*').eq('user_id', sessionUserId).order('created_at', { ascending: false });
+      if (cs) setCustomSpots(cs);
+      // 🌟 図鑑用データ取得 終了
+
       setGameOverNotice(null);
       setGameOverHandled(false);
 
@@ -726,7 +757,6 @@ function HomeAR() {
             setPetRarity(rarityPm);
           }
 
-          // 🌟 属性と相性データの取得
           const { data: attrRels } = await supabase
             .from('pet_master_attributes')
             .select('attribute_id, attributes(id, name, description)')
@@ -787,6 +817,42 @@ function HomeAR() {
     fetchGameData();
   }, [fetchGameData]);
 
+  // 🌟 追加: 新しいスポットを図鑑に記録する関数
+  const handleAddCustomSpot = async () => {
+    if (!sessionUserId || !newSpotName || !newSpotFile) return;
+    setIsUploadingSpot(true);
+    try {
+      const fileExt = newSpotFile.name.split('.').pop();
+      const fileName = `${sessionUserId}_${Date.now()}.${fileExt}`;
+      const { error: uploadError } = await supabase.storage.from('spot_images').upload(fileName, newSpotFile);
+      if (uploadError) throw uploadError;
+
+      const { data: publicUrlData } = supabase.storage.from('spot_images').getPublicUrl(fileName);
+      const imageUrl = publicUrlData.publicUrl;
+
+      const { data: newSpot, error: insertError } = await supabase.from('custom_spots').insert({
+        user_id: sessionUserId,
+        name: newSpotName,
+        image_url: imageUrl,
+        latitude: location?.lat || null,
+        longitude: location?.lng || null
+      }).select('*').single();
+
+      if (insertError) throw insertError;
+
+      setCustomSpots(prev => [newSpot, ...prev]);
+      setNewSpotName('');
+      setNewSpotFile(null);
+      alert('新しいスポットを図鑑に記録しました！');
+      playSound('levelup');
+    } catch (err: any) {
+      console.error(err);
+      alert('スポットの保存に失敗しました: ' + err.message);
+    } finally {
+      setIsUploadingSpot(false);
+    }
+  };
+
   const triggerRainbowBridge = async (targetPetId: string, currentGeneration: number) => {
     setShowRainbowBridge(true);
     setRainbowPhase(1);
@@ -808,6 +874,7 @@ function HomeAR() {
           birthday: null,
           condition_status: 'healthy',
           generation: currentGeneration + 1,
+          is_deceased: true, // 殿堂入り
         })
         .eq('id', targetPetId);
       setTimeout(() => {
@@ -1081,7 +1148,6 @@ function HomeAR() {
           await supabase.from('user_inventory').insert({ user_id: sessionUserId, item_id: item.id, quantity: 1 });
         }
         
-        // ローカルステートを更新してUIに反映
         const { data: inv } = await supabase.from('user_inventory').select('id, quantity, item_masters(*)').eq('user_id', sessionUserId).gt('quantity', 0);
         if (inv) setInventory(inv);
       }
@@ -1314,7 +1380,6 @@ function HomeAR() {
       setPetModelUrlV2(modelV2);
       setPetModelUrlV3(modelV3);
 
-      // 🌟 孵化時に属性データも再取得
       const { data: attrRels } = await supabase
         .from('pet_master_attributes')
         .select('attribute_id, attributes(id, name, description)')
@@ -1353,6 +1418,13 @@ function HomeAR() {
           })
           .eq('id', petId);
 
+        // 🌟 図鑑の取得済みリストを更新
+        setAcquiredPetIds(prev => {
+          const next = new Set(prev);
+          next.add(selectedMaster.id);
+          return next;
+        });
+
         setHatchAnimating(false);
         if (!customName) {
           setNamingInput('');
@@ -1386,7 +1458,6 @@ function HomeAR() {
       return;
     }
 
-    // 🌟 相性の計算
     let multiplier = 1.0;
     petAffinities.forEach(af => {
       if (af.item_id === item.id) {
@@ -1493,6 +1564,7 @@ function HomeAR() {
         setIsFoodMenuOpen(false);
         setIsSleepMenuOpen(false);
         setIsWalkPromptOpen(false);
+        setIsEncyclopediaOpen(false);
       }
       return next;
     });
@@ -1517,8 +1589,6 @@ function HomeAR() {
     return 'normal';
   };
 
-  // 🌟 追加: 施設タイプに応じてランダムにアイテムを付与する
-  // itemType が null の場合は全アイテム種別からランダムに選出する
   const grantRandomItems = async (itemType: string | null, count: number) => {
     if (!sessionUserId) return [];
     let query = supabase.from('item_masters').select('*');
@@ -1555,7 +1625,6 @@ function HomeAR() {
     return granted;
   };
 
-  // 🌟 追加: アイテム獲得の演出モーダルを表示する
   const showItemReward = (items: any[], facilityName: string, facilityIcon: string) => {
     if (!items || items.length === 0) return;
     playSound('item');
@@ -1594,7 +1663,6 @@ function HomeAR() {
       setHungerPercent(100);
       await supabase.from('pets').update({ last_fed_at: now }).eq('id', petId);
 
-      // 🌟 ご飯アイテムをランダムに3つ付与
       const grantedFood = await grantRandomItems('food', 3);
       showItemReward(grantedFood, activeLandmark.name, '🍽️');
     } else if (facilityType === 'hospital') {
@@ -1606,14 +1674,12 @@ function HomeAR() {
       }
       setMotivationPercent(100);
 
-      // 🌟 寝かしつけ薬(sleepタイプ)をランダムに3つ付与
       const grantedSleep = await grantRandomItems('sleep', 3);
       showItemReward(grantedSleep, activeLandmark.name, '🏥');
     } else if (facilityType === 'hotel') {
       alert(`🏨 ${activeLandmark.name} でぐっすり休憩！\nごきげんがMAXになりました！`);
       setMotivationPercent(100);
 
-      // 🌟 追加: ホテルでもボーナスアイテムを付与（expタイプ優先、無ければ全種別からランダム）
       let grantedHotel = await grantRandomItems('exp', 3);
       if (grantedHotel.length === 0) {
         grantedHotel = await grantRandomItems(null, 3);
@@ -1622,7 +1688,6 @@ function HomeAR() {
     } else {
       alert(`🎉 ${activeLandmark.name} で ${activeLandmark.bonus_points} ポイント獲得！\n経験値が大幅にアップ！`);
 
-      // 🌟 追加: 通常スポットでも全アイテム種別からランダムにボーナスアイテムを付与
       const grantedNormal = await grantRandomItems(null, 3);
       showItemReward(grantedNormal, activeLandmark.name, '📍');
     }
@@ -1860,6 +1925,9 @@ function HomeAR() {
       {gpsEverActivated && extrasLoaded && (
         <Script src='https://raw.githack.com/AR-js-org/AR.js/master/aframe/build/aframe-ar.js' strategy='afterInteractive' onLoad={() => setArjsLoaded(true)} />
       )}
+      
+      {/* 🌟 3Dプレビュー用のmodel-viewerスクリプト */}
+      <Script type="module" src="https://ajax.googleapis.com/ajax/libs/model-viewer/3.1.1/model-viewer.min.js" strategy="lazyOnload" />
 
       {dataLoadError && (
         <div className='absolute inset-0 z-[500] bg-black/90 backdrop-blur-md flex items-center justify-center p-6'>
@@ -2039,7 +2107,6 @@ function HomeAR() {
         </div>
       )}
 
-      {/* 🌟 追加: ランドマークでのアイテム獲得演出モーダル */}
       {itemRewardOverlay?.active && (
         <div className='absolute inset-0 z-[210] bg-black/80 backdrop-blur-md flex items-center justify-center p-4 pointer-events-auto'>
           <div className='bg-white rounded-3xl p-6 w-full max-w-sm shadow-2xl text-center space-y-4 text-black relative overflow-hidden'>
@@ -2382,6 +2449,93 @@ function HomeAR() {
         </div>
       )}
 
+      {/* 🌟 追加: 図鑑モーダル */}
+      {isEncyclopediaOpen && (
+        <div className='absolute inset-0 z-[200] bg-black/80 backdrop-blur-md flex items-center justify-center p-4 pointer-events-auto' onClick={() => setIsEncyclopediaOpen(false)}>
+          <div className='bg-white rounded-3xl p-5 w-full max-w-md shadow-2xl relative max-h-[85vh] flex flex-col' onClick={e => e.stopPropagation()}>
+            <div className='flex justify-between items-center mb-4 border-b pb-2 border-gray-200'>
+              <h2 className='text-xl font-bold text-slate-800'>📖 記録と図鑑</h2>
+              <button onClick={() => setIsEncyclopediaOpen(false)} className='w-8 h-8 rounded-full bg-gray-100 text-gray-700 font-bold flex items-center justify-center active:scale-95'>
+                ✕
+              </button>
+            </div>
+            
+            <div className='flex mb-4 gap-2'>
+              <button onClick={() => setEncyclopediaTab('pets')} className={`flex-1 py-2 font-bold rounded-xl text-sm transition-colors ${encyclopediaTab === 'pets' ? 'bg-indigo-500 text-white shadow-md' : 'bg-gray-100 text-gray-500'}`}>
+                🐶 ペット
+              </button>
+              <button onClick={() => setEncyclopediaTab('spots')} className={`flex-1 py-2 font-bold rounded-xl text-sm transition-colors ${encyclopediaTab === 'spots' ? 'bg-teal-500 text-white shadow-md' : 'bg-gray-100 text-gray-500'}`}>
+                📍 スポット
+              </button>
+            </div>
+
+            <div className='flex-1 overflow-y-auto pr-1'>
+              {encyclopediaTab === 'pets' && (
+                <div className='space-y-4'>
+                  <div className='text-sm text-gray-600 flex justify-between px-1'>
+                    <span>獲得状況: {acquiredPetIds.size} / {allPetMasters.length}</span>
+                  </div>
+                  <div className='grid grid-cols-2 gap-3'>
+                    {allPetMasters.map(pm => {
+                      const isAcquired = acquiredPetIds.has(pm.id);
+                      const isHallOfFame = hallOfFamePetIds.has(pm.id);
+                      const fallbackBase = `/models/pet/${pm.rarity || 'N'}/v1.glb`;
+                      return (
+                        <div key={pm.id} className='relative bg-gray-50 border border-gray-200 rounded-xl p-2 flex flex-col items-center shadow-sm'>
+                          {isHallOfFame && <div className='absolute -top-3 -right-3 text-4xl z-20 drop-shadow-md'>⭐</div>}
+                          <div className='w-full h-28 rounded-lg overflow-hidden bg-white border border-gray-100 relative flex items-center justify-center'>
+                            {/* @ts-ignore */}
+                            <model-viewer
+                              src={pm.model_url || fallbackBase}
+                              camera-controls="false"
+                              auto-rotate="true"
+                              style={{ width: '100%', height: '100%', backgroundColor: 'transparent', filter: isAcquired ? 'none' : 'brightness(0)' }}
+                            ></model-viewer>
+                          </div>
+                          <div className={`mt-2 text-sm font-bold truncate w-full text-center ${isAcquired ? 'text-gray-800' : 'text-gray-400'}`}>
+                            {isAcquired ? pm.name : '？？？？'}
+                          </div>
+                          {isAcquired && <div className='text-[10px] text-gray-500'>レアリティ: {pm.rarity || '?'}</div>}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {encyclopediaTab === 'spots' && (
+                <div className='space-y-4'>
+                  <div className='bg-teal-50 p-4 rounded-xl border border-teal-100 shadow-sm'>
+                    <h4 className='font-bold text-teal-800 mb-2 text-sm'>📸 思い出のスポットを記録</h4>
+                    <input type='text' placeholder='スポットの名前 (例: 近所の公園)' value={newSpotName} onChange={e => setNewSpotName(e.target.value)} className='w-full p-2 border border-teal-200 rounded-lg mb-2 text-black text-sm' />
+                    <input type='file' accept='image/*' onChange={e => setNewSpotFile(e.target.files?.[0] || null)} className='w-full text-xs text-gray-600 mb-3 file:mr-4 file:py-1.5 file:px-3 file:rounded-full file:border-0 file:text-xs file:font-semibold file:bg-teal-100 file:text-teal-700 hover:file:bg-teal-200' />
+                    <button onClick={handleAddCustomSpot} disabled={isUploadingSpot || !newSpotName || !newSpotFile} className='w-full bg-teal-600 text-white font-bold py-2.5 rounded-lg disabled:bg-gray-300 text-sm active:scale-95 transition-transform'>
+                      {isUploadingSpot ? '保存中...' : '図鑑に記録する'}
+                    </button>
+                  </div>
+                  
+                  {customSpots.length === 0 ? (
+                    <p className='text-gray-400 text-center text-sm py-8'>まだ記録されたスポットがありません。</p>
+                  ) : (
+                    <div className='grid grid-cols-2 gap-3'>
+                      {customSpots.map(spot => (
+                        <div key={spot.id} className='bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm'>
+                          <img src={spot.image_url} alt={spot.name} className='w-full h-24 object-cover' />
+                          <div className='p-2'>
+                            <div className='text-sm font-bold text-gray-800 truncate'>{spot.name}</div>
+                            <div className='text-[10px] text-gray-500 mt-0.5'>{new Date(spot.created_at).toLocaleDateString()}</div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {isSpotMapOpen && (
         <div className='absolute inset-0 z-[320] bg-black/80 backdrop-blur-md flex items-center justify-center p-4 pointer-events-auto' onClick={() => setIsSpotMapOpen(false)}>
           <div className='bg-white rounded-3xl p-6 w-full max-w-sm shadow-2xl relative max-h-[90vh] flex flex-col' onClick={e => e.stopPropagation()}>
@@ -2598,7 +2752,6 @@ function HomeAR() {
 
             {!isEgg && !isEggUnregistered && petId && (
               <>
-                {/* 🌟 属性表示エリアを追加 */}
                 {petAttributes.length > 0 && (
                   <div className='mb-2'>
                     <div className='text-xs font-bold text-gray-400 mb-1.5'>🔮 属性</div>
@@ -2734,6 +2887,11 @@ function HomeAR() {
 
           <button onClick={() => { setIsHelpModalOpen(true); playSound('tap'); }} className='bg-white/90 p-3 rounded-full shadow-2xl border border-gray-200 active:scale-90 flex items-center justify-center w-14 h-14 relative' aria-label='遊び方'>
             <span className='text-2xl font-bold text-gray-700'>❓</span>
+          </button>
+
+          {/* 🌟 追加: 図鑑ボタン */}
+          <button onClick={() => { setIsEncyclopediaOpen(true); playSound('tap'); }} className='bg-white/90 p-3 rounded-full shadow-2xl border border-gray-200 active:scale-90 flex items-center justify-center w-14 h-14 relative' aria-label='ずかん'>
+            <span className='text-2xl'>📖</span>
           </button>
 
           {viewMode === 'gps' && activeLandmark ? (
@@ -3117,7 +3275,7 @@ function HomeAR() {
 
 export default function HomeARPage() {
   return (
-    <Suspense fallback={<div className='bg-black w-full h-full text-white flex items-center justify-center'>ARエンジンを起動中...</div>}>
+    <Suspense fallback={<div className='bg-black w-full h-full text-white flex items-center justify-center'>エンジンを起動中...</div>}>
       <HomeAR />
     </Suspense>
   );
