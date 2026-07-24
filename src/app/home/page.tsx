@@ -300,7 +300,7 @@ function HomeAR() {
         el.style.margin = '0';
       });
       const canvases = viewport.querySelectorAll('canvas');
-      canvases.forEach(canvas => {
+      canbases.forEach(canvas => {
         const el = canvas as HTMLCanvasElement;
         el.style.position = 'absolute';
         el.style.inset = '0';
@@ -371,7 +371,7 @@ function HomeAR() {
     setIsCareMenuOpen(false);
     setIsWalkPromptOpen(false);
     setIsHelpModalOpen(false);
-    setIsEncyclopediaOpen(false); // 🌟 図鑑も閉じるように追加
+    setIsEncyclopediaOpen(false);
   };
 
   const handleModeChange = (mode: 'mindar' | 'gps' | 'report') => {
@@ -683,7 +683,6 @@ function HomeAR() {
 
       const { data: cs } = await supabase.from('custom_spots').select('*').eq('user_id', sessionUserId).order('created_at', { ascending: false });
       if (cs) setCustomSpots(cs);
-      // 🌟 図鑑用データ取得 終了
 
       setGameOverNotice(null);
       setGameOverHandled(false);
@@ -1211,14 +1210,17 @@ function HomeAR() {
     }
   }, [viewMode]);
 
+  // 🌟 追加・変更: A-FrameのカスタムイベントをReact側でリッスンする
   useEffect(() => {
     if (viewMode !== 'mindar' || !petId || isEgg || isSleeping || !isDataLoaded) return;
-    const viewport = arViewportRef.current;
-    if (!viewport) return;
+    
     const handlePetTap = (e: Event) => {
-      const target = e.target as HTMLElement | null;
-      const id = target?.id || '';
-      if (!/^pet-model-\d+$/.test(id)) return;
+      const customEvent = e as CustomEvent;
+      const id = customEvent.detail?.id || '';
+      
+      // 当たり判定用の不可視オブジェクト（hitbox）を検知する
+      if (!/^pet-hitbox-\d+$/.test(id)) return;
+      
       if (petCondition === 'starving' || petCondition === 'sick') {
         playSound('error');
         setActionAnim('Sad');
@@ -1226,6 +1228,7 @@ function HomeAR() {
         setShowConditionSOS(true);
         return;
       }
+      
       playSound('tap');
       setAffection(prev => {
         const val = prev + 1;
@@ -1240,8 +1243,9 @@ function HomeAR() {
       setTimeout(() => setActionAnim(null), 1500);
       addExperience(5);
     };
-    viewport.addEventListener('click', handlePetTap);
-    return () => viewport.removeEventListener('click', handlePetTap);
+    
+    window.addEventListener('pet-tapped', handlePetTap);
+    return () => window.removeEventListener('pet-tapped', handlePetTap);
   }, [viewMode, petId, supabase, isEgg, isSleeping, petCondition, isDataLoaded]);
 
   useEffect(() => {
@@ -1278,6 +1282,21 @@ function HomeAR() {
       attached.clear();
     };
   }, [viewMode, sceneKey]);
+
+  // 🌟 追加: 確実にタップを伝えるA-Frameカスタムコンポーネントをブラウザ環境で登録
+  useEffect(() => {
+    if (!aframeLoaded || typeof window === 'undefined') return;
+    const AFRAME = (window as any).AFRAME;
+    if (AFRAME && !AFRAME.components['pet-interact']) {
+      AFRAME.registerComponent('pet-interact', {
+        init: function () {
+          this.el.addEventListener('click', () => {
+            window.dispatchEvent(new CustomEvent('pet-tapped', { detail: { id: this.el.id } }));
+          });
+        }
+      });
+    }
+  }, [aframeLoaded]);
 
   useEffect(() => {
     if (viewMode !== 'mindar' || !(aframeLoaded && extrasLoaded && mindarLoaded) || isSwitchingMode) return;
@@ -2487,13 +2506,13 @@ function HomeAR() {
                         <div key={pm.id} className='relative bg-gray-50 border border-gray-200 rounded-xl p-2 flex flex-col items-center shadow-sm'>
                           {isHallOfFame && <div className='absolute -top-3 -right-3 text-4xl z-20 drop-shadow-md'>⭐</div>}
                           <div className='w-full h-28 rounded-lg overflow-hidden bg-white border border-gray-100 relative flex items-center justify-center'>
-  <ModelViewer
-    src={pm.model_url || fallbackBase}
-    camera-controls="false"
-    auto-rotate="true"
-    style={{ width: '100%', height: '100%', backgroundColor: 'transparent', filter: isAcquired ? 'none' : 'brightness(0)' }}
-  ></ModelViewer>
-</div>
+                            <ModelViewer
+                              src={pm.model_url || fallbackBase}
+                              camera-controls="false"
+                              auto-rotate="true"
+                              style={{ width: '100%', height: '100%', backgroundColor: 'transparent', filter: isAcquired ? 'none' : 'brightness(0)' }}
+                            ></ModelViewer>
+                          </div>
                           <div className={`mt-2 text-sm font-bold truncate w-full text-center ${isAcquired ? 'text-gray-800' : 'text-gray-400'}`}>
                             {isAcquired ? pm.name : '？？？？'}
                           </div>
@@ -3181,12 +3200,22 @@ function HomeAR() {
               </a-assets>
               <a-light type='ambient' color='#ffffff' intensity='0.5'></a-light>
               <a-light type='directional' color='#ffffff' intensity='1.5' position='-1 2 1' castShadow='true'></a-light>
-              <a-camera position='0 0 0' look-controls='enabled: false' cursor='rayOrigin: mouse;' raycaster='objects: .clickable'></a-camera>
+              
+              {/* cursor に fuse: false を追加し、直接クリックに反応するように調整 */}
+              <a-camera position='0 0 0' look-controls='enabled: false' cursor='rayOrigin: mouse; fuse: false;' raycaster='objects: .clickable'></a-camera>
 
+              {/* マーカー 0〜3 に対し、透明な円柱(hitbox)を被せて当たり判定を明確にする */}
               <a-entity mindar-image-target='targetIndex: 0' id='marker-target-0'>
+                <a-entity
+                  id='pet-hitbox-0'
+                  class={(!isEgg && !isSleeping) ? 'clickable' : ''}
+                  geometry='primitive: cylinder; radius: 1.5; height: 3'
+                  material='transparent: true; opacity: 0; depthWrite: false'
+                  position='0 1.5 0'
+                  pet-interact
+                ></a-entity>
                 <a-gltf-model
                   id='pet-model-0'
-                  class={(!isEgg && !isSleeping) ? 'clickable' : ''}
                   rotation={`${debugRotX} ${debugRotY} ${debugRotZ}`}
                   position='0 0 0'
                   scale={hatchAnimating ? `${debugScaleX * 0.2} ${debugScaleY * 0.2} ${debugScaleZ * 0.2}` : `${debugScaleX} ${debugScaleY} ${debugScaleZ}`}
@@ -3196,10 +3225,18 @@ function HomeAR() {
                   animation={hatchAnimating ? `property: scale; to: ${debugScaleX} ${debugScaleY} ${debugScaleZ}; dur: 800; easing: easeOutElastic;` : undefined}
                 ></a-gltf-model>
               </a-entity>
+              
               <a-entity mindar-image-target='targetIndex: 1' id='marker-target-1'>
+                <a-entity
+                  id='pet-hitbox-1'
+                  class={(!isEgg && !isSleeping) ? 'clickable' : ''}
+                  geometry='primitive: cylinder; radius: 1.5; height: 3'
+                  material='transparent: true; opacity: 0; depthWrite: false'
+                  position='0 1.5 0'
+                  pet-interact
+                ></a-entity>
                 <a-gltf-model
                   id='pet-model-1'
-                  class={(!isEgg && !isSleeping) ? 'clickable' : ''}
                   rotation={`${debugRotX} ${debugRotY} ${debugRotZ}`}
                   position='0 0 0'
                   scale={hatchAnimating ? `${debugScaleX * 0.2} ${debugScaleY * 0.2} ${debugScaleZ * 0.2}` : `${debugScaleX} ${debugScaleY} ${debugScaleZ}`}
@@ -3209,10 +3246,18 @@ function HomeAR() {
                   animation={hatchAnimating ? `property: scale; to: ${debugScaleX} ${debugScaleY} ${debugScaleZ}; dur: 800; easing: easeOutElastic;` : undefined}
                 ></a-gltf-model>
               </a-entity>
+
               <a-entity mindar-image-target='targetIndex: 2' id='marker-target-2'>
+                <a-entity
+                  id='pet-hitbox-2'
+                  class={(!isEgg && !isSleeping) ? 'clickable' : ''}
+                  geometry='primitive: cylinder; radius: 1.5; height: 3'
+                  material='transparent: true; opacity: 0; depthWrite: false'
+                  position='0 1.5 0'
+                  pet-interact
+                ></a-entity>
                 <a-gltf-model
                   id='pet-model-2'
-                  class={(!isEgg && !isSleeping) ? 'clickable' : ''}
                   rotation={`${debugRotX} ${debugRotY} ${debugRotZ}`}
                   position='0 0 0'
                   scale={hatchAnimating ? `${debugScaleX * 0.2} ${debugScaleY * 0.2} ${debugScaleZ * 0.2}` : `${debugScaleX} ${debugScaleY} ${debugScaleZ}`}
@@ -3222,10 +3267,18 @@ function HomeAR() {
                   animation={hatchAnimating ? `property: scale; to: ${debugScaleX} ${debugScaleY} ${debugScaleZ}; dur: 800; easing: easeOutElastic;` : undefined}
                 ></a-gltf-model>
               </a-entity>
+
               <a-entity mindar-image-target='targetIndex: 3' id='marker-target-3'>
+                <a-entity
+                  id='pet-hitbox-3'
+                  class={(!isEgg && !isSleeping) ? 'clickable' : ''}
+                  geometry='primitive: cylinder; radius: 1.5; height: 3'
+                  material='transparent: true; opacity: 0; depthWrite: false'
+                  position='0 1.5 0'
+                  pet-interact
+                ></a-entity>
                 <a-gltf-model
                   id='pet-model-3'
-                  class={(!isEgg && !isSleeping) ? 'clickable' : ''}
                   rotation={`${debugRotX} ${debugRotY} ${debugRotZ}`}
                   position='0 0 0'
                   scale={hatchAnimating ? `${debugScaleX * 0.2} ${debugScaleY * 0.2} ${debugScaleZ * 0.2}` : `${debugScaleX} ${debugScaleY} ${debugScaleZ}`}
