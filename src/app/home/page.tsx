@@ -13,7 +13,6 @@ declare global {
         'camera-controls'?: string | boolean;
         'auto-rotate'?: string | boolean;
         style?: React.CSSProperties;
-        [key: string]: any;
       };
     }
   }
