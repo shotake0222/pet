@@ -149,6 +149,7 @@ function HomeAR() {
 
   const [inventory, setInventory] = useState<any[]>([]);
   const [isInventoryOpen, setIsInventoryOpen] = useState(false);
+  const [newInventoryCount, setNewInventoryCount] = useState(0);
   const [shopItems, setShopItems] = useState<any[]>([]);
   const [isShopOpen, setIsShopOpen] = useState(false);
 
@@ -1495,9 +1496,17 @@ function HomeAR() {
 
     try {
       const nextQuantity = invItem.quantity - 1;
-      const { error } = await supabase.from('user_inventory').update({ quantity: nextQuantity }).eq('id', invItem.id);
-      if (error) throw error;
-      setInventory(prev => prev.map(i => (i.id === invItem.id ? { ...i, quantity: nextQuantity } : i)).filter(i => i.quantity > 0));
+
+      if (nextQuantity <= 0) {
+        const { error } = await supabase.from('user_inventory').delete().eq('id', invItem.id);
+        if (error) throw error;
+        setInventory(prev => prev.filter(i => i.id !== invItem.id));
+      } else {
+        const { error } = await supabase.from('user_inventory').update({ quantity: nextQuantity }).eq('id', invItem.id);
+        if (error) throw error;
+        setInventory(prev => prev.map(i => (i.id === invItem.id ? { ...i, quantity: nextQuantity } : i)).filter(i => i.quantity > 0));
+      }
+
       setIsInventoryOpen(false);
       setIsFoodMenuOpen(false);
       setIsSleepMenuOpen(false);
@@ -1649,6 +1658,7 @@ function HomeAR() {
 
   const showItemReward = (items: any[], facilityName: string, facilityIcon: string) => {
     if (!items || items.length === 0) return;
+    setNewInventoryCount(prev => prev + items.length);
     playSound('item');
     setItemRewardOverlay({ active: true, items, facilityName, facilityIcon });
   };
@@ -3151,15 +3161,16 @@ function HomeAR() {
             onClick={() => {
               closeAllMenus();
               setIsInventoryOpen(true);
+              setNewInventoryCount(0);
               playSound('tap');
             }}
             className={`min-w-0 font-bold flex flex-col items-center gap-1 relative ${isInventoryOpen ? 'text-blue-600' : 'text-gray-400'}`}
           >
             <span className='relative text-xl'>
               🎒
-              {inventory.reduce((total, entry) => total + entry.quantity, 0) > 0 && (
+              {newInventoryCount > 0 && (
                 <span className='absolute -top-1 -right-2 min-w-4 h-4 px-1 rounded-full bg-red-500 border border-white text-[10px] leading-4 text-white'>
-                  {inventory.reduce((total, entry) => total + entry.quantity, 0)}
+                  {newInventoryCount}
                 </span>
               )}
             </span>

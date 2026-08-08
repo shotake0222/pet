@@ -13,6 +13,10 @@ export default function Login() {
   const isSignupMode = mode === 'signup';
   const router = useRouter();
   const supabase = createClient();
+  const getAuthCallbackUrl = () => {
+    const origin = typeof window !== 'undefined' ? window.location.origin : '';
+    return `${origin}/auth/callback?next=/home`;
+  };
 
   const ensureUserProfile = async (userId: string) => {
     const { data: existingProfile, error: queryError } = await supabase
@@ -111,25 +115,38 @@ export default function Login() {
           setMessage({ text: 'ログインに失敗しました', type: 'error' });
         }
       } else {
-        const { data, error } = await supabase.auth.signUp({
+        const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
           email,
           password,
-          options: {
-            emailRedirectTo: `${window.location.origin}/home`,
-          },
         });
 
-        if (error) throw error;
+        if (signUpError) throw signUpError;
 
-        const userId = data.session?.user?.id || data.user?.id;
+        const userId = signUpData.user?.id;
         if (userId) {
           await ensureUserProfile(userId);
-          await redirectToAppropriatePage(userId);
+        }
+
+        const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
+          email,
+          password,
+        });
+
+        if (signInError) {
+          setMessage({
+            text: '登録を受け付けました。Supabase のメール確認設定が有効な場合は、確認メールを完了してからログインしてください。',
+            type: 'success',
+          });
+          return;
+        }
+
+        if (signInData.session?.user) {
+          await redirectToAppropriatePage(signInData.session.user.id);
           return;
         }
 
         setMessage({
-          text: '登録を受け付けました。ログインできるようになるまで少しお待ちください。',
+          text: '登録を受け付けました。数秒後に自動で画面遷移します。',
           type: 'success',
         });
       }
@@ -149,11 +166,11 @@ export default function Login() {
       const { data, error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
-          redirectTo: `${window.location.origin}/home`,
+          redirectTo: getAuthCallbackUrl(),
           skipBrowserRedirect: true,
           queryParams: {
             access_type: 'offline',
-            prompt: 'consent',
+            prompt: 'select_account',
           },
         },
       });
@@ -200,7 +217,7 @@ export default function Login() {
             <p className="font-bold mb-1">{isSignupMode ? '初回登録モード' : 'ログインモード'}</p>
             <p>
               {isSignupMode
-                ? '初回登録では、メールアドレスとパスワードを入力するだけでそのまま使い始められます。'
+                ? '初回登録はすぐに完了します。登録内容を入力したら、そのままアプリへ移動できます。'
                 : 'Googleログインが最も確実です。メールアドレスとパスワードでもログインできます。'}
             </p>
           </div>
