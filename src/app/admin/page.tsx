@@ -1822,6 +1822,14 @@ export default function AdminDashboard() {
                   {/* 実際の配置スポット一覧 */}
                   <div>
                     <h2 className="text-xl font-bold mb-4 border-b pb-2 mt-8">📍 マップに配置済みスポット (実体)</h2>
+                    <div className="flex flex-wrap gap-2 mb-4">
+                      <span className="text-xs font-bold px-3 py-1 rounded-full bg-green-100 text-green-800 border border-green-200">
+                        表示中: {activeLandmarks.length}件
+                      </span>
+                      <span className="text-xs font-bold px-3 py-1 rounded-full bg-gray-100 text-gray-700 border border-gray-200">
+                        終了済み: {sortedHistoricalLandmarks.length}件
+                      </span>
+                    </div>
                     <div className="space-y-3">
                       {activeLandmarks.length === 0 && landmarksList.length === 0 && (
                         <p className="text-center text-gray-400 py-4">配置されているスポットはありません</p>
