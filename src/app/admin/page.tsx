@@ -233,6 +233,22 @@ export default function AdminDashboard() {
   const [eggsList, setEggsList] = useState<any[]>([]);                       // 🌟 卵リスト
   const [initialItemsList, setInitialItemsList] = useState<any[]>([]);       // 🌟 初期持ち物リスト
 
+  const now = Date.now();
+  const activeLandmarks = landmarksList.filter(spot => {
+    const startTime = spot.start_time ? new Date(spot.start_time).getTime() : null;
+    const endTime = spot.end_time ? new Date(spot.end_time).getTime() : null;
+    return (!startTime || now >= startTime) && (!endTime || now <= endTime);
+  });
+  const historicalLandmarks = landmarksList.filter(spot => {
+    const endTime = spot.end_time ? new Date(spot.end_time).getTime() : null;
+    return !!endTime && now > endTime;
+  });
+  const sortedHistoricalLandmarks = [...historicalLandmarks].sort((a, b) => {
+    const aTime = a.end_time ? new Date(a.end_time).getTime() : 0;
+    const bTime = b.end_time ? new Date(b.end_time).getTime() : 0;
+    return bTime - aTime;
+  });
+
   // --- ペット用State ---
   const [petName, setPetName] = useState('');
   const [petEggType, setPetEggType] = useState(''); 
@@ -1807,7 +1823,13 @@ export default function AdminDashboard() {
                   <div>
                     <h2 className="text-xl font-bold mb-4 border-b pb-2 mt-8">📍 マップに配置済みスポット (実体)</h2>
                     <div className="space-y-3">
-                      {landmarksList.map(spot => (
+                      {activeLandmarks.length === 0 && landmarksList.length === 0 && (
+                        <p className="text-center text-gray-400 py-4">配置されているスポットはありません</p>
+                      )}
+                      {activeLandmarks.length === 0 && landmarksList.length > 0 && (
+                        <p className="text-center text-gray-400 py-4">現在表示中のスポットはありません</p>
+                      )}
+                      {activeLandmarks.map(spot => (
                         <div key={spot.id} className="p-4 border rounded-xl hover:bg-gray-50 bg-white flex justify-between items-center transition-colors group shadow-sm">
                           <div>
                             <div className="font-bold text-md">{spot.name}</div>
@@ -1828,7 +1850,33 @@ export default function AdminDashboard() {
                           </button>
                         </div>
                       ))}
-                      {landmarksList.length === 0 && <p className="text-center text-gray-400 py-4">配置されているスポットはありません</p>}
+                    </div>
+
+                    <div className="mt-8 border-t pt-6">
+                      <h3 className="text-lg font-bold mb-3">📜 実施履歴</h3>
+                      <div className="space-y-3">
+                        {sortedHistoricalLandmarks.length === 0 && (
+                          <p className="text-center text-gray-400 py-4">履歴はまだありません</p>
+                        )}
+                        {sortedHistoricalLandmarks.map(spot => (
+                          <div key={spot.id} className="p-4 border rounded-xl bg-gray-50 flex justify-between items-center shadow-sm">
+                            <div>
+                              <div className="font-bold text-md text-gray-700">{spot.name}</div>
+                              <div className="text-xs text-gray-500 mt-1">
+                                Lat: {spot.latitude.toFixed(4)} / Lng: {spot.longitude.toFixed(4)}
+                              </div>
+                              {(spot.start_time || spot.end_time) && (
+                                <div className="text-[10px] text-gray-600 mt-1 bg-white inline-block px-2 py-0.5 rounded border border-gray-200">
+                                  掲載期間: {spot.start_time ? new Date(spot.start_time).toLocaleString() : '未指定'} 〜 {spot.end_time ? new Date(spot.end_time).toLocaleString() : '未指定'}
+                                </div>
+                              )}
+                            </div>
+                            <span className="text-xs font-bold px-3 py-1 rounded-full bg-gray-200 text-gray-700">
+                              終了済み
+                            </span>
+                          </div>
+                        ))}
+                      </div>
                     </div>
                   </div>
                 </div>
