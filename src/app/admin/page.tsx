@@ -248,6 +248,13 @@ export default function AdminDashboard() {
     const bTime = b.end_time ? new Date(b.end_time).getTime() : 0;
     return bTime - aTime;
   });
+  const getHistoricalLandmarkTone = (endTime: string | null) => {
+    if (!endTime) return 'bg-gray-100 text-gray-700 border-gray-200';
+    const diffDays = Math.abs(new Date(endTime).getTime() - now) / (1000 * 60 * 60 * 24);
+    if (diffDays <= 7) return 'bg-red-50 text-red-700 border-red-200';
+    if (diffDays <= 30) return 'bg-amber-50 text-amber-700 border-amber-200';
+    return 'bg-gray-100 text-gray-700 border-gray-200';
+  };
 
   // --- ペット用State ---
   const [petName, setPetName] = useState('');
@@ -1879,7 +1886,7 @@ export default function AdminDashboard() {
                                 </div>
                               )}
                             </div>
-                            <span className="text-xs font-bold px-3 py-1 rounded-full bg-gray-200 text-gray-700">
+                            <span className={`text-xs font-bold px-3 py-1 rounded-full border ${getHistoricalLandmarkTone(spot.end_time)}`}>
                               終了済み
                             </span>
                           </div>
