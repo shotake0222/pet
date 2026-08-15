@@ -8,6 +8,20 @@ import { createClient } from '@/utils/supabase/client';
 // ▼ これを1行追加（'model-viewer'タグをReactコンポーネントとして認識させ、型チェックを無効化します）
 const ModelViewer = 'model-viewer' as any;
 
+type ItemActionEffect = {
+  kind: 'food' | 'medicine' | 'sleep' | 'exp';
+  emoji: string;
+  reactionMood: 'happy' | 'sleepy' | 'surprised';
+  petAnim: Array<{ clip: string; delay: number }>;
+  duration: number;
+  startX: number;
+  startY: number;
+  endX: number;
+  endY: number;
+  arcLift: number;
+  trailColor: string;
+};
+
 function HomeAR() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -135,6 +149,184 @@ function HomeAR() {
     }
   }, []);
 
+  const playItemEffectSound = useCallback((kind: ItemActionEffect['kind']) => {
+    if (typeof window === 'undefined') return;
+    const AudioCtor = window.AudioContext || (window as any).webkitAudioContext;
+    if (!AudioCtor) return;
+
+    const ctx = new AudioCtor();
+    const now = ctx.currentTime;
+    const map: Record<ItemActionEffect['kind'], Array<{ type: OscillatorType; freq: number; gain: number; delay: number; duration: number }>> = {
+      food: [
+        { type: 'sine', freq: 440, gain: 0.08, delay: 0.00, duration: 0.28 },
+        { type: 'triangle', freq: 620, gain: 0.07, delay: 0.10, duration: 0.24 },
+        { type: 'sine', freq: 780, gain: 0.04, delay: 0.24, duration: 0.18 },
+      ],
+      medicine: [
+        { type: 'square', freq: 180, gain: 0.09, delay: 0.00, duration: 0.15 },
+        { type: 'sawtooth', freq: 420, gain: 0.08, delay: 0.12, duration: 0.22 },
+        { type: 'triangle', freq: 700, gain: 0.06, delay: 0.22, duration: 0.30 },
+      ],
+      sleep: [
+        { type: 'sine', freq: 300, gain: 0.07, delay: 0.00, duration: 0.28 },
+        { type: 'triangle', freq: 240, gain: 0.06, delay: 0.16, duration: 0.36 },
+        { type: 'sine', freq: 170, gain: 0.05, delay: 0.34, duration: 0.32 },
+      ],
+      exp: [
+        { type: 'sine', freq: 520, gain: 0.08, delay: 0.00, duration: 0.18 },
+        { type: 'triangle', freq: 820, gain: 0.07, delay: 0.12, duration: 0.20 },
+        { type: 'sine', freq: 1100, gain: 0.05, delay: 0.24, duration: 0.20 },
+      ],
+    };
+
+    const tones = map[kind];
+    tones.forEach((tone, index) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = tone.type;
+      osc.frequency.setValueAtTime(tone.freq, now + tone.delay);
+      if (index > 0) {
+        osc.frequency.exponentialRampToValueAtTime(tone.freq * (kind === 'sleep' ? 0.85 : 1.18), now + tone.delay + tone.duration);
+      }
+      gain.gain.setValueAtTime(0.0001, now + tone.delay);
+      gain.gain.exponentialRampToValueAtTime(tone.gain, now + tone.delay + 0.05);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + tone.delay + tone.duration);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(now + tone.delay);
+      osc.stop(now + tone.delay + tone.duration + 0.05);
+    });
+
+    setTimeout(() => {
+      ctx.close().catch(() => {});
+    }, 1600);
+  }, []);
+
+  const triggerItemActionEffect = useCallback((kind: ItemActionEffect['kind']) => {
+    const configMap: Record<ItemActionEffect['kind'], Omit<ItemActionEffect, 'kind'>> = {
+      food: {
+        emoji: '🍙',
+        reactionMood: 'happy',
+        petAnim: [
+          { clip: 'Happy', delay: 540 },
+          { clip: 'Jump', delay: 680 },
+          { clip: 'Happy', delay: 640 },
+          { clip: 'Fly', delay: 720 },
+          { clip: 'Happy', delay: 700 },
+          { clip: 'Jump', delay: 680 },
+          { clip: 'Happy', delay: 700 },
+        ],
+        duration: 4200,
+        startX: 10,
+        startY: 78,
+        endX: 62,
+        endY: 41,
+        arcLift: 52,
+        trailColor: 'rgba(251,146,60,0.95)',
+      },
+      medicine: {
+        emoji: '💉',
+        reactionMood: 'surprised',
+        petAnim: [
+          { clip: 'Jump', delay: 560 },
+          { clip: 'Fly', delay: 820 },
+          { clip: 'Jump', delay: 760 },
+          { clip: 'Happy', delay: 700 },
+          { clip: 'Fly', delay: 840 },
+          { clip: 'Jump', delay: 780 },
+          { clip: 'Happy', delay: 760 },
+        ],
+        duration: 5000,
+        startX: 94,
+        startY: 62,
+        endX: 52,
+        endY: 46,
+        arcLift: 34,
+        trailColor: 'rgba(34,211,238,0.95)',
+      },
+      sleep: {
+        emoji: '💤',
+        reactionMood: 'sleepy',
+        petAnim: [
+          { clip: 'Sleep', delay: 820 },
+          { clip: 'Happy', delay: 500 },
+          { clip: 'Sleep', delay: 900 },
+          { clip: 'Happy', delay: 620 },
+          { clip: 'Sleep', delay: 960 },
+          { clip: 'Happy', delay: 700 },
+          { clip: 'Sleep', delay: 980 },
+          { clip: 'Happy', delay: 600 },
+          { clip: 'Sleep', delay: 1000 },
+        ],
+        duration: 6200,
+        startX: 10,
+        startY: 60,
+        endX: 52,
+        endY: 40,
+        arcLift: 28,
+        trailColor: 'rgba(129,140,248,0.9)',
+      },
+      exp: {
+        emoji: '✨',
+        reactionMood: 'surprised',
+        petAnim: [
+          { clip: 'Jump', delay: 620 },
+          { clip: 'Happy', delay: 540 },
+          { clip: 'Fly', delay: 760 },
+          { clip: 'Jump', delay: 820 },
+          { clip: 'Happy', delay: 660 },
+          { clip: 'Fly', delay: 880 },
+          { clip: 'Jump', delay: 720 },
+        ],
+        duration: 4700,
+        startX: 18,
+        startY: 72,
+        endX: 52,
+        endY: 38,
+        arcLift: 46,
+        trailColor: 'rgba(250,204,21,0.9)',
+      },
+    };
+
+    const nextEffect: ItemActionEffect = { kind, ...configMap[kind] };
+    playItemEffectSound(kind);
+    setItemActionEffect(nextEffect);
+    setItemActionProgress(0);
+
+    const sequence = [...nextEffect.petAnim];
+    let stepIndex = 0;
+    const runPetReaction = () => {
+      if (stepIndex >= sequence.length) {
+        setActionAnim(null);
+        return;
+      }
+      const currentStep = sequence[stepIndex];
+      setActionAnim(currentStep.clip);
+      stepIndex += 1;
+      setTimeout(runPetReaction, currentStep.delay);
+    };
+    runPetReaction();
+
+    const startTime = performance.now();
+    const tick = (now: number) => {
+      const progress = Math.min((now - startTime) / nextEffect.duration, 1);
+      setItemActionProgress(progress);
+
+      if (progress < 1) {
+        requestAnimationFrame(tick);
+        return;
+      }
+
+      setTimeout(() => {
+        setItemActionEffect(null);
+        setItemActionProgress(0);
+        setActionAnim(null);
+      }, 180);
+    };
+
+    requestAnimationFrame(tick);
+  }, [playItemEffectSound]);
+
   const getDistance = (lat1: number, lon1: number, lat2: number, lon2: number) => {
     const toRad = (n: number) => (n * Math.PI) / 180;
     const R = 6371000;
@@ -181,6 +373,8 @@ function HomeAR() {
   const [hungerPercent, setHungerPercent] = useState(100);
   const [motivationPercent, setMotivationPercent] = useState(100);
   const [actionAnim, setActionAnim] = useState<string | null>(null);
+  const [itemActionEffect, setItemActionEffect] = useState<ItemActionEffect | null>(null);
+  const [itemActionProgress, setItemActionProgress] = useState(0);
   const [gameOverNotice, setGameOverNotice] = useState<string | null>(null);
   const [gameOverHandled, setGameOverHandled] = useState(false);
 
@@ -1526,8 +1720,7 @@ function HomeAR() {
       setFeedCount(prev => prev + 1);
       await supabase.from('pets').update({ affection_level: newAffection, last_fed_at: now }).eq('id', petId);
       await supabase.from('activity_logs').insert({ pet_id: petId, action_type: 'feed', points_earned: finalEffect || 20 });
-      setActionAnim('Eat');
-      setTimeout(() => setActionAnim(null), 2000);
+      triggerItemActionEffect('food');
       addExperience(50);
       alert(`✨ ${item.name} をあげました！${affinityMessage}`);
       if (petCondition === 'starving') {
@@ -1540,18 +1733,20 @@ function HomeAR() {
       sleepEnd.setHours(sleepEnd.getHours() + finalEffect);
       setSleepingUntil(sleepEnd.toISOString());
       await supabase.from('pets').update({ sleeping_until: sleepEnd.toISOString() }).eq('id', petId);
+      triggerItemActionEffect('sleep');
       alert(`💤 ${item.name} を使って、ペットは ${finalEffect} 時間眠りにつきました。しばらく面倒を見なくても大丈夫です。${affinityMessage}`);
     } else if (item.item_type === 'medicine') {
       setPetCondition('healthy');
       setShowConditionSOS(false);
       await supabase.from('pets').update({ condition_status: 'healthy' }).eq('id', petId);
-      setActionAnim('Happy');
-      setTimeout(() => setActionAnim(null), 2000);
+      triggerItemActionEffect('medicine');
       alert(`✨ お薬が効いて元気になりました！${affinityMessage}`);
     } else if (item.item_type === 'exp') {
+      triggerItemActionEffect('exp');
       addExperience(finalEffect || 100);
       alert(`✨ ${item.name} の香りに包まれて、経験値を獲得しました！${affinityMessage}`);
     } else {
+      triggerItemActionEffect('exp');
       addExperience(finalEffect || 10);
       alert(`✨ ${item.name} を使いました！${affinityMessage}`);
     }
@@ -3189,6 +3384,143 @@ function HomeAR() {
           viewMode === 'mindar' && cameraReady && !isEgg && !isEggUnregistered && !isSleeping ? ' mindar-clickable' : ''
         }`}
       >
+        {itemActionEffect && (() => {
+          const progress = itemActionProgress;
+          const startX = itemActionEffect.startX;
+          const startY = itemActionEffect.startY;
+          const endX = itemActionEffect.endX;
+          const endY = itemActionEffect.endY;
+          const arcLift = itemActionEffect.arcLift;
+          const throwT = Math.min(Math.max(progress, 0), 1);
+          const xBase = startX + (endX - startX) * throwT;
+          const yBase = startY + (endY - startY) * throwT;
+          const tossX = (itemActionEffect.kind === 'food' ? 18 : itemActionEffect.kind === 'medicine' ? -14 : itemActionEffect.kind === 'sleep' ? 13 : 16) * (1 - throwT);
+          const tossY = Math.sin(throwT * Math.PI) * arcLift;
+          const x = xBase + tossX;
+          const y = yBase - tossY;
+          const rotation = itemActionEffect.kind === 'medicine' ? -24 + progress * 220 : itemActionEffect.kind === 'food' ? progress * 600 : itemActionEffect.kind === 'sleep' ? -18 + progress * 260 : progress * 440;
+          const scale = 1 + progress * 0.36;
+          const emphasis = itemActionEffect.kind === 'medicine' ? Math.max(0, 1 - progress) : 1 - progress * 0.82;
+          const particles = Array.from({ length: itemActionEffect.kind === 'medicine' ? 14 : 9 });
+          const beaconPulse = (index: number, p: number) => (Math.sin((p * 10 + index) * 2.4) + 1) / 2;
+          const medicineRays = Array.from({ length: 5 });
+
+          const moodBadge = itemActionEffect.reactionMood === 'happy'
+            ? '💖'
+            : itemActionEffect.reactionMood === 'sleepy'
+              ? '💤'
+              : '✨';
+          const badgePosX = itemActionEffect.kind === 'medicine' ? endX + 12 : endX + 8;
+          const badgePosY = itemActionEffect.kind === 'medicine' ? endY - 12 : endY - 18;
+          const moodAura = itemActionEffect.reactionMood === 'happy'
+            ? 'rgba(255, 128, 183, 0.45)'
+            : itemActionEffect.reactionMood === 'sleepy'
+              ? 'rgba(147, 197, 253, 0.42)'
+              : 'rgba(250, 204, 21, 0.48)';
+
+          return (
+            <div className='absolute inset-0 z-[30] pointer-events-none'>
+              {itemActionEffect.kind === 'medicine' && medicineRays.map((_, index) => {
+                const beamT = Math.min(Math.max(progress * 1.3 - index * 0.08, 0), 1);
+                const bx = startX + (endX - startX) * beamT;
+                const by = startY + (endY - startY) * beamT + (index - 2) * 2.8;
+                const beamScale = 18 + beaconPulse(index, progress) * 12;
+                return (
+                  <div
+                    key={`beam-${index}`}
+                    className='absolute h-[6px] rounded-full shadow-[0_0_18px_rgba(34,211,238,0.9)]'
+                    style={{
+                      left: `${bx}%`,
+                      top: `${by}%`,
+                      width: `${beamScale}%`,
+                      background: 'linear-gradient(90deg, rgba(34,211,238,0), rgba(125,211,252,0.95), rgba(34,211,238,0))',
+                      transform: `translate(-18%, -50%) rotate(${(-16 + index * 8) + progress * 30}deg)`,
+                      opacity: `${Math.max(0, 0.7 - progress * 0.3)}`,
+                    }}
+                  />
+                );
+              })}
+
+              {itemActionEffect.kind === 'medicine' && (
+                <div
+                  className='absolute rounded-full border-4 border-cyan-200/90 shadow-[0_0_26px_rgba(103,232,249,0.9)]'
+                  style={{
+                    left: `${endX}%`,
+                    top: `${endY}%`,
+                    width: `${22 + progress * 32}px`,
+                    height: `${22 + progress * 32}px`,
+                    transform: `translate(-50%, -50%) scale(${1 + progress * 1.1})`,
+                    opacity: `${Math.max(0, 0.95 - progress * 0.7)}`,
+                  }}
+                />
+              )}
+
+              <div
+                className='absolute rounded-full blur-2xl'
+                style={{
+                  left: `${endX}%`,
+                  top: `${endY}%`,
+                  width: `${70 + progress * 90}px`,
+                  height: `${70 + progress * 90}px`,
+                  transform: `translate(-50%, -50%) scale(${0.6 + progress * 1.2})`,
+                  background: moodAura,
+                  opacity: `${Math.max(0, 0.9 - progress * 0.5)}`,
+                }}
+              />
+
+              <div
+                className='absolute flex items-center justify-center rounded-full border border-white/70 bg-white/85 shadow-[0_12px_28px_rgba(0,0,0,0.18)] backdrop-blur-sm'
+                style={{
+                  left: `${x}%`,
+                  top: `${y}%`,
+                  width: itemActionEffect.kind === 'medicine' ? '3.25rem' : '4rem',
+                  height: itemActionEffect.kind === 'medicine' ? '3.25rem' : '4rem',
+                  transform: `translate(-50%, -50%) scale(${scale}) rotate(${rotation}deg)`,
+                  opacity: `${emphasis}`,
+                }}
+              >
+                <span className='text-3xl drop-shadow-sm'>{itemActionEffect.emoji}</span>
+              </div>
+
+              <div
+                className='absolute flex items-center justify-center rounded-full border border-white/80 bg-white/80 shadow-[0_0_18px_rgba(255,255,255,0.8)] backdrop-blur-sm'
+                style={{
+                  left: `${badgePosX}%`,
+                  top: `${badgePosY}%`,
+                  width: '2.4rem',
+                  height: '2.4rem',
+                  transform: `translate(-50%, -50%) scale(${0.9 + progress * 0.7})`,
+                  opacity: `${Math.max(0, 1 - progress * 0.2)}`,
+                }}
+              >
+                <span className='text-lg'>{moodBadge}</span>
+              </div>
+
+              {particles.map((_, index) => {
+                const burstProgress = Math.max(0, (progress - 0.58) / 0.42);
+                const particleX = endX + (index % 2 === 0 ? -10 : 10) + Math.sin(index * 1.8) * (12 + burstProgress * 20);
+                const particleY = endY + (index % 3 === 0 ? -12 : 8) + Math.cos(index * 2.1) * (12 + burstProgress * 20);
+                const particleOpacity = Math.max(0, 1 - burstProgress);
+                return (
+                  <span
+                    key={`${itemActionEffect.kind}-${index}`}
+                    className='absolute rounded-full bg-white/90 shadow-[0_0_14px_rgba(255,255,255,0.8)]'
+                    style={{
+                      left: `${particleX}%`,
+                      top: `${particleY}%`,
+                      width: `${7 + index * 1.4}px`,
+                      height: `${7 + index * 1.4}px`,
+                      opacity: `${particleOpacity}`,
+                      transform: `translate(-50%, -50%) scale(${1 + burstProgress * 1.35})`,
+                      background: itemActionEffect.trailColor,
+                    }}
+                  />
+                );
+              })}
+            </div>
+          );
+        })()}
+
         {viewMode === 'mindar' && sessionUserId && isDataLoaded && scriptsReadyForMindar && !isSwitchingMode && (
           <div key={`mindar-container-${sceneKey}`} className='absolute inset-0 pointer-events-none'>
             <a-scene
