@@ -828,18 +828,30 @@ function HomeAR() {
   const checkLoginBonus = async (userId: string, profile: any) => {
     const today = new Date().toLocaleDateString('sv-SE');
     const lastLoginDate = profile.last_login_date;
-    let currentLoginDays = profile.login_days || 0;
-    if (lastLoginDate !== today) {
-      currentLoginDays = currentLoginDays >= 7 ? 1 : currentLoginDays + 1;
-      let gotBonus = false;
-      if (currentLoginDays === 7) {
-        await grantLoginBonusItem(userId);
-        gotBonus = true;
-      }
-      await supabase.from('user_profiles').update({ last_login_date: today, login_days: currentLoginDays }).eq('id', userId);
-      setLoginBonusState({ days: currentLoginDays, gotBonus: gotBonus, showModal: true });
-      playSound('levelup');
+
+    if (!lastLoginDate || lastLoginDate === today) {
+      return;
     }
+
+    const lastLogin = new Date(`${lastLoginDate}T00:00:00`);
+    const todayDate = new Date(`${today}T00:00:00`);
+    const diffDays = Math.round((todayDate.getTime() - lastLogin.getTime()) / (1000 * 60 * 60 * 24));
+
+    let currentLoginDays = profile.login_days || 0;
+    if (diffDays === 1) {
+      currentLoginDays = currentLoginDays >= 7 ? 1 : currentLoginDays + 1;
+    } else {
+      currentLoginDays = 1;
+    }
+
+    const gotBonus = currentLoginDays === 7;
+    if (gotBonus) {
+      await grantLoginBonusItem(userId);
+    }
+
+    await supabase.from('user_profiles').update({ last_login_date: today, login_days: currentLoginDays }).eq('id', userId);
+    setLoginBonusState({ days: currentLoginDays, gotBonus, showModal: true });
+    playSound('levelup');
   };
 
   const [dataLoadError, setDataLoadError] = useState<string | null>(null);
