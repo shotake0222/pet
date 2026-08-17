@@ -15,6 +15,31 @@
     created_at timestamp with time zone default timezone('utc'::text, now()) not null,
     UNIQUE(item_id)
   );
+
+  =============================================================================
+  🚨 【重要】「期間が過ぎたら自動で非表示となる」対応について 🚨
+  本管理者画面では、スポット（手動配置・大量発生ともに）に開始日時と終了日時を設定できるよう修正しました。
+  しかし、過去のデータを管理者画面の「実施履歴」に残すため、期限切れのデータもDB(landmarksテーブル)には保持されます。
+
+  ユーザー画面（アプリ側）で「期間外のスポットを非表示にする」には、ユーザー画面のデータ取得時に
+  現在時刻を用いてフィルタリングを行う必要があります。ユーザー画面側の該当コードを以下のように修正してください。
+
+  【ユーザー画面側のクエリ修正例】
+  const now = new Date().toISOString();
+  const { data: spots } = await supabase
+    .from('landmarks')
+    .select('*')
+    .or(`start_time.is.null,start_time.lte.${now}`)
+    .or(`end_time.is.null,end_time.gte.${now}`);
+
+  ※ または、SupabaseのSQLエディタで以下のView（ビュー）を作成し、
+  ユーザー画面からは `landmarks` の代わりに `view_active_landmarks` を参照するようにすると非常にスマートかつ確実です。
+
+  CREATE OR REPLACE VIEW view_active_landmarks AS
+  SELECT * FROM landmarks
+  WHERE (start_time IS NULL OR start_time <= now())
+    AND (end_time IS NULL OR end_time >= now());
+  =============================================================================
 */
 
 import { useState, useEffect, useRef } from 'react';
@@ -282,7 +307,7 @@ export default function AdminDashboard() {
 
   // 🌟 設定タブ「登録済み属性と設定」: プルダウンで編集対象の属性を選択する方式に変更
   const [selectedSettingsAttributeId, setSelectedSettingsAttributeId] = useState<number | null>(null);
-  const [pendingWeakAttrIds, setPendingWeakAttrIds] = useState<number[]>([]);       
+  const [pendingWeakAttrIds, setPendingWeakAttrIds] = useState<number[]>([]);        
   const [pendingEnhanceItemIds, setPendingEnhanceItemIds] = useState<number[]>([]); 
   const [pendingWeaknessItemIds, setPendingWeaknessItemIds] = useState<number[]>([]); 
 
@@ -319,6 +344,9 @@ export default function AdminDashboard() {
   const [landmarkRadius, setLandmarkRadius] = useState('50');
   const [landmarkPoints, setLandmarkPoints] = useState('100');
   const [landmarkModelFile, setLandmarkModelFile] = useState<File | null>(null);
+  // 🌟 手動配置用の期間設定を追加
+  const [landmarkStartTime, setLandmarkStartTime] = useState('');
+  const [landmarkEndTime, setLandmarkEndTime] = useState('');
 
   // --- アイテム用State ---
   const [itemName, setItemName] = useState('');
@@ -839,12 +867,16 @@ export default function AdminDashboard() {
         longitude: parseFloat(landmarkLng),
         radius_meters: parseInt(landmarkRadius, 10),
         bonus_points: parseInt(landmarkPoints, 10),
-        model_url: modelUrl
+        model_url: modelUrl,
+        // 🌟 個別配置用の期間設定を追加して保存
+        start_time: landmarkStartTime ? new Date(landmarkStartTime).toISOString() : null,
+        end_time: landmarkEndTime ? new Date(landmarkEndTime).toISOString() : null
       });
       if (error) throw error;
 
       alert(`スポット「${landmarkName}」を地図上に設置しました！`);
       setLandmarkName(''); setLandmarkDesc(''); setLandmarkLat(''); setLandmarkLng(''); setLandmarkModelFile(null);
+      setLandmarkStartTime(''); setLandmarkEndTime(''); // リセット
       await fetchData(); 
     } catch (e: any) {
       alert(`エラー: ${e.message}`);
@@ -1424,6 +1456,19 @@ export default function AdminDashboard() {
                           <input type="number" value={landmarkPoints} onChange={e => setLandmarkPoints(e.target.value)} className="w-full border p-3 rounded-lg focus:ring-2 focus:ring-green-500" required />
                         </div>
                       </div>
+
+                      {/* 🌟 手動配置時の期間指定フィールド */}
+                      <div className="flex gap-4">
+                        <div className="flex-1">
+                          <label className="block text-sm font-bold mb-1 text-gray-700">開始日時 (任意)</label>
+                          <input type="datetime-local" value={landmarkStartTime} onChange={e => setLandmarkStartTime(e.target.value)} className="w-full border p-3 rounded-lg focus:ring-2 focus:ring-green-500" />
+                        </div>
+                        <div className="flex-1">
+                          <label className="block text-sm font-bold mb-1 text-gray-700">終了日時 (任意)</label>
+                          <input type="datetime-local" value={landmarkEndTime} onChange={e => setLandmarkEndTime(e.target.value)} className="w-full border p-3 rounded-lg focus:ring-2 focus:ring-green-500" />
+                        </div>
+                      </div>
+
                       <div className="bg-green-50 p-4 rounded-xl border border-green-100">
                         <label className="block text-sm font-bold text-green-900 mb-2">出現3Dオブジェクト (.glb)</label>
                         <input type="file" accept=".glb" onChange={e => setLandmarkModelFile(e.target.files?.[0] || null)} className="w-full text-sm" required />

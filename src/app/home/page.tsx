@@ -5,8 +5,21 @@ import Script from 'next/script';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { createClient } from '@/utils/supabase/client';
 
-// ▼ これを1行追加（'model-viewer'タグをReactコンポーネントとして認識させ、型チェックを無効化します）
-const ModelViewer = 'model-viewer' as any;
+// 🌟 修正: 'model-viewer' を any キャストでコンポーネント化するのではなく、
+// TypeScript のグローバルな JSX 要素として型定義を追加することで正しく解決します。
+declare global {
+  namespace JSX {
+    interface IntrinsicElements {
+      'model-viewer': React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement> & {
+        src?: string;
+        'camera-controls'?: string | boolean;
+        'auto-rotate'?: string | boolean;
+        alt?: string;
+        ar?: string | boolean;
+      };
+    }
+  }
+}
 
 type ItemActionEffect = {
   kind: 'food' | 'medicine' | 'sleep' | 'exp';
@@ -821,7 +834,12 @@ function HomeAR() {
     } else {
       await supabase.from('user_inventory').insert({ user_id: userId, item_id: item.id, quantity: 1 });
     }
-    const { data: inv } = await supabase.from('user_inventory').select('id, quantity, item_masters(*)').eq('user_id', userId).gt('quantity', 0);
+    // 🌟 DBビュー/外部キー設定: user_inventory に item_id の外部キー制約が設定されている前提で item_masters と JOIN します
+    const { data: inv } = await supabase
+      .from('user_inventory')
+      .select('id, quantity, item_masters:item_id(*)')
+      .eq('user_id', userId)
+      .gt('quantity', 0);
     if (inv) setInventory(inv);
   };
 
@@ -863,7 +881,17 @@ function HomeAR() {
       const { data: items } = await supabase.from('item_masters').select('*').order('id', { ascending: false });
       if (items) setShopItems(items);
 
-      const { data: spots } = await supabase.from('landmarks').select('*, landmark_masters(facility_type)');
+      // 🌟 【DBビュー/外部キーの設定方法】
+      // landmarksテーブルからlandmark_mastersのデータを同時に取得するには、
+      // DB側で landmarks テーブルに landmark_master_id 等の外部キー制約が必要です。
+      // 例: ALTER TABLE landmarks ADD CONSTRAINT fk_landmark_master FOREIGN KEY (landmark_master_id) REFERENCES landmark_masters(id);
+      // または、以下のようにJOIN済みのビュー(View)を作成し、それをクエリする方法もあります。
+      // 例: CREATE VIEW v_landmarks_with_master AS SELECT l.*, m.facility_type FROM landmarks l LEFT JOIN landmark_masters m ON l.landmark_master_id = m.id;
+      // その場合は supabase.from('v_landmarks_with_master').select('*') となります。
+      // ここでは、外部キー(landmark_master_id想定)を明示する書き方に修正しています。
+      const { data: spots } = await supabase
+        .from('landmarks')
+        .select('*, landmark_masters:landmark_master_id(facility_type)');
       if (spots) setLandmarks(spots);
 
       const { data: news } = await supabase.from('announcements').select('*').eq('is_active', true).order('published_at', { ascending: false });
@@ -966,9 +994,10 @@ function HomeAR() {
             setPetRarity(rarityPm);
           }
 
+          // 🌟 attributesテーブルをJOINするためのクエリ (attribute_id という外部キーが設定されている前提)
           const { data: attrRels } = await supabase
             .from('pet_master_attributes')
-            .select('attribute_id, attributes(id, name, description)')
+            .select('attribute_id, attributes:attribute_id(id, name, description)')
             .eq('pet_master_id', pet.pet_master_id);
 
           if (attrRels && attrRels.length > 0) {
@@ -992,7 +1021,12 @@ function HomeAR() {
           setPetAffinities([]);
         }
 
-        const { data: inv } = await supabase.from('user_inventory').select('id, quantity, item_masters(*)').eq('user_id', sessionUserId).gt('quantity', 0);
+        // 🌟 item_mastersテーブルとのJOINも同様に外部キー(item_id)を使用します
+        const { data: inv } = await supabase
+          .from('user_inventory')
+          .select('id, quantity, item_masters:item_id(*)')
+          .eq('user_id', sessionUserId)
+          .gt('quantity', 0);
         if (inv) setInventory(inv);
 
         const { count: feedLogCount } = await supabase.from('activity_logs').select('id', { count: 'exact', head: true }).eq('pet_id', pet.id).eq('action_type', 'feed');
@@ -1357,7 +1391,7 @@ function HomeAR() {
           await supabase.from('user_inventory').insert({ user_id: sessionUserId, item_id: item.id, quantity: 1 });
         }
         
-        const { data: inv } = await supabase.from('user_inventory').select('id, quantity, item_masters(*)').eq('user_id', sessionUserId).gt('quantity', 0);
+        const { data: inv } = await supabase.from('user_inventory').select('id, quantity, item_masters:item_id(*)').eq('user_id', sessionUserId).gt('quantity', 0);
         if (inv) setInventory(inv);
       }
       const newNotification = {
@@ -1417,7 +1451,6 @@ function HomeAR() {
     }
   }, [viewMode]);
 
-  // 🌟 追加・変更: A-FrameのカスタムイベントをReact側でリッスンする
   useEffect(() => {
     if (viewMode !== 'mindar' || !petId || isEgg || isSleeping || !isDataLoaded) return;
     
@@ -1425,7 +1458,6 @@ function HomeAR() {
       const customEvent = e as CustomEvent;
       const id = customEvent.detail?.id || '';
       
-      // 当たり判定用の不可視オブジェクト（hitbox）を検知する
       if (!/^pet-hitbox-\d+$/.test(id)) return;
       
       if (petCondition === 'starving' || petCondition === 'sick') {
@@ -1490,7 +1522,6 @@ function HomeAR() {
     };
   }, [viewMode, sceneKey]);
 
-  // 🌟 追加: 確実にタップを伝えるA-Frameカスタムコンポーネントをブラウザ環境で登録
   useEffect(() => {
     if (!aframeLoaded || typeof window === 'undefined') return;
     const AFRAME = (window as any).AFRAME;
@@ -1611,7 +1642,7 @@ function HomeAR() {
 
       const { data: attrRels } = await supabase
         .from('pet_master_attributes')
-        .select('attribute_id, attributes(id, name, description)')
+        .select('attribute_id, attributes:attribute_id(id, name, description)')
         .eq('pet_master_id', selectedMaster.id);
       
       if (attrRels && attrRels.length > 0) {
@@ -1647,7 +1678,6 @@ function HomeAR() {
           })
           .eq('id', petId);
 
-        // 🌟 図鑑の取得済みリストを更新
         setAcquiredPetIds(prev => {
           const next = new Set(prev);
           next.add(selectedMaster.id);
@@ -1776,7 +1806,7 @@ function HomeAR() {
       } else {
         await supabase.from('user_inventory').insert({ user_id: sessionUserId, item_id: shopItem.id, quantity: 1 });
       }
-      const { data: inv } = await supabase.from('user_inventory').select('id, quantity, item_masters(*)').eq('user_id', sessionUserId).gt('quantity', 0);
+      const { data: inv } = await supabase.from('user_inventory').select('id, quantity, item_masters:item_id(*)').eq('user_id', sessionUserId).gt('quantity', 0);
       if (inv) setInventory(inv);
       alert('🛍️ 購入しました！「もちもの」から使用できます。');
     } catch (e) {
@@ -1855,7 +1885,7 @@ function HomeAR() {
 
     const { data: inv } = await supabase
       .from('user_inventory')
-      .select('id, quantity, item_masters(*)')
+      .select('id, quantity, item_masters:item_id(*)')
       .eq('user_id', sessionUserId)
       .gt('quantity', 0);
     if (inv) setInventory(inv);
@@ -2723,12 +2753,13 @@ function HomeAR() {
                         <div key={pm.id} className='relative bg-gray-50 border border-gray-200 rounded-xl p-2 flex flex-col items-center shadow-sm'>
                           {isHallOfFame && <div className='absolute -top-3 -right-3 text-4xl z-20 drop-shadow-md'>⭐</div>}
                           <div className='w-full h-28 rounded-lg overflow-hidden bg-white border border-gray-100 relative flex items-center justify-center'>
-                            <ModelViewer
+                            {/* 🌟 修正: model-viewer タグを直接使用できるようになりました */}
+                            <model-viewer
                               src={pm.model_url || fallbackBase}
                               camera-controls="false"
                               auto-rotate="true"
                               style={{ width: '100%', height: '100%', backgroundColor: 'transparent', filter: isAcquired ? 'none' : 'brightness(0)' }}
-                            ></ModelViewer>
+                            ></model-viewer>
                           </div>
                           <div className={`mt-2 text-sm font-bold truncate w-full text-center ${isAcquired ? 'text-gray-800' : 'text-gray-400'}`}>
                             {isAcquired ? pm.name : '？？？？'}
@@ -3556,10 +3587,8 @@ function HomeAR() {
               <a-light type='ambient' color='#ffffff' intensity='0.5'></a-light>
               <a-light type='directional' color='#ffffff' intensity='1.5' position='-1 2 1' castShadow='true'></a-light>
               
-              {/* cursor に fuse: false を追加し、直接クリックに反応するように調整 */}
               <a-camera position='0 0 0' look-controls='enabled: false' cursor='rayOrigin: mouse; fuse: false;' raycaster='objects: .clickable'></a-camera>
 
-              {/* マーカー 0〜3 に対し、透明な円柱(hitbox)を被せて当たり判定を明確にする */}
               <a-entity mindar-image-target='targetIndex: 0' id='marker-target-0'>
                 <a-entity
                   id='pet-hitbox-0'
