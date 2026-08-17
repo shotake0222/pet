@@ -19,6 +19,8 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { createClient } from '@/utils/supabase/client';
+import { SpotAdminPanel } from '@/components/admin/SpotAdminPanel';
+import { CouponAdminPanel } from '@/components/admin/CouponAdminPanel';
 
 // Supabaseの公開URLから、Storageのファイルパス（バケット名以降）を抽出するヘルパー関数
 const extractFilePath = (url: string | null) => {
@@ -213,7 +215,7 @@ function MultiSelectDropdown({
 
 export default function AdminDashboard() {
   const supabase = createClient();
-  const [activeTab, setActiveTab] = useState<'pets' | 'landmarks' | 'items' | 'coupons' | 'drops' | 'news' | 'users' | 'settings'>('pets');
+  const [activeTab, setActiveTab] = useState<'pets' | 'landmarks' | 'items' | 'coupons' | 'drops' | 'news' | 'users' | 'settings' | 'spots' | 'rewards'>('pets');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // --- 登録済みデータ一覧用のState ---
@@ -1170,20 +1172,22 @@ export default function AdminDashboard() {
       
       {/* タブ切り替え */}
       <div className="flex gap-2 mb-8 overflow-x-auto pb-2">
-        {(['pets', 'landmarks', 'items', 'coupons', 'drops', 'news', 'users', 'settings'] as const).map(tab => (
+        {(['pets', 'landmarks', 'spots', 'items', 'coupons', 'rewards', 'drops', 'news', 'users', 'settings'] as const).map(tab => (
           <button 
             key={tab} 
             onClick={() => setActiveTab(tab)} 
             className={`px-8 py-3 rounded-full font-bold whitespace-nowrap transition-colors ${activeTab === tab ? 'bg-slate-900 text-white shadow-md' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}
           >
             {tab === 'pets' && '🐶 ペット管理'}
-            {tab === 'landmarks' && '📍 スポット管理'}
+            {tab === 'landmarks' && '📍 ランドマーク'}
+            {tab === 'spots' && '🎮 スポット管理'}
             {tab === 'items' && '🛒 アイテム管理'}
-            {tab === 'coupons' && '🎫 クーポン管理'}
+            {tab === 'coupons' && '🎫 クーポン'}
+            {tab === 'rewards' && '🎁 報酬管理'}
             {tab === 'drops' && '🎁 報酬設定'}
-            {tab === 'news' && '📢 お知らせ管理'}
-            {tab === 'users' && '👥 ユーザー/状態管理'}
-            {tab === 'settings' && '⚙️ 設定 (卵/レアリティ/属性)'}
+            {tab === 'news' && '📢 お知らせ'}
+            {tab === 'users' && '👥 ユーザー'}
+            {tab === 'settings' && '⚙️ 設定'}
           </button>
         ))}
       </div>
@@ -1191,8 +1195,16 @@ export default function AdminDashboard() {
       {/* コンテンツエリア */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
         
-        {/* === 左・右カラムは「設定」タブ以外の時だけ描画する === */}
-        {activeTab !== 'settings' && (
+        {/* === 新しいタブ: スポット管理・報酬管理は単独で表示 === */}
+        {(activeTab === 'spots' || activeTab === 'rewards') && (
+          <div className="lg:col-span-2">
+            {activeTab === 'spots' && <SpotAdminPanel onRefresh={() => {}} />}
+            {activeTab === 'rewards' && <CouponAdminPanel onRefresh={() => {}} />}
+          </div>
+        )}
+
+        {/* === 左・右カラムは「設定」および新しいタブ以外の時だけ描画する === */}
+        {activeTab !== 'settings' && activeTab !== 'spots' && activeTab !== 'rewards' && (
           <>
             {/* --- 左カラム: 登録・サマリー --- */}
             <div>
