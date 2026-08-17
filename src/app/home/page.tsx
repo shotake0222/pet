@@ -5,21 +5,9 @@ import Script from 'next/script';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { createClient } from '@/utils/supabase/client';
 
-// 🌟 修正: 'model-viewer' を any キャストでコンポーネント化するのではなく、
-// TypeScript のグローバルな JSX 要素として型定義を追加することで正しく解決します。
-declare global {
-  namespace JSX {
-    interface IntrinsicElements {
-      'model-viewer': React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement> & {
-        src?: string;
-        'camera-controls'?: string | boolean;
-        'auto-rotate'?: string | boolean;
-        alt?: string;
-        ar?: string | boolean;
-      };
-    }
-  }
-}
+// 🌟 修正: グローバルな型定義（declare global）が他と衝突してビルドエラーになるため削除し、
+// 安全にWebコンポーネントを利用できるようにキャストしたReactコンポーネントを作成します。
+const ModelViewer = 'model-viewer' as any;
 
 type ItemActionEffect = {
   kind: 'food' | 'medicine' | 'sleep' | 'exp';
@@ -834,7 +822,7 @@ function HomeAR() {
     } else {
       await supabase.from('user_inventory').insert({ user_id: userId, item_id: item.id, quantity: 1 });
     }
-    // 🌟 DBビュー/外部キー設定: user_inventory に item_id の外部キー制約が設定されている前提で item_masters と JOIN します
+    
     const { data: inv } = await supabase
       .from('user_inventory')
       .select('id, quantity, item_masters:item_id(*)')
@@ -881,14 +869,6 @@ function HomeAR() {
       const { data: items } = await supabase.from('item_masters').select('*').order('id', { ascending: false });
       if (items) setShopItems(items);
 
-      // 🌟 【DBビュー/外部キーの設定方法】
-      // landmarksテーブルからlandmark_mastersのデータを同時に取得するには、
-      // DB側で landmarks テーブルに landmark_master_id 等の外部キー制約が必要です。
-      // 例: ALTER TABLE landmarks ADD CONSTRAINT fk_landmark_master FOREIGN KEY (landmark_master_id) REFERENCES landmark_masters(id);
-      // または、以下のようにJOIN済みのビュー(View)を作成し、それをクエリする方法もあります。
-      // 例: CREATE VIEW v_landmarks_with_master AS SELECT l.*, m.facility_type FROM landmarks l LEFT JOIN landmark_masters m ON l.landmark_master_id = m.id;
-      // その場合は supabase.from('v_landmarks_with_master').select('*') となります。
-      // ここでは、外部キー(landmark_master_id想定)を明示する書き方に修正しています。
       const { data: spots } = await supabase
         .from('landmarks')
         .select('*, landmark_masters:landmark_master_id(facility_type)');
@@ -900,7 +880,6 @@ function HomeAR() {
       const { data: notifications } = await supabase.from('user_notifications').select('*').eq('user_id', sessionUserId).order('created_at', { ascending: false }).limit(20);
       if (notifications) setUserNotifications(notifications);
 
-      // 🌟 図鑑用のデータを取得 (pet_masters, petsの履歴, custom_spots)
       const { data: pm } = await supabase.from('pet_masters').select('*').order('id', { ascending: true });
       if (pm) setAllPetMasters(pm);
 
@@ -994,7 +973,6 @@ function HomeAR() {
             setPetRarity(rarityPm);
           }
 
-          // 🌟 attributesテーブルをJOINするためのクエリ (attribute_id という外部キーが設定されている前提)
           const { data: attrRels } = await supabase
             .from('pet_master_attributes')
             .select('attribute_id, attributes:attribute_id(id, name, description)')
@@ -1021,7 +999,6 @@ function HomeAR() {
           setPetAffinities([]);
         }
 
-        // 🌟 item_mastersテーブルとのJOINも同様に外部キー(item_id)を使用します
         const { data: inv } = await supabase
           .from('user_inventory')
           .select('id, quantity, item_masters:item_id(*)')
@@ -1060,7 +1037,6 @@ function HomeAR() {
     fetchGameData();
   }, [fetchGameData]);
 
-  // 🌟 追加: 新しいスポットを図鑑に記録する関数
   const handleAddCustomSpot = async () => {
     if (!sessionUserId || !newSpotName || !newSpotFile) return;
     setIsUploadingSpot(true);
@@ -2718,7 +2694,6 @@ function HomeAR() {
         </div>
       )}
 
-      {/* 🌟 追加: 図鑑モーダル */}
       {isEncyclopediaOpen && (
         <div className='absolute inset-0 z-[200] bg-black/80 backdrop-blur-md flex items-center justify-center p-4 pointer-events-auto' onClick={() => setIsEncyclopediaOpen(false)}>
           <div className='bg-white rounded-3xl p-5 w-full max-w-md shadow-2xl relative max-h-[85vh] flex flex-col' onClick={e => e.stopPropagation()}>
@@ -2753,13 +2728,13 @@ function HomeAR() {
                         <div key={pm.id} className='relative bg-gray-50 border border-gray-200 rounded-xl p-2 flex flex-col items-center shadow-sm'>
                           {isHallOfFame && <div className='absolute -top-3 -right-3 text-4xl z-20 drop-shadow-md'>⭐</div>}
                           <div className='w-full h-28 rounded-lg overflow-hidden bg-white border border-gray-100 relative flex items-center justify-center'>
-                            {/* 🌟 修正: model-viewer タグを直接使用できるようになりました */}
-                            <model-viewer
+                            {/* 🌟 キャストされたコンポーネントを使用 */}
+                            <ModelViewer
                               src={pm.model_url || fallbackBase}
                               camera-controls="false"
                               auto-rotate="true"
                               style={{ width: '100%', height: '100%', backgroundColor: 'transparent', filter: isAcquired ? 'none' : 'brightness(0)' }}
-                            ></model-viewer>
+                            ></ModelViewer>
                           </div>
                           <div className={`mt-2 text-sm font-bold truncate w-full text-center ${isAcquired ? 'text-gray-800' : 'text-gray-400'}`}>
                             {isAcquired ? pm.name : '？？？？'}
@@ -3158,7 +3133,6 @@ function HomeAR() {
             <span className='text-2xl font-bold text-gray-700'>❓</span>
           </button>
 
-          {/* 🌟 追加: 図鑑ボタン */}
           <button onClick={() => { setIsEncyclopediaOpen(true); playSound('tap'); }} className='bg-white/90 p-3 rounded-full shadow-2xl border border-gray-200 active:scale-90 flex items-center justify-center w-14 h-14 relative' aria-label='ずかん'>
             <span className='text-2xl'>📖</span>
           </button>
