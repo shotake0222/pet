@@ -5,8 +5,6 @@ import Script from 'next/script';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { createClient } from '@/utils/supabase/client';
 
-// 🌟 修正: グローバルな型定義（declare global）が他と衝突してビルドエラーになるため削除し、
-// 安全にWebコンポーネントを利用できるようにキャストしたReactコンポーネントを作成します。
 const ModelViewer = 'model-viewer' as any;
 
 type ItemActionEffect = {
@@ -65,7 +63,6 @@ function HomeAR() {
   const [petAttributes, setPetAttributes] = useState<any[]>([]);
   const [petAffinities, setPetAffinities] = useState<any[]>([]);
 
-  // 🌟 図鑑機能用のState
   const [isEncyclopediaOpen, setIsEncyclopediaOpen] = useState(false);
   const [encyclopediaTab, setEncyclopediaTab] = useState<'pets' | 'spots'>('pets');
   const [allPetMasters, setAllPetMasters] = useState<any[]>([]);
@@ -100,7 +97,6 @@ function HomeAR() {
   const [mindfulnessLogCount, setMindfulnessLogCount] = useState(0);
   const [hallOfFameCount, setHallOfFameCount] = useState(0);
 
-  // 🌟 hatchOverlay に petName を追加
   const [hatchOverlay, setHatchOverlay] = useState<{ active: boolean; particles: any[]; rarity: string; petName?: string } | null>(null);
 
   const [itemRewardOverlay, setItemRewardOverlay] = useState<{ active: boolean; items: any[]; facilityName: string; facilityIcon: string } | null>(null);
@@ -116,6 +112,9 @@ function HomeAR() {
   const [debugRotY, setDebugRotY] = useState(0);
   const [debugRotZ, setDebugRotZ] = useState(0);
   const [debugAnimEnabled, setDebugAnimEnabled] = useState(true);
+
+  // 🌟 デバッグ用の特定のペットを指定するためのState
+  const [debugSelectedPetId, setDebugSelectedPetId] = useState<string>('');
 
   const [detectedTargetIndex, setDetectedTargetIndex] = useState<number | null>(null);
 
@@ -1094,7 +1093,7 @@ function HomeAR() {
           birthday: null,
           condition_status: 'healthy',
           generation: currentGeneration + 1,
-          is_deceased: true, // 殿堂入り
+          is_deceased: true,
         })
         .eq('id', targetPetId);
       setTimeout(() => {
@@ -1265,7 +1264,6 @@ function HomeAR() {
           duration: 700 + Math.random() * (rarity === 'UR' ? 2000 : rarity === 'SR' ? 1500 : 800),
         };
       });
-      // 🌟 petName を状態にセットしてUI側に渡す
       setHatchOverlay({ active: true, particles, rarity, petName });
       setTimeout(() => {
         setHatchOverlay(prev => (prev ? { ...prev, particles: prev.particles.map(p => ({ ...p, launched: true })) } : prev));
@@ -1585,6 +1583,9 @@ function HomeAR() {
       setPetAffinities([]);
 
       setEggModelUrl(selectedEgg.model_url || '/models/eggs/egg.glb');
+      // 🌟 シーンキーを更新してAR画面のモデル表示を卵に切り替える
+      setSceneKey(prev => prev + 1);
+
       playSound('item');
       alert(`不思議な卵を発見した！\nさんぽ、給餌、ランドマーク、イベントの全てをこなして孵化させよう！`);
       setNamingInput('');
@@ -1595,7 +1596,8 @@ function HomeAR() {
     }
   };
 
-  const handleHatchEgg = async (force = false) => {
+  // 🌟 forceMasterId を引数に追加して特定のペットでの孵化を可能にする
+  const handleHatchEgg = async (force = false, forceMasterId?: string) => {
     if (!petId) return;
     if (!isHatchReady && !force) {
       return alert('まだ孵化条件が揃っていません。歩数・給餌・ランドマーク・イベントを全て満たしてから試してください。');
@@ -1605,7 +1607,13 @@ function HomeAR() {
       if (!petMasters || petMasters.length === 0) {
         return alert('ペットのマスターデータが見つかりません。管理画面からペットを登録してください。');
       }
-      const selectedMaster = petMasters[Math.floor(Math.random() * petMasters.length)];
+      
+      let selectedMaster = petMasters[Math.floor(Math.random() * petMasters.length)];
+      if (forceMasterId) {
+        const found = petMasters.find(p => p.id === forceMasterId);
+        if (found) selectedMaster = found;
+      }
+
       const rarityRes = selectedMaster.rarity || '?';
       const fallbackBase = `/models/pet/${rarityRes}`;
       const modelV1 = selectedMaster.model_url || `${fallbackBase}/v1.glb`;
@@ -1635,7 +1643,6 @@ function HomeAR() {
       }
 
       playSound('hatch');
-      // 🌟 pet_masters の name を引数として渡す
       await showHatchEffect(rarityRes, selectedMaster.name || '不明');
 
       setIsEgg(false);
@@ -2174,7 +2181,6 @@ function HomeAR() {
         <Script src='https://raw.githack.com/AR-js-org/AR.js/master/aframe/build/aframe-ar.js' strategy='afterInteractive' onLoad={() => setArjsLoaded(true)} />
       )}
       
-      {/* 🌟 3Dプレビュー用のmodel-viewerスクリプト */}
       <Script type="module" src="https://ajax.googleapis.com/ajax/libs/model-viewer/3.1.1/model-viewer.min.js" strategy="lazyOnload" />
 
       {dataLoadError && (
@@ -2249,8 +2255,30 @@ function HomeAR() {
                 孵化条件をすべてMAXにする
               </button>
               <button onClick={() => handleHatchEgg(true)} className='w-full bg-pink-500 text-white font-bold py-2 rounded-lg shadow text-sm'>
-                条件無視で強制孵化させる
+                条件無視で強制孵化させる (ランダム)
               </button>
+              
+              <div className='flex gap-2 mt-2'>
+                <select
+                  value={debugSelectedPetId}
+                  onChange={e => setDebugSelectedPetId(e.target.value)}
+                  className='flex-1 border border-gray-300 rounded p-1 text-sm'
+                >
+                  <option value="">ペットを選択...</option>
+                  {allPetMasters.map(pm => (
+                    <option key={pm.id} value={pm.id}>{pm.name} ({pm.rarity || '?'})</option>
+                  ))}
+                </select>
+                <button
+                  onClick={() => {
+                    if (!debugSelectedPetId) return alert('ペットを選択してください');
+                    handleHatchEgg(true, debugSelectedPetId);
+                  }}
+                  className='bg-pink-600 text-white font-bold px-3 rounded shadow text-sm'
+                >
+                  指定孵化
+                </button>
+              </div>
             </div>
 
             <div className='space-y-2 mt-4'>
@@ -2330,7 +2358,6 @@ function HomeAR() {
         </div>
       )}
 
-      {/* 🌟 修正: 孵化時のエフェクト部分にペットマスターの名前（petName）を表示 */}
       {hatchOverlay?.active && (
         <div className='pointer-events-none absolute inset-0 z-[130] overflow-hidden'>
           {hatchOverlay.particles.map((p: any) => (
@@ -2737,7 +2764,6 @@ function HomeAR() {
                         <div key={pm.id} className='relative bg-gray-50 border border-gray-200 rounded-xl p-2 flex flex-col items-center shadow-sm'>
                           {isHallOfFame && <div className='absolute -top-3 -right-3 text-4xl z-20 drop-shadow-md'>⭐</div>}
                           <div className='w-full h-28 rounded-lg overflow-hidden bg-white border border-gray-100 relative flex items-center justify-center'>
-                            {/* 🌟 キャストされたコンポーネントを使用 */}
                             <ModelViewer
                               src={pm.model_url || fallbackBase}
                               camera-controls="false"
