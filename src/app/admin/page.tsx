@@ -240,7 +240,7 @@ function MultiSelectDropdown({
 
 export default function AdminDashboard() {
   const supabase = createClient();
-  const [activeTab, setActiveTab] = useState<'pets' | 'landmarks' | 'items' | 'coupons' | 'drops' | 'news' | 'users' | 'settings' | 'spots' | 'rewards'>('pets');
+  const [activeTab, setActiveTab] = useState<'pets' | 'landmarks' | 'items' | 'coupons' | 'drops' | 'news' | 'users' | 'settings' | 'spots' | 'rewards' | 'reports'>('pets');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // --- 登録済みデータ一覧用のState ---
@@ -308,7 +308,7 @@ export default function AdminDashboard() {
   // 🌟 設定タブ「登録済み属性と設定」: プルダウンで編集対象の属性を選択する方式に変更
   const [selectedSettingsAttributeId, setSelectedSettingsAttributeId] = useState<number | null>(null);
   const [pendingWeakAttrIds, setPendingWeakAttrIds] = useState<number[]>([]);        
-  const [pendingEnhanceItemIds, setPendingEnhanceItemIds] = useState<number[]>([]); 
+  const [pendingEnhanceItemIds, setPendingEnhanceItemIds] = useState<number[]>([]);  
   const [pendingWeaknessItemIds, setPendingWeaknessItemIds] = useState<number[]>([]); 
 
   useEffect(() => {
@@ -388,6 +388,27 @@ export default function AdminDashboard() {
     if (uploadError) throw uploadError;
     const { data: { publicUrl } } = supabase.storage.from('ar_assets').getPublicUrl(fileName);
     return publicUrl;
+  };
+
+  // --- レポート機能: CSV出力関数 ---
+  const handleDownloadCSV = (type: 'users' | 'spots') => {
+    let csv = '';
+    let filename = '';
+    if (type === 'users') {
+      csv = 'ID,生年,性別,作成日時\n' + usersList.map(u => `${u.id},${u.birth_year || ''},${u.gender || ''},${u.created_at || ''}`).join('\n');
+      filename = `users_${Date.now()}.csv`;
+    } else if (type === 'spots') {
+      csv = 'ID,名前,緯度,経度,開始日時,終了日時\n' + landmarksList.map(s => `${s.id},${s.name},${s.latitude},${s.longitude},${s.start_time || ''},${s.end_time || ''}`).join('\n');
+      filename = `spots_${Date.now()}.csv`;
+    }
+    const blob = new Blob([new Uint8Array([0xEF, 0xBB, 0xBF]), csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   };
 
   // --- データの取得（一覧表示用） ---
@@ -1204,7 +1225,7 @@ export default function AdminDashboard() {
       
       {/* タブ切り替え */}
       <div className="flex gap-2 mb-8 overflow-x-auto pb-2">
-        {(['pets', 'landmarks', 'spots', 'items', 'coupons', 'rewards', 'drops', 'news', 'users', 'settings'] as const).map(tab => (
+        {(['pets', 'landmarks', 'spots', 'items', 'coupons', 'rewards', 'drops', 'news', 'users', 'reports', 'settings'] as const).map(tab => (
           <button 
             key={tab} 
             onClick={() => setActiveTab(tab)} 
@@ -1219,6 +1240,7 @@ export default function AdminDashboard() {
             {tab === 'drops' && '🎁 報酬設定'}
             {tab === 'news' && '📢 お知らせ'}
             {tab === 'users' && '👥 ユーザー'}
+            {tab === 'reports' && '📊 レポート'}
             {tab === 'settings' && '⚙️ 設定'}
           </button>
         ))}
@@ -1236,7 +1258,7 @@ export default function AdminDashboard() {
         )}
 
         {/* === 左・右カラムは「設定」および新しいタブ以外の時だけ描画する === */}
-        {activeTab !== 'settings' && activeTab !== 'spots' && activeTab !== 'rewards' && (
+        {activeTab !== 'settings' && activeTab !== 'spots' && activeTab !== 'rewards' && activeTab !== 'reports' && (
           <>
             {/* --- 左カラム: 登録・サマリー --- */}
             <div>
@@ -2561,6 +2583,77 @@ export default function AdminDashboard() {
                 </div>
               </div>
 
+            </div>
+          </div>
+        )}
+
+        {/* --- レポートタブ --- */}
+        {activeTab === 'reports' && (
+          <div className="col-span-1 lg:col-span-2 bg-white p-6 rounded-2xl border border-gray-100 space-y-8">
+            <div className="flex justify-between items-center border-b pb-4">
+              <h2 className="text-2xl font-bold text-gray-800">📊 システム統計・レポート</h2>
+              <div className="flex gap-2">
+                <button onClick={() => handleDownloadCSV('users')} className="bg-indigo-50 text-indigo-700 border border-indigo-200 font-bold text-sm px-4 py-2 rounded-lg hover:bg-indigo-100 transition-colors shadow-sm">
+                  ユーザーCSV出力
+                </button>
+                <button onClick={() => handleDownloadCSV('spots')} className="bg-green-50 text-green-700 border border-green-200 font-bold text-sm px-4 py-2 rounded-lg hover:bg-green-100 transition-colors shadow-sm">
+                  スポットCSV出力
+                </button>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div className="bg-indigo-50 p-5 rounded-xl border border-indigo-100 flex flex-col items-center justify-center">
+                <div className="text-sm text-indigo-700 font-bold mb-1">総ユーザー数</div>
+                <div className="text-4xl font-black text-indigo-900">{usersList.length}</div>
+              </div>
+              <div className="bg-orange-50 p-5 rounded-xl border border-orange-100 flex flex-col items-center justify-center">
+                <div className="text-sm text-orange-700 font-bold mb-1">登録ペット数</div>
+                <div className="text-4xl font-black text-orange-900">{petsList.length}</div>
+              </div>
+              <div className="bg-green-50 p-5 rounded-xl border border-green-100 flex flex-col items-center justify-center">
+                <div className="text-sm text-green-700 font-bold mb-1">実体スポット数</div>
+                <div className="text-4xl font-black text-green-900">{landmarksList.length}</div>
+              </div>
+              <div className="bg-yellow-50 p-5 rounded-xl border border-yellow-100 flex flex-col items-center justify-center">
+                <div className="text-sm text-yellow-700 font-bold mb-1">アイテム種類</div>
+                <div className="text-4xl font-black text-yellow-900">{itemsList.length}</div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="bg-gray-50 p-5 rounded-xl border">
+                <h3 className="font-bold text-gray-800 mb-4 border-b pb-2 flex items-center justify-between">
+                  <span>🥚 卵タイプ別 ペット数</span>
+                  <span className="text-xs font-normal text-gray-500">全 {petsList.length} 匹</span>
+                </h3>
+                <div className="space-y-2">
+                  {groupedEggTypes.length === 0 ? <p className="text-gray-500 text-sm">データなし</p> : null}
+                  {groupedEggTypes.map(type => (
+                    <div key={type} className="flex justify-between items-center bg-white p-3 rounded-lg shadow-sm border border-gray-100">
+                      <span className="font-bold text-gray-700">卵 {type}</span>
+                      <span className="font-bold text-orange-600 bg-orange-50 px-3 py-1 rounded-full">{groupedPets[type].length} 匹</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="bg-gray-50 p-5 rounded-xl border">
+                <h3 className="font-bold text-gray-800 mb-4 border-b pb-2 flex items-center justify-between">
+                  <span>📍 スポット稼働状況</span>
+                  <span className="text-xs font-normal text-gray-500">マスター {landmarkMastersList.length} 種類</span>
+                </h3>
+                <div className="space-y-3">
+                  <div className="flex justify-between items-center bg-white p-4 rounded-lg shadow-sm border-l-4 border-green-500">
+                    <span className="font-bold text-green-800 flex items-center gap-2">🟢 稼働中（表示中）</span>
+                    <span className="font-bold text-xl text-green-900">{activeLandmarks.length} <span className="text-sm font-normal">箇所</span></span>
+                  </div>
+                  <div className="flex justify-between items-center bg-white p-4 rounded-lg shadow-sm border-l-4 border-gray-400">
+                    <span className="font-bold text-gray-600 flex items-center gap-2">⚪️ 終了済み・過去</span>
+                    <span className="font-bold text-xl text-gray-700">{historicalLandmarks.length} <span className="text-sm font-normal">箇所</span></span>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         )}

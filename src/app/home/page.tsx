@@ -496,7 +496,7 @@ function HomeAR() {
         el.style.margin = '0';
       });
       const canvases = viewport.querySelectorAll('canvas');
-      canvases.forEach(canvas => {
+      canverses.forEach(canvas => {
         const el = canvas as HTMLCanvasElement;
         el.style.position = 'absolute';
         el.style.inset = '0';
@@ -719,6 +719,18 @@ function HomeAR() {
         }
         const userId = session.user.id;
         setSessionUserId(userId);
+
+        // 🌟 アプリ起動時（またはログイン時）に1日1回だけ記録される upsert 処理を追加
+        const todayStr = new Date().toLocaleDateString('sv-SE');
+        await supabase.from('user_login_histories').upsert(
+          {
+            user_id: userId,
+            login_date: todayStr,
+            last_login_at: new Date().toISOString()
+          },
+          { onConflict: 'user_id, login_date' }
+        );
+
         const { data: profile } = await supabase.from('user_profiles').select('*').eq('id', userId).maybeSingle();
         if (!profile || !profile.birth_year) {
           setShowProfileSetup(true);
