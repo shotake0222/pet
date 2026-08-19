@@ -1622,7 +1622,7 @@ function HomeAR() {
       
       let selectedMaster = petMasters[Math.floor(Math.random() * petMasters.length)];
       if (forceMasterId) {
-        const found = petMasters.find(p => p.id === forceMasterId);
+        const found = petMasters.find(p => String(p.id) === String(forceMasterId));
         if (found) selectedMaster = found;
       }
 
