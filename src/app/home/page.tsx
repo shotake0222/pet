@@ -100,7 +100,8 @@ function HomeAR() {
   const [mindfulnessLogCount, setMindfulnessLogCount] = useState(0);
   const [hallOfFameCount, setHallOfFameCount] = useState(0);
 
-  const [hatchOverlay, setHatchOverlay] = useState<{ active: boolean; particles: any[]; rarity: string } | null>(null);
+  // 🌟 hatchOverlay に petName を追加
+  const [hatchOverlay, setHatchOverlay] = useState<{ active: boolean; particles: any[]; rarity: string; petName?: string } | null>(null);
 
   const [itemRewardOverlay, setItemRewardOverlay] = useState<{ active: boolean; items: any[]; facilityName: string; facilityIcon: string } | null>(null);
 
@@ -496,7 +497,7 @@ function HomeAR() {
         el.style.margin = '0';
       });
       const canvases = viewport.querySelectorAll('canvas');
-      canvases.forEach(canvas => {
+      canbases.forEach(canvas => {
         const el = canvas as HTMLCanvasElement;
         el.style.position = 'absolute';
         el.style.inset = '0';
@@ -1241,7 +1242,7 @@ function HomeAR() {
   };
   const currentMood = getCurrentMood();
 
-  const showHatchEffect = (rarity: string) => {
+  const showHatchEffect = (rarity: string, petName: string) => {
     return new Promise<void>(resolve => {
       const multiplier = rarity === 'UR' ? 8 : rarity === 'SR' ? 4 : rarity === 'R' ? 2 : 1;
       const base = 30;
@@ -1264,7 +1265,8 @@ function HomeAR() {
           duration: 700 + Math.random() * (rarity === 'UR' ? 2000 : rarity === 'SR' ? 1500 : 800),
         };
       });
-      setHatchOverlay({ active: true, particles, rarity });
+      // 🌟 petName を状態にセットしてUI側に渡す
+      setHatchOverlay({ active: true, particles, rarity, petName });
       setTimeout(() => {
         setHatchOverlay(prev => (prev ? { ...prev, particles: prev.particles.map(p => ({ ...p, launched: true })) } : prev));
       }, 1000);
@@ -1633,7 +1635,8 @@ function HomeAR() {
       }
 
       playSound('hatch');
-      await showHatchEffect(rarityRes);
+      // 🌟 pet_masters の name を引数として渡す
+      await showHatchEffect(rarityRes, selectedMaster.name || '不明');
 
       setIsEgg(false);
       setSceneKey(prev => prev + 1);
@@ -2327,6 +2330,7 @@ function HomeAR() {
         </div>
       )}
 
+      {/* 🌟 修正: 孵化時のエフェクト部分にペットマスターの名前（petName）を表示 */}
       {hatchOverlay?.active && (
         <div className='pointer-events-none absolute inset-0 z-[130] overflow-hidden'>
           {hatchOverlay.particles.map((p: any) => (
@@ -2346,7 +2350,12 @@ function HomeAR() {
               }}
             />
           ))}
-          <div className='absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-center text-white drop-shadow-2xl pointer-events-none'>
+          <div className='absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-center text-white drop-shadow-2xl pointer-events-none flex flex-col items-center gap-4'>
+            {hatchOverlay.petName && (
+              <div className='text-6xl font-black text-transparent bg-clip-text bg-gradient-to-r from-yellow-200 via-pink-300 to-cyan-300 drop-shadow-[0_0_20px_rgba(255,255,255,0.8)] animate-pulse tracking-widest leading-tight'>
+                {hatchOverlay.petName}
+              </div>
+            )}
             <div className='text-5xl font-extrabold animate-bounce'>{hatchOverlay.rarity === 'UR' ? '🌈 UR!' : hatchOverlay.rarity === 'SR' ? '✨ SR' : hatchOverlay.rarity === 'R' ? '⭐ R' : 'N'}</div>
           </div>
         </div>
