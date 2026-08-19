@@ -28,16 +28,17 @@ export const isAdmin = async (userId: string): Promise<boolean> => {
   const supabase = createClient();
 
   try {
-    const { data } = await supabase
-      .from('auth.users')
-      .select('raw_user_meta_data')
-      .eq('id', userId)
-      .single();
+    // クライアント側からは auth.users テーブルに直接アクセスできないため、
+    // 現在ログインしているユーザーのセッション情報からメタデータを取得します。
+    const { data: { user }, error } = await supabase.auth.getUser();
 
-    if (!data) return false;
+    if (error || !user) return false;
+    
+    // 判定対象のユーザーIDとログイン中のユーザーIDが一致するか確認
+    if (user.id !== userId) return false;
 
-    // raw_user_meta_data.role が admin の場合
-    return data.raw_user_meta_data?.role === 'admin';
+    // user_metadata または app_metadata に role が admin として設定されているか
+    return user.user_metadata?.role === 'admin' || user.app_metadata?.role === 'admin';
   } catch (error) {
     console.error('管理者確認エラー:', error);
     return false;
@@ -47,19 +48,47 @@ export const isAdmin = async (userId: string): Promise<boolean> => {
 /**
  * デバッグモードを有効化（開発用）
  */
-export const enableDebugMode = () => {
+export const enableDebugMode = (e?: any) => {
+  // イベントオブジェクトが渡された場合、デフォルトの挙動（フォーム送信など）をキャンセル
+  if (e && typeof e.preventDefault === 'function') {
+    e.preventDefault();
+  }
+  
   if (typeof window === 'undefined') return;
+
+  // フラグの保存
   localStorage.setItem('DEBUG_MODE', 'true');
-  window.location.reload();
+
+  // CONFIGの状態も同時に有効化しておく
+  const config = getDebugModeConfig();
+  config.isEnabled = true;
+  localStorage.setItem('DEBUG_MODE_CONFIG', JSON.stringify(config));
+  
+  // 少し遅延させることで、フレームワークのルーティング干渉を防ぎ確実にリロードする
+  setTimeout(() => {
+    window.location.reload();
+  }, 100);
 };
 
 /**
  * デバッグモードを無効化
  */
-export const disableDebugMode = () => {
+export const disableDebugMode = (e?: any) => {
+  // イベントオブジェクトが渡された場合、デフォルトの挙動をキャンセル
+  if (e && typeof e.preventDefault === 'function') {
+    e.preventDefault();
+  }
+
   if (typeof window === 'undefined') return;
+
+  // フラグと設定の両方を確実に削除する
   localStorage.removeItem('DEBUG_MODE');
-  window.location.reload();
+  localStorage.removeItem('DEBUG_MODE_CONFIG');
+  
+  // 少し遅延させて確実にリロード
+  setTimeout(() => {
+    window.location.reload();
+  }, 100);
 };
 
 /**
