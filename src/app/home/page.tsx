@@ -97,7 +97,7 @@ function HomeAR() {
   const [mindfulnessLogCount, setMindfulnessLogCount] = useState(0);
   const [hallOfFameCount, setHallOfFameCount] = useState(0);
 
-  const [hatchOverlay, setHatchOverlay] = useState<{ active: boolean; particles: any[]; rarity: string; petName?: string } | null>(null);
+  const [hatchOverlay, setHatchOverlay] = useState<{ active: boolean; particles: any[]; rarity: string; petName?: string; showConfirm: boolean; resolve?: () => void } | null>(null);
 
   const [itemRewardOverlay, setItemRewardOverlay] = useState<{ active: boolean; items: any[]; facilityName: string; facilityIcon: string } | null>(null);
 
@@ -118,6 +118,17 @@ function HomeAR() {
 
   const [detectedTargetIndex, setDetectedTargetIndex] = useState<number | null>(null);
 
+  // 🌟 設定関連State
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isSoundEnabled, setIsSoundEnabled] = useState(true);
+  const [isEffectEnabled, setIsEffectEnabled] = useState(true);
+  const [isNotificationEnabled, setIsNotificationEnabled] = useState(true);
+
+  const isSoundEnabledRef = useRef(isSoundEnabled);
+  useEffect(() => { isSoundEnabledRef.current = isSoundEnabled; }, [isSoundEnabled]);
+  const isEffectEnabledRef = useRef(isEffectEnabled);
+  useEffect(() => { isEffectEnabledRef.current = isEffectEnabled; }, [isEffectEnabled]);
+
   const SOUND_SOURCES: Record<string, string> = {
     tap: '/sounds/tap.mp3',
     eat: '/sounds/eat.mp3',
@@ -130,6 +141,7 @@ function HomeAR() {
   const audioPoolRef = useRef<Record<string, HTMLAudioElement>>({});
 
   const playSound = useCallback((name: string) => {
+    if (!isSoundEnabledRef.current) return;
     try {
       const src = SOUND_SOURCES[name];
       if (!src) return;
@@ -151,6 +163,7 @@ function HomeAR() {
   }, []);
 
   const playItemEffectSound = useCallback((kind: ItemActionEffect['kind']) => {
+    if (!isSoundEnabledRef.current) return;
     if (typeof window === 'undefined') return;
     const AudioCtor = window.AudioContext || (window as any).webkitAudioContext;
     if (!AudioCtor) return;
@@ -204,6 +217,7 @@ function HomeAR() {
   }, []);
 
   const triggerItemActionEffect = useCallback((kind: ItemActionEffect['kind']) => {
+    if (!isEffectEnabledRef.current) return;
     const configMap: Record<ItemActionEffect['kind'], Omit<ItemActionEffect, 'kind'>> = {
       food: {
         emoji: '🍙',
@@ -568,6 +582,7 @@ function HomeAR() {
     setIsWalkPromptOpen(false);
     setIsHelpModalOpen(false);
     setIsEncyclopediaOpen(false);
+    setIsSettingsOpen(false);
   };
 
   const handleModeChange = (mode: 'mindar' | 'gps' | 'report') => {
@@ -720,7 +735,6 @@ function HomeAR() {
         const userId = session.user.id;
         setSessionUserId(userId);
 
-        // 🌟 アプリ起動時（またはログイン時）に1日1回だけ記録される upsert 処理を追加
         const todayStr = new Date().toLocaleDateString('sv-SE');
         await supabase.from('user_login_histories').upsert(
           {
@@ -735,6 +749,9 @@ function HomeAR() {
         if (!profile || !profile.birth_year) {
           setShowProfileSetup(true);
         } else {
+          setInputBirthYear(profile.birth_year.toString());
+          setInputGender(profile.gender || '');
+          setIsNotificationEnabled(profile.email_notify_feed ?? true);
           setHallOfFameCount(profile.hall_of_fame_count || 0);
           await checkLoginBonus(userId, profile);
         }
@@ -1255,6 +1272,10 @@ function HomeAR() {
 
   const showHatchEffect = (rarity: string, petName: string) => {
     return new Promise<void>(resolve => {
+      if (!isEffectEnabledRef.current) {
+        resolve();
+        return;
+      }
       const multiplier = rarity === 'UR' ? 8 : rarity === 'SR' ? 4 : rarity === 'R' ? 2 : 1;
       const base = 30;
       const count = Math.min(300, Math.floor(base * multiplier));
@@ -1276,20 +1297,23 @@ function HomeAR() {
           duration: 700 + Math.random() * (rarity === 'UR' ? 2000 : rarity === 'SR' ? 1500 : 800),
         };
       });
-      setHatchOverlay({ active: true, particles, rarity, petName });
+      setHatchOverlay({ active: true, particles, rarity, petName, showConfirm: false, resolve });
       setTimeout(() => {
         setHatchOverlay(prev => (prev ? { ...prev, particles: prev.particles.map(p => ({ ...p, launched: true })) } : prev));
       }, 1000);
       const maxDuration = Math.max(...particles.map(p => p.duration)) + 300;
       setTimeout(() => {
-        setHatchOverlay(null);
-        resolve();
+        setHatchOverlay(prev => prev ? { ...prev, showConfirm: true } : prev);
       }, maxDuration);
     });
   };
 
   const showLevelUpEffect = (newLevel: number) => {
     return new Promise<void>(resolve => {
+      if (!isEffectEnabledRef.current) {
+        resolve();
+        return;
+      }
       const isMilestone = newLevel === 30 || newLevel === 50 || newLevel % 10 === 0 || newLevel === 99;
       const count = isMilestone ? 250 : 50;
       const colors = isMilestone ? ['#FFD700', '#FF73FA', '#7CF0FF', '#FF9F1C', '#FFFFFF'] : ['#60A5FA', '#34D399', '#FBBF24'];
@@ -1595,7 +1619,6 @@ function HomeAR() {
       setPetAffinities([]);
 
       setEggModelUrl(selectedEgg.model_url || '/models/eggs/egg.glb');
-      // 🌟 シーンキーを更新してAR画面のモデル表示を卵に切り替える
       setSceneKey(prev => prev + 1);
 
       playSound('item');
@@ -1608,7 +1631,6 @@ function HomeAR() {
     }
   };
 
-  // 🌟 forceMasterId を引数に追加して特定のペットでの孵化を可能にする
   const handleHatchEgg = async (force = false, forceMasterId?: string) => {
     if (!petId) return;
     if (!isHatchReady && !force) {
@@ -1831,6 +1853,7 @@ function HomeAR() {
         setIsSleepMenuOpen(false);
         setIsWalkPromptOpen(false);
         setIsEncyclopediaOpen(false);
+        setIsSettingsOpen(false);
       }
       return next;
     });
@@ -2037,8 +2060,8 @@ function HomeAR() {
           id: sessionUserId,
           birth_year: birthYear,
           gender: inputGender,
-          email_notify_feed: true,
-          email_notify_news: true,
+          email_notify_feed: isNotificationEnabled,
+          email_notify_news: isNotificationEnabled,
           last_login_date: today,
           login_days: 1,
         },
@@ -2053,6 +2076,33 @@ function HomeAR() {
       router.refresh();
     } catch (err: any) {
       console.error('プロフィール保存エラー', err);
+      alert(err?.message || 'エラーが発生しました。');
+    } finally {
+      setIsSetupSubmitting(false);
+    }
+  };
+
+  const handleSettingsSave = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!sessionUserId) return;
+    const birthYear = parseInt(inputBirthYear, 10);
+    if (Number.isNaN(birthYear) || birthYear < 1900 || birthYear > new Date().getFullYear()) {
+      alert('正しい誕生年を入力してください。');
+      return;
+    }
+    setIsSetupSubmitting(true);
+    try {
+      const { error } = await supabase.from('user_profiles').update({
+        birth_year: birthYear,
+        gender: inputGender,
+        email_notify_feed: isNotificationEnabled,
+        email_notify_news: isNotificationEnabled,
+      }).eq('id', sessionUserId);
+      if (error) throw error;
+      alert('設定を保存しました！');
+      setIsSettingsOpen(false);
+    } catch (err: any) {
+      console.error('設定保存エラー', err);
       alert(err?.message || 'エラーが発生しました。');
     } finally {
       setIsSetupSubmitting(false);
@@ -2371,7 +2421,7 @@ function HomeAR() {
       )}
 
       {hatchOverlay?.active && (
-        <div className='pointer-events-none absolute inset-0 z-[130] overflow-hidden'>
+        <div className='pointer-events-auto absolute inset-0 z-[130] overflow-hidden bg-black/80 flex flex-col items-center justify-center'>
           {hatchOverlay.particles.map((p: any) => (
             <div
               key={p.id}
@@ -2386,10 +2436,11 @@ function HomeAR() {
                 transform: p.launched ? `translate(calc(-50% + ${p.dx}px), calc(-50% + ${p.dy}px)) scale(1)` : 'translate(-50%,-50%) scale(0.2)',
                 opacity: p.launched ? 0 : 1,
                 transition: `transform ${p.duration}ms cubic-bezier(.2,.8,.2,1), opacity ${p.duration}ms linear`,
+                pointerEvents: 'none'
               }}
             />
           ))}
-          <div className='absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-center text-white drop-shadow-2xl pointer-events-none flex flex-col items-center gap-4'>
+          <div className='text-center text-white drop-shadow-2xl pointer-events-none flex flex-col items-center gap-4 z-40'>
             {hatchOverlay.petName && (
               <div className='text-6xl font-black text-transparent bg-clip-text bg-gradient-to-r from-yellow-200 via-pink-300 to-cyan-300 drop-shadow-[0_0_20px_rgba(255,255,255,0.8)] animate-pulse tracking-widest leading-tight'>
                 {hatchOverlay.petName}
@@ -2397,6 +2448,17 @@ function HomeAR() {
             )}
             <div className='text-5xl font-extrabold animate-bounce'>{hatchOverlay.rarity === 'UR' ? '🌈 UR!' : hatchOverlay.rarity === 'SR' ? '✨ SR' : hatchOverlay.rarity === 'R' ? '⭐ R' : 'N'}</div>
           </div>
+          {hatchOverlay.showConfirm && (
+            <button
+              onClick={() => {
+                if (hatchOverlay.resolve) hatchOverlay.resolve();
+                setHatchOverlay(null);
+              }}
+              className='mt-12 bg-white text-black font-bold py-3 px-10 rounded-full shadow-lg active:scale-95 transition-transform z-50 pointer-events-auto animate-fade-in-up'
+            >
+              確認
+            </button>
+          )}
         </div>
       )}
 
@@ -2512,6 +2574,58 @@ function HomeAR() {
               {isSetupSubmitting ? '保存中...' : 'はじめる！'}
             </button>
           </form>
+        </div>
+      )}
+
+      {isSettingsOpen && (
+        <div className='absolute inset-0 z-[200] bg-black/80 backdrop-blur-md flex items-center justify-center p-4 pointer-events-auto'>
+          <div className='bg-white rounded-3xl p-6 w-full max-w-sm shadow-2xl relative text-black max-h-[85vh] overflow-y-auto'>
+            <div className='flex justify-between items-center mb-4 border-b pb-2 border-gray-200'>
+              <h2 className='text-xl font-bold text-slate-800'>⚙️ 設定</h2>
+              <button onClick={() => setIsSettingsOpen(false)} className='w-8 h-8 rounded-full bg-gray-100 text-gray-700 font-bold flex items-center justify-center active:scale-95'>
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleSettingsSave} className='space-y-4'>
+              <div className='space-y-3 bg-gray-50 p-4 rounded-xl border border-gray-200'>
+                <h3 className='font-bold text-sm text-gray-700 border-b pb-1'>システム設定</h3>
+                <label className='flex justify-between items-center text-sm font-bold cursor-pointer'>
+                  <span>通知</span>
+                  <input type='checkbox' checked={isNotificationEnabled} onChange={e => setIsNotificationEnabled(e.target.checked)} className='w-5 h-5 accent-blue-600' />
+                </label>
+                <label className='flex justify-between items-center text-sm font-bold cursor-pointer'>
+                  <span>サウンド</span>
+                  <input type='checkbox' checked={isSoundEnabled} onChange={e => setIsSoundEnabled(e.target.checked)} className='w-5 h-5 accent-blue-600' />
+                </label>
+                <label className='flex justify-between items-center text-sm font-bold cursor-pointer'>
+                  <span>エフェクト</span>
+                  <input type='checkbox' checked={isEffectEnabled} onChange={e => setIsEffectEnabled(e.target.checked)} className='w-5 h-5 accent-blue-600' />
+                </label>
+              </div>
+
+              <div className='space-y-3 bg-gray-50 p-4 rounded-xl border border-gray-200'>
+                <h3 className='font-bold text-sm text-gray-700 border-b pb-1'>プロフィール変更</h3>
+                <div>
+                  <label className='block text-xs font-bold text-gray-700 mb-1'>誕生年</label>
+                  <input type='number' value={inputBirthYear} onChange={e => setInputBirthYear(e.target.value)} className='w-full border p-2 rounded-lg bg-white focus:ring-2 focus:ring-blue-500 text-black text-sm' required />
+                </div>
+                <div>
+                  <label className='block text-xs font-bold text-gray-700 mb-1'>性別</label>
+                  <select value={inputGender} onChange={e => setInputGender(e.target.value)} className='w-full border p-2 rounded-lg bg-white focus:ring-2 focus:ring-blue-500 text-black text-sm' required>
+                    <option value=''>選択...</option>
+                    <option value='male'>男性</option>
+                    <option value='female'>女性</option>
+                    <option value='other'>その他</option>
+                  </select>
+                </div>
+              </div>
+
+              <button type='submit' disabled={isSetupSubmitting} className='w-full bg-slate-900 text-white font-bold py-3 rounded-xl shadow-lg mt-4 disabled:bg-gray-400 active:scale-95 transition-transform'>
+                {isSetupSubmitting ? '保存中...' : '設定を保存する'}
+              </button>
+            </form>
+          </div>
         </div>
       )}
 
@@ -3043,6 +3157,13 @@ function HomeAR() {
 
             {!isEgg && !isEggUnregistered && petId && (
               <>
+                <div className='mb-2'>
+                  <div className='flex justify-between items-end border-b border-gray-700 pb-2 mb-2'>
+                    <span className='text-xs text-gray-400'>🐾 ペット種族</span>
+                    <span className='text-lg font-bold text-white'>{petMasterName}</span>
+                  </div>
+                </div>
+
                 {petAttributes.length > 0 && (
                   <div className='mb-2'>
                     <div className='text-xs font-bold text-gray-400 mb-1.5'>🔮 属性</div>
@@ -3174,6 +3295,10 @@ function HomeAR() {
           <button onClick={() => { setIsNewsOpen(true); playSound('tap'); }} className='bg-white/90 p-3 rounded-full shadow-2xl border border-gray-200 active:scale-90 flex items-center justify-center w-14 h-14 relative' aria-label='お知らせ'>
             <span className='text-2xl'>📢</span>
             {(newsList.length > 0 || userNotifications.length > 0) && <span className='absolute top-0 right-0 w-4 h-4 bg-red-500 rounded-full border-2 border-white'></span>}
+          </button>
+
+          <button onClick={() => { setIsSettingsOpen(true); playSound('tap'); }} className='bg-white/90 p-3 rounded-full shadow-2xl border border-gray-200 active:scale-90 flex items-center justify-center w-14 h-14 relative' aria-label='設定'>
+            <span className='text-2xl'>⚙️</span>
           </button>
 
           <button onClick={() => { setIsHelpModalOpen(true); playSound('tap'); }} className='bg-white/90 p-3 rounded-full shadow-2xl border border-gray-200 active:scale-90 flex items-center justify-center w-14 h-14 relative' aria-label='遊び方'>
