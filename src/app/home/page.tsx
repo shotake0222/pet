@@ -1522,6 +1522,8 @@ function HomeAR() {
   useEffect(() => {
     if (!aframeLoaded || typeof window === 'undefined') return;
     const AFRAME = (window as any).AFRAME;
+
+    // クリック判定用のコンポーネント
     if (AFRAME && !AFRAME.components['pet-interact']) {
       AFRAME.registerComponent('pet-interact', {
         init: function () {
@@ -1531,6 +1533,8 @@ function HomeAR() {
         }
       });
     }
+
+    // マーカー検出用のコンポーネント
     if (AFRAME && !AFRAME.components['mindar-event-listener']) {
       AFRAME.registerComponent('mindar-event-listener', {
         init: function () {
@@ -1540,6 +1544,45 @@ function HomeAR() {
           this.el.addEventListener('targetLost', () => {
             window.dispatchEvent(new CustomEvent('mindar-target-lost', { detail: { id: this.el.id } }));
           });
+        }
+      });
+    }
+
+    // 💡 プログラムからモデル全体を動かすためのアニメーションコントローラー
+    // glTF自体にアニメーションがなくても、位置や回転を強制的に上書きして動かします
+    if (AFRAME && !AFRAME.components['pet-anim-controller']) {
+      AFRAME.registerComponent('pet-anim-controller', {
+        schema: {
+          clip: { type: 'string', default: '' }
+        },
+        update: function (oldData: any) {
+          if (this.data.clip !== oldData.clip) {
+            // アニメーションを切り替える前に、古いアニメーションを削除し位置などを0にリセットする
+            this.el.removeAttribute('animation');
+            this.el.setAttribute('position', '0 0 0');
+            this.el.setAttribute('rotation', '0 0 0');
+            this.el.setAttribute('scale', '1 1 1');
+
+            const clip = this.data.clip;
+            if (!clip) return;
+
+            // 状態に応じたA-Frame標準アニメーションをモデルのラッパーに付与する
+            if (clip === 'Idle') {
+              this.el.setAttribute('animation', 'property: position; to: 0 0.15 0; dir: alternate; dur: 1500; loop: true; easing: easeInOutSine');
+            } else if (clip === 'Happy') {
+              this.el.setAttribute('animation', 'property: rotation; to: 0 360 0; dur: 1000; loop: true; easing: linear');
+            } else if (clip === 'Jump') {
+              this.el.setAttribute('animation', 'property: position; to: 0 0.8 0; dir: alternate; dur: 250; loop: true; easing: easeOutQuad');
+            } else if (clip === 'Fly') {
+              this.el.setAttribute('animation', 'property: position; to: 0 1.2 0; dir: alternate; dur: 800; loop: true; easing: easeInOutSine');
+            } else if (clip === 'Sleep') {
+              this.el.setAttribute('animation', 'property: scale; to: 1.05 0.95 1.05; dir: alternate; dur: 1500; loop: true; easing: easeInOutSine');
+            } else if (clip === 'Sad') {
+              this.el.setAttribute('animation', 'property: rotation; to: 25 0 0; dir: alternate; dur: 1000; loop: true; easing: easeInOutSine');
+            } else if (clip === 'Angry') {
+              this.el.setAttribute('animation', 'property: position; to: 0.1 0 0; dir: alternate; dur: 80; loop: true; easing: linear');
+            }
+          }
         }
       });
     }
@@ -2205,6 +2248,9 @@ function HomeAR() {
       </div>
     );
   }
+
+  // 👇 モデルの動き（Idle, Happyなど）を文字列で取得します
+  const currentAnim = actionAnim || currentMood.clip;
 
   return (
     <div ref={appRootRef} className='relative isolate w-full h-full min-h-0 min-w-0 max-w-full overflow-hidden bg-black text-white'>
@@ -3853,16 +3899,22 @@ function HomeAR() {
                   position='0 1.5 0'
                   pet-interact
                 ></a-entity>
-                <a-gltf-model
-                  id='pet-model-0'
-                  rotation={`${debugRotX} ${debugRotY} ${debugRotZ}`}
-                  position='0 0 0'
-                  scale={hatchAnimating ? `${debugScaleX * 0.2} ${debugScaleY * 0.2} ${debugScaleZ * 0.2}` : `${debugScaleX} ${debugScaleY} ${debugScaleZ}`}
-                  src='#pet-asset'
-                  shadow='cast: true; receive: true'
-                  animation-mixer={(!isEgg && debugAnimEnabled) ? `clip: ${actionAnim || currentMood.clip}; loop: ${actionAnim ? 'once' : 'repeat'}; crossFadeDuration: 0.3` : undefined}
-                  animation={hatchAnimating ? `property: scale; to: ${debugScaleX} ${debugScaleY} ${debugScaleZ}; dur: 800; easing: easeOutElastic` : undefined}
-                ></a-gltf-model>
+                
+                {/* 👇 新設：プログラム制御によるアニメーションラッパー */}
+                <a-entity 
+                  id='pet-anim-wrapper-0' 
+                  pet-anim-controller={`clip: ${(!isEgg && debugAnimEnabled) ? currentAnim : ''}`}
+                >
+                  <a-gltf-model
+                    id='pet-model-0'
+                    rotation={`${debugRotX} ${debugRotY} ${debugRotZ}`}
+                    position='0 0 0'
+                    scale={hatchAnimating ? `${debugScaleX * 0.2} ${debugScaleY * 0.2} ${debugScaleZ * 0.2}` : `${debugScaleX} ${debugScaleY} ${debugScaleZ}`}
+                    src='#pet-asset'
+                    shadow='cast: true; receive: true'
+                    animation={hatchAnimating ? `property: scale; to: ${debugScaleX} ${debugScaleY} ${debugScaleZ}; dur: 800; easing: easeOutElastic` : undefined}
+                  ></a-gltf-model>
+                </a-entity>
               </a-entity>
 
               <a-entity mindar-image-target='targetIndex: 1' id='marker-target-1' mindar-event-listener="">
@@ -3874,16 +3926,20 @@ function HomeAR() {
                   position='0 1.5 0'
                   pet-interact
                 ></a-entity>
-                <a-gltf-model
-                  id='pet-model-1'
-                  rotation={`${debugRotX} ${debugRotY} ${debugRotZ}`}
-                  position='0 0 0'
-                  scale={hatchAnimating ? `${debugScaleX * 0.2} ${debugScaleY * 0.2} ${debugScaleZ * 0.2}` : `${debugScaleX} ${debugScaleY} ${debugScaleZ}`}
-                  src='#pet-asset'
-                  shadow='cast: true; receive: true'
-                  animation-mixer={(!isEgg && debugAnimEnabled) ? `clip: ${actionAnim || currentMood.clip}; loop: ${actionAnim ? 'once' : 'repeat'}; crossFadeDuration: 0.3` : undefined}
-                  animation={hatchAnimating ? `property: scale; to: ${debugScaleX} ${debugScaleY} ${debugScaleZ}; dur: 800; easing: easeOutElastic` : undefined}
-                ></a-gltf-model>
+                <a-entity 
+                  id='pet-anim-wrapper-1' 
+                  pet-anim-controller={`clip: ${(!isEgg && debugAnimEnabled) ? currentAnim : ''}`}
+                >
+                  <a-gltf-model
+                    id='pet-model-1'
+                    rotation={`${debugRotX} ${debugRotY} ${debugRotZ}`}
+                    position='0 0 0'
+                    scale={hatchAnimating ? `${debugScaleX * 0.2} ${debugScaleY * 0.2} ${debugScaleZ * 0.2}` : `${debugScaleX} ${debugScaleY} ${debugScaleZ}`}
+                    src='#pet-asset'
+                    shadow='cast: true; receive: true'
+                    animation={hatchAnimating ? `property: scale; to: ${debugScaleX} ${debugScaleY} ${debugScaleZ}; dur: 800; easing: easeOutElastic` : undefined}
+                  ></a-gltf-model>
+                </a-entity>
               </a-entity>
 
               <a-entity mindar-image-target='targetIndex: 2' id='marker-target-2' mindar-event-listener="">
@@ -3895,16 +3951,20 @@ function HomeAR() {
                   position='0 1.5 0'
                   pet-interact
                 ></a-entity>
-                <a-gltf-model
-                  id='pet-model-2'
-                  rotation={`${debugRotX} ${debugRotY} ${debugRotZ}`}
-                  position='0 0 0'
-                  scale={hatchAnimating ? `${debugScaleX * 0.2} ${debugScaleY * 0.2} ${debugScaleZ * 0.2}` : `${debugScaleX} ${debugScaleY} ${debugScaleZ}`}
-                  src='#pet-asset'
-                  shadow='cast: true; receive: true'
-                  animation-mixer={(!isEgg && debugAnimEnabled) ? `clip: ${actionAnim || currentMood.clip}; loop: ${actionAnim ? 'once' : 'repeat'}; crossFadeDuration: 0.3` : undefined}
-                  animation={hatchAnimating ? `property: scale; to: ${debugScaleX} ${debugScaleY} ${debugScaleZ}; dur: 800; easing: easeOutElastic` : undefined}
-                ></a-gltf-model>
+                <a-entity 
+                  id='pet-anim-wrapper-2' 
+                  pet-anim-controller={`clip: ${(!isEgg && debugAnimEnabled) ? currentAnim : ''}`}
+                >
+                  <a-gltf-model
+                    id='pet-model-2'
+                    rotation={`${debugRotX} ${debugRotY} ${debugRotZ}`}
+                    position='0 0 0'
+                    scale={hatchAnimating ? `${debugScaleX * 0.2} ${debugScaleY * 0.2} ${debugScaleZ * 0.2}` : `${debugScaleX} ${debugScaleY} ${debugScaleZ}`}
+                    src='#pet-asset'
+                    shadow='cast: true; receive: true'
+                    animation={hatchAnimating ? `property: scale; to: ${debugScaleX} ${debugScaleY} ${debugScaleZ}; dur: 800; easing: easeOutElastic` : undefined}
+                  ></a-gltf-model>
+                </a-entity>
               </a-entity>
 
               <a-entity mindar-image-target='targetIndex: 3' id='marker-target-3' mindar-event-listener="">
@@ -3916,16 +3976,20 @@ function HomeAR() {
                   position='0 1.5 0'
                   pet-interact
                 ></a-entity>
-                <a-gltf-model
-                  id='pet-model-3'
-                  rotation={`${debugRotX} ${debugRotY} ${debugRotZ}`}
-                  position='0 0 0'
-                  scale={hatchAnimating ? `${debugScaleX * 0.2} ${debugScaleY * 0.2} ${debugScaleZ * 0.2}` : `${debugScaleX} ${debugScaleY} ${debugScaleZ}`}
-                  src='#pet-asset'
-                  shadow='cast: true; receive: true'
-                  animation-mixer={(!isEgg && debugAnimEnabled) ? `clip: ${actionAnim || currentMood.clip}; loop: ${actionAnim ? 'once' : 'repeat'}; crossFadeDuration: 0.3` : undefined}
-                  animation={hatchAnimating ? `property: scale; to: ${debugScaleX} ${debugScaleY} ${debugScaleZ}; dur: 800; easing: easeOutElastic` : undefined}
-                ></a-gltf-model>
+                <a-entity 
+                  id='pet-anim-wrapper-3' 
+                  pet-anim-controller={`clip: ${(!isEgg && debugAnimEnabled) ? currentAnim : ''}`}
+                >
+                  <a-gltf-model
+                    id='pet-model-3'
+                    rotation={`${debugRotX} ${debugRotY} ${debugRotZ}`}
+                    position='0 0 0'
+                    scale={hatchAnimating ? `${debugScaleX * 0.2} ${debugScaleY * 0.2} ${debugScaleZ * 0.2}` : `${debugScaleX} ${debugScaleY} ${debugScaleZ}`}
+                    src='#pet-asset'
+                    shadow='cast: true; receive: true'
+                    animation={hatchAnimating ? `property: scale; to: ${debugScaleX} ${debugScaleY} ${debugScaleZ}; dur: 800; easing: easeOutElastic` : undefined}
+                  ></a-gltf-model>
+                </a-entity>
               </a-entity>
             </a-scene>
           </div>
