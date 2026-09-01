@@ -62,7 +62,7 @@ function HomeAR() {
   const [petRarity, setPetRarity] = useState('?');
 
   const [petAttributes, setPetAttributes] = useState<any[]>([]);
-  const [petAttributeWeaknesses, setPetAttributeWeaknesses] = useState<any[]>([]); // 🌟 タスク17対応：属性弱点情報
+  const [petAttributeWeaknesses, setPetAttributeWeaknesses] = useState<any[]>([]); 
   const [petAffinities, setPetAffinities] = useState<any[]>([]);
 
   const [isEncyclopediaOpen, setIsEncyclopediaOpen] = useState(false);
@@ -115,12 +115,10 @@ function HomeAR() {
   const [debugRotZ, setDebugRotZ] = useState(0);
   const [debugAnimEnabled, setDebugAnimEnabled] = useState(true);
 
-  // 🌟 デバッグ用の特定のペットを指定するためのState
   const [debugSelectedPetId, setDebugSelectedPetId] = useState<string>('');
 
   const [detectedTargetIndex, setDetectedTargetIndex] = useState<number | null>(null);
 
-  // 🌟 設定関連State
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isSoundEnabled, setIsSoundEnabled] = useState(true);
   const [isEffectEnabled, setIsEffectEnabled] = useState(true);
@@ -391,7 +389,6 @@ function HomeAR() {
   const [motivationPercent, setMotivationPercent] = useState(100);
   const [actionAnim, setActionAnim] = useState<string | null>(null);
   
-  // 🌟 タスク12対応：アニメーション切り替え時にデバッグ情報を記録
   const updateActionAnim = (animName: string | null) => {
     if (isDebugMode()) {
       console.log(`[Animation] Changing to: ${animName || '(none)'} at ${new Date().toLocaleTimeString()}`);
@@ -418,7 +415,7 @@ function HomeAR() {
   const [landmarks, setLandmarks] = useState<any[]>([]);
   const [activeLandmark, setActiveLandmark] = useState<any | null>(null);
   const [isSpotMapOpen, setIsSpotMapOpen] = useState(false);
-  const [mapZoomLevel, setMapZoomLevel] = useState(3); // 🌟 タスク10対応：地図ズームレベル
+  const [mapZoomLevel, setMapZoomLevel] = useState(3);
   const [cameraFacing, setCameraFacing] = useState<'environment' | 'user'>('environment');
   const [sceneKey, setSceneKey] = useState(0);
   const arViewportRef = useRef<HTMLDivElement>(null);
@@ -521,7 +518,7 @@ function HomeAR() {
         el.style.margin = '0';
       });
       const canvases = viewport.querySelectorAll('canvas');
-      canases.forEach(canvas => {
+      canvases.forEach(canvas => {
         const el = canvas as HTMLCanvasElement;
         el.style.position = 'absolute';
         el.style.inset = '0';
@@ -1024,7 +1021,6 @@ function HomeAR() {
 
             const attrIds = attrs.map((a: any) => a.id);
             
-            // 🌟 タスク17対応：属性弱点情報を取得
             const { data: weaknesses } = await supabase
               .from('attribute_weaknesses')
               .select('*, weak_against:weak_against_id(id, name, description)')
@@ -1161,7 +1157,6 @@ function HomeAR() {
 
   const closeRainbowBridge = async () => {
     setShowRainbowBridge(false);
-    // 🚀 虹の橋を渡った後、新しい卵を自動作成
     if (sessionUserId) {
       await handleCreateEgg();
     } else {
@@ -1701,7 +1696,6 @@ function HomeAR() {
         setPetAttributes(attrs);
         const attrIds = attrs.map((a: any) => a.id);
         
-        // 🌟 タスク17対応：属性弱点情報を取得
         const { data: weaknesses } = await supabase
           .from('attribute_weaknesses')
           .select('*, weak_against:weak_against_id(id, name, description)')
@@ -2393,14 +2387,12 @@ function HomeAR() {
               <button onClick={() => addExperience(1000)} className='w-full bg-blue-500 text-white font-bold py-2 rounded-lg shadow text-sm'>
                 経験値 +1000 (レベルアップ)
               </button>
-              {/* 🌟 タスク16対応：大幅なレベルアップ機能追加 */}
               <button onClick={() => addExperience(50000)} className='w-full bg-blue-600 text-white font-bold py-2 rounded-lg shadow text-sm'>
                 経験値 +50000 (大幅レベルアップ)
               </button>
               <button onClick={() => { const newDist = walkDistance + 1000; setWalkDistance(newDist); supabase.from('pets').update({ walk_distance_m: newDist }).eq('id', petId); }} className='w-full bg-green-500 text-white font-bold py-2 rounded-lg shadow text-sm'>
                 歩行距離 +1000m
               </button>
-              {/* 🌟 タスク16対応：持ち物満タン機能追加 */}
               <button onClick={() => {
                 const debugItems = [
                   { id: 'full1', name: '🍖 ご飯', item_type: 'food', image_url: null },
@@ -3018,7 +3010,6 @@ function HomeAR() {
               <p className='text-center text-gray-500 my-10'>GPS座標を取得中...</p>
             ) : (
               <div className='flex-1 overflow-y-auto pr-1'>
-                {/* 🌟 タスク10対応：地図ズームコントロール */}
                 <div className='flex gap-2 mb-3 justify-center'>
                   <button
                     onClick={() => setMapZoomLevel(Math.max(1, mapZoomLevel - 1))}
@@ -3038,7 +3029,6 @@ function HomeAR() {
                 </div>
                 <div className='relative w-full aspect-square bg-gray-100 rounded-2xl overflow-hidden mb-4 shadow-inner border border-gray-300'>
                   {(() => {
-                    // 🌟 タスク10対応：ズームレベルに応じたbbox計算
                     const zoomFactors: Record<number, number> = { 1: 0.01, 2: 0.007, 3: 0.005, 4: 0.003, 5: 0.001 };
                     const factor = zoomFactors[mapZoomLevel] || 0.005;
                     const bbox = `${location.lng - factor}%2C${location.lat - factor}%2C${location.lng + factor}%2C${location.lat + factor}`;
@@ -3069,7 +3059,6 @@ function HomeAR() {
                       const topPercent = 50 - ((spot.latitude - location.lat) / (factor * 2)) * 100;
                       const leftPercent = 50 + ((spot.longitude - location.lng) / (factor * 2)) * 100;
                       return (
-                        // 🌟 タスク11対応：スポットアイコンサイズを拡大 (w-8 h-8 → w-12 h-12)
                         <div key={`radar-${spot.id}`} className='absolute w-12 h-12 -ml-6 -mt-6 text-2xl flex items-center justify-center filter drop-shadow bg-white/90 rounded-full border-2 border-gray-300 shadow-md' style={{ top: `${topPercent}%`, left: `${leftPercent}%` }} title={spot.name}>
                           {typeIcon}
                         </div>
@@ -3182,7 +3171,6 @@ function HomeAR() {
               ) : (
                 <div className='space-y-3'>
                   {newsList.map(news => {
-                    // 🌟 タスク15対応：URLを検出して外部リンク処理
                     const urlRegex = /(https?:\/\/[^\s]+)/g;
                     const urls = news.content.match(urlRegex) || [];
                     const contentWithoutUrl = news.content.replace(urlRegex, '').trim();
@@ -3286,7 +3274,6 @@ function HomeAR() {
                       ))}
                     </div>
                     
-                    {/* 🌟 タスク17対応：弱点属性の詳細表示 */}
                     {petAttributeWeaknesses.length > 0 && (
                       <div className='mt-2 text-xs font-bold text-red-400 mb-1.5'>⚠️ 弱点属性 (被ダメージUP)</div>
                     )}
@@ -3407,7 +3394,6 @@ function HomeAR() {
               <span className='text-white font-bold text-3xl drop-shadow-lg bg-black/30 px-3 py-1 rounded-xl backdrop-blur-sm'>{isEggUnregistered ? '' : displayName}</span>
             )}
             <span className={`${currentMood.color} text-white px-4 py-2 rounded-xl font-bold shadow-xl text-md transition-colors duration-300 border border-white/20 pointer-events-auto`}>{currentMood.text}</span>
-            {/* 🌟 タスク12対応：デバッグモード時にアニメーション情報を表示 */}
             {isDebugMode() && !isEgg && (
               <span className='text-white font-bold text-xs drop-shadow-lg bg-black/50 px-2 py-1 rounded border border-yellow-400 backdrop-blur-sm'>
                 🎬 Anim: {actionAnim || currentMood.clip}
