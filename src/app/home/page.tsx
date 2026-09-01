@@ -489,8 +489,6 @@ function HomeAR() {
       const videos = viewport.querySelectorAll('video');
       videos.forEach(video => {
         const el = video as HTMLVideoElement;
-        el.setAttribute('playsinline', '');
-        el.setAttribute('webkit-playsinline', '');
         el.style.position = 'absolute';
         el.style.inset = '0';
         el.style.display = 'block';
@@ -555,10 +553,6 @@ function HomeAR() {
         if (child === root || child.contains(root)) return;
         const tag = child.tagName;
         if (tag === 'SCRIPT' || tag === 'STYLE' || tag === 'LINK' || tag === 'META' || tag === 'NOSCRIPT' || tag === 'VIDEO' || tag === 'TITLE') {
-          return;
-        }
-        // MindARのビデオコンテナを誤って非表示にしないように、videoタグを含む要素は除外する
-        if (child.querySelector('video') || tag === 'VIDEO') {
           return;
         }
         const el = child as HTMLElement;
@@ -685,6 +679,12 @@ function HomeAR() {
   }, [viewMode, isAuthChecking, isDataLoaded]);
 
   useEffect(() => {
+    if (!isSwitchingMode) return;
+    const timer = window.setTimeout(() => setIsSwitchingMode(false), 2000);
+    return () => window.clearTimeout(timer);
+  }, [isSwitchingMode]);
+
+  useEffect(() => {
     if (viewMode === 'report') {
       setCameraReady(true);
       setCameraTrulyReady(true);
@@ -697,8 +697,8 @@ function HomeAR() {
     let tries = 0;
     const maxTries = 75; 
     const timer = window.setInterval(() => {
-      // document全体からvideoを探すよう修正
-      const videos = Array.from(document.querySelectorAll('video')) as HTMLVideoElement[];
+      const viewport = arViewportRef.current;
+      const videos = Array.from(viewport?.querySelectorAll('video') ?? []) as HTMLVideoElement[];
       const ready = videos.some(v => v.readyState >= 2 && v.videoWidth > 0 && v.videoHeight > 0);
       if (ready) {
         setCameraReady(true);
@@ -1523,6 +1523,7 @@ function HomeAR() {
     if (!aframeLoaded || typeof window === 'undefined') return;
     const AFRAME = (window as any).AFRAME;
 
+    // クリック判定用のコンポーネント
     if (AFRAME && !AFRAME.components['pet-interact']) {
       AFRAME.registerComponent('pet-interact', {
         init: function () {
@@ -1533,6 +1534,7 @@ function HomeAR() {
       });
     }
 
+    // マーカー検出用のコンポーネント
     if (AFRAME && !AFRAME.components['mindar-event-listener']) {
       AFRAME.registerComponent('mindar-event-listener', {
         init: function () {
@@ -1546,6 +1548,8 @@ function HomeAR() {
       });
     }
 
+    // 💡 プログラムからモデル全体を動かすためのアニメーションコントローラー
+    // glTF自体にアニメーションがなくても、位置や回転を強制的に上書きして動かします
     if (AFRAME && !AFRAME.components['pet-anim-controller']) {
       AFRAME.registerComponent('pet-anim-controller', {
         schema: {
@@ -1553,9 +1557,8 @@ function HomeAR() {
         },
         update: function (oldData: any) {
           if (this.data.clip !== oldData.clip) {
-            ['animation', 'animation__pos', 'animation__rot', 'animation__scl'].forEach(attr => {
-              this.el.removeAttribute(attr);
-            });
+            // アニメーションを切り替える前に、古いアニメーションを削除し位置などを0にリセットする
+            this.el.removeAttribute('animation');
             this.el.setAttribute('position', '0 0 0');
             this.el.setAttribute('rotation', '0 0 0');
             this.el.setAttribute('scale', '1 1 1');
@@ -1563,28 +1566,21 @@ function HomeAR() {
             const clip = this.data.clip;
             if (!clip) return;
 
+            // 状態に応じたA-Frame標準アニメーションをモデルのラッパーに付与する
             if (clip === 'Idle') {
-              this.el.setAttribute('animation__pos', 'property: position; to: 0 0.3 0; dir: alternate; dur: 2000; loop: true; easing: easeInOutSine');
-              this.el.setAttribute('animation__scl', 'property: scale; to: 1.05 0.95 1.05; dir: alternate; dur: 2000; loop: true; easing: easeInOutSine');
+              this.el.setAttribute('animation', 'property: position; to: 0 0.15 0; dir: alternate; dur: 1500; loop: true; easing: easeInOutSine');
             } else if (clip === 'Happy') {
-              this.el.setAttribute('animation__rot', 'property: rotation; to: 0 360 0; dur: 800; loop: true; easing: linear');
-              this.el.setAttribute('animation__pos', 'property: position; to: 0 1.2 0; dir: alternate; dur: 400; loop: true; easing: easeOutQuad');
+              this.el.setAttribute('animation', 'property: rotation; to: 0 360 0; dur: 1000; loop: true; easing: linear');
             } else if (clip === 'Jump') {
-              this.el.setAttribute('animation__pos', 'property: position; to: 0 1.8 0; dir: alternate; dur: 350; loop: true; easing: easeOutQuad');
-              this.el.setAttribute('animation__scl', 'property: scale; to: 0.8 1.2 0.8; dir: alternate; dur: 350; loop: true; easing: easeOutQuad');
+              this.el.setAttribute('animation', 'property: position; to: 0 0.8 0; dir: alternate; dur: 250; loop: true; easing: easeOutQuad');
             } else if (clip === 'Fly') {
-              this.el.setAttribute('animation__pos', 'property: position; to: 0 2.5 0; dir: alternate; dur: 1000; loop: true; easing: easeInOutSine');
-              this.el.setAttribute('animation__rot', 'property: rotation; to: 15 360 -15; dur: 3000; loop: true; easing: linear');
+              this.el.setAttribute('animation', 'property: position; to: 0 1.2 0; dir: alternate; dur: 800; loop: true; easing: easeInOutSine');
             } else if (clip === 'Sleep') {
-              this.el.setAttribute('animation__rot', 'property: rotation; to: 0 0 -90; dur: 600; loop: false; easing: easeOutBounce');
-              this.el.setAttribute('animation__scl', 'property: scale; to: 1.25 0.7 1.25; dir: alternate; dur: 1800; loop: true; easing: easeInOutSine');
+              this.el.setAttribute('animation', 'property: scale; to: 1.05 0.95 1.05; dir: alternate; dur: 1500; loop: true; easing: easeInOutSine');
             } else if (clip === 'Sad') {
-              this.el.setAttribute('animation__rot', 'property: rotation; to: 45 0 0; dir: alternate; dur: 1500; loop: true; easing: easeInOutSine');
-              this.el.setAttribute('animation__scl', 'property: scale; to: 0.75 0.75 0.75; dir: alternate; dur: 1500; loop: true; easing: easeInOutSine');
-              this.el.setAttribute('animation__pos', 'property: position; to: 0 -0.2 0; dir: alternate; dur: 1500; loop: true; easing: easeInOutSine');
+              this.el.setAttribute('animation', 'property: rotation; to: 25 0 0; dir: alternate; dur: 1000; loop: true; easing: easeInOutSine');
             } else if (clip === 'Angry') {
-              this.el.setAttribute('animation__scl', 'property: scale; to: 1.3 1.3 1.3; dur: 300; loop: false; easing: easeOutQuad');
-              this.el.setAttribute('animation__pos', 'property: position; to: 0.3 0 0; dir: alternate; dur: 50; loop: true; easing: linear');
+              this.el.setAttribute('animation', 'property: position; to: 0.1 0 0; dir: alternate; dur: 80; loop: true; easing: linear');
             }
           }
         }
@@ -2253,6 +2249,7 @@ function HomeAR() {
     );
   }
 
+  // 👇 モデルの動き（Idle, Happyなど）を文字列で取得します
   const currentAnim = actionAnim || currentMood.clip;
 
   return (
@@ -2287,7 +2284,7 @@ function HomeAR() {
           overflow: hidden;
           isolation: isolate;
           contain: layout paint;
-          background: transparent;
+          background: #000;
           touch-action: none;
         }
         .ar-camera-viewport a-scene,
@@ -2318,16 +2315,9 @@ function HomeAR() {
           pointer-events: auto !important;
         }
         .ar-camera-viewport .a-enter-vr,
-        .mindar-ui-overlay,
-        .mindar-ui-loading,
-        .mindar-ui-scanning,
-        .mindar-ui-error,
-        .arjs-loader {
+        .ar-camera-viewport .mindar-ui-overlay,
+        .ar-camera-viewport .arjs-loader {
           display: none !important;
-          opacity: 0 !important;
-          visibility: hidden !important;
-          pointer-events: none !important;
-          background: transparent !important;
         }
       `}</style>
 
@@ -3879,10 +3869,9 @@ function HomeAR() {
           <div key={`mindar-container-${sceneKey}`} className='absolute inset-0 pointer-events-none'>
             <a-scene
               embedded
-              background="transparent: true"
               style={{ position: 'absolute', inset: 0, height: '100%', width: '100%', pointerEvents: 'auto' }}
-              mindar-image={`imageTargetSrc: ${petMarkerUrl}; autoStart: true; uiLoading: no; uiError: no; uiScanning: no; maxTrack: 1; filterMinCF: 0.0001; filterBeta: 0.001;`}
-              renderer='alpha: true; preserveDrawingBuffer: true; colorManagement: true; physicallyCorrectLights: true; clearColor: #000000; clearColorAlpha: 0;'
+              mindar-image={`imageTargetSrc: ${petMarkerUrl}; autoStart: true; uiLoading: no; uiError: no; maxTrack: 1; filterMinCF: 0.0001; filterBeta: 0.001;`}
+              renderer='alpha: true; preserveDrawingBuffer: true; colorManagement: true; physicallyCorrectLights: true;'
               color-space='sRGB'
               vr-mode-ui='enabled: false'
               device-orientation-permission-ui='enabled: false'
@@ -3911,6 +3900,7 @@ function HomeAR() {
                   pet-interact
                 ></a-entity>
                 
+                {/* 👇 新設：プログラム制御によるアニメーションラッパー */}
                 <a-entity 
                   id='pet-anim-wrapper-0' 
                   pet-anim-controller={`clip: ${(!isEgg && debugAnimEnabled) ? currentAnim : ''}`}
@@ -4008,10 +3998,9 @@ function HomeAR() {
           <div key={`gps-container-${sceneKey}-${cameraFacing}`} className='absolute inset-0 pointer-events-none'>
             <a-scene
               embedded
-              background="transparent: true"
               style={{ position: 'absolute', inset: 0, height: '100%', width: '100%', pointerEvents: 'none' }}
               vr-mode-ui='enabled: false'
-              renderer='alpha: true; preserveDrawingBuffer: true; colorManagement: true; clearColor: #000000; clearColorAlpha: 0;'
+              renderer='alpha: true; preserveDrawingBuffer: true; colorManagement: true;'
               arjs={`sourceType: webcam; videoTexture: true; debugUIEnabled: false; facingMode: ${cameraFacing};`}
             >
               <a-assets>
