@@ -1548,7 +1548,7 @@ function HomeAR() {
       });
     }
 
-    // 💡 プログラムからモデル全体を動かすためのアニメーションコントローラー
+   // 💡 プログラムからモデル全体を動かすためのアニメーションコントローラー
     // glTF自体にアニメーションがなくても、位置や回転を強制的に上書きして動かします
     if (AFRAME && !AFRAME.components['pet-anim-controller']) {
       AFRAME.registerComponent('pet-anim-controller', {
@@ -1557,8 +1557,10 @@ function HomeAR() {
         },
         update: function (oldData: any) {
           if (this.data.clip !== oldData.clip) {
-            // アニメーションを切り替える前に、古いアニメーションを削除し位置などを0にリセットする
-            this.el.removeAttribute('animation');
+            // アニメーションを切り替える前に、全てのアニメーションを削除し位置などを0にリセットする
+            ['animation', 'animation__pos', 'animation__rot', 'animation__scl'].forEach(attr => {
+              this.el.removeAttribute(attr);
+            });
             this.el.setAttribute('position', '0 0 0');
             this.el.setAttribute('rotation', '0 0 0');
             this.el.setAttribute('scale', '1 1 1');
@@ -1566,27 +1568,41 @@ function HomeAR() {
             const clip = this.data.clip;
             if (!clip) return;
 
-            // 状態に応じたA-Frame標準アニメーションをモデルのラッパーに付与する
+            // 状態に応じて「位置(pos)」「回転(rot)」「拡縮(scl)」を複数組み合わせて大袈裟に動かす
             if (clip === 'Idle') {
-              this.el.setAttribute('animation', 'property: position; to: 0 0.15 0; dir: alternate; dur: 1500; loop: true; easing: easeInOutSine');
+              // ゆったりと大きく上下に浮遊しながら、わずかに呼吸（スケール）
+              this.el.setAttribute('animation__pos', 'property: position; to: 0 0.3 0; dir: alternate; dur: 2000; loop: true; easing: easeInOutSine');
+              this.el.setAttribute('animation__scl', 'property: scale; to: 1.05 0.95 1.05; dir: alternate; dur: 2000; loop: true; easing: easeInOutSine');
             } else if (clip === 'Happy') {
-              this.el.setAttribute('animation', 'property: rotation; to: 0 360 0; dur: 1000; loop: true; easing: linear');
+              // 嬉しくて高速でスピンしながら、ピョンピョン高く跳ねる
+              this.el.setAttribute('animation__rot', 'property: rotation; to: 0 360 0; dur: 800; loop: true; easing: linear');
+              this.el.setAttribute('animation__pos', 'property: position; to: 0 1.2 0; dir: alternate; dur: 400; loop: true; easing: easeOutQuad');
             } else if (clip === 'Jump') {
-              this.el.setAttribute('animation', 'property: position; to: 0 0.8 0; dir: alternate; dur: 250; loop: true; easing: easeOutQuad');
+              // 一気に高く跳び上がり、縦に伸び縮みして躍動感を出す
+              this.el.setAttribute('animation__pos', 'property: position; to: 0 1.8 0; dir: alternate; dur: 350; loop: true; easing: easeOutQuad');
+              this.el.setAttribute('animation__scl', 'property: scale; to: 0.8 1.2 0.8; dir: alternate; dur: 350; loop: true; easing: easeOutQuad');
             } else if (clip === 'Fly') {
-              this.el.setAttribute('animation', 'property: position; to: 0 1.2 0; dir: alternate; dur: 800; loop: true; easing: easeInOutSine');
+              // 高く舞い上がり、少し傾きながら全体をゆっくり旋回させる
+              this.el.setAttribute('animation__pos', 'property: position; to: 0 2.5 0; dir: alternate; dur: 1000; loop: true; easing: easeInOutSine');
+              this.el.setAttribute('animation__rot', 'property: rotation; to: 15 360 -15; dur: 3000; loop: true; easing: linear');
             } else if (clip === 'Sleep') {
-              this.el.setAttribute('animation', 'property: scale; to: 1.05 0.95 1.05; dir: alternate; dur: 1500; loop: true; easing: easeInOutSine');
+              // Z軸に90度バタン！と倒れて、いびきをかくように大きく伸び縮みする
+              this.el.setAttribute('animation__rot', 'property: rotation; to: 0 0 -90; dur: 600; loop: false; easing: easeOutBounce');
+              this.el.setAttribute('animation__scl', 'property: scale; to: 1.25 0.7 1.25; dir: alternate; dur: 1800; loop: true; easing: easeInOutSine');
             } else if (clip === 'Sad') {
-              this.el.setAttribute('animation', 'property: rotation; to: 25 0 0; dir: alternate; dur: 1000; loop: true; easing: easeInOutSine');
+              // 深くうつむき、全体的にしぼんで地面に沈み込む
+              this.el.setAttribute('animation__rot', 'property: rotation; to: 45 0 0; dir: alternate; dur: 1500; loop: true; easing: easeInOutSine');
+              this.el.setAttribute('animation__scl', 'property: scale; to: 0.75 0.75 0.75; dir: alternate; dur: 1500; loop: true; easing: easeInOutSine');
+              this.el.setAttribute('animation__pos', 'property: position; to: 0 -0.2 0; dir: alternate; dur: 1500; loop: true; easing: easeInOutSine');
             } else if (clip === 'Angry') {
-              this.el.setAttribute('animation', 'property: position; to: 0.1 0 0; dir: alternate; dur: 80; loop: true; easing: linear');
+              // 体を1.3倍に大きく膨らませて威嚇し、激しく左右に震える
+              this.el.setAttribute('animation__scl', 'property: scale; to: 1.3 1.3 1.3; dur: 300; loop: false; easing: easeOutQuad');
+              this.el.setAttribute('animation__pos', 'property: position; to: 0.3 0 0; dir: alternate; dur: 50; loop: true; easing: linear');
             }
           }
         }
       });
     }
-  }, [aframeLoaded]);
 
   useEffect(() => {
     if (viewMode !== 'mindar') return;
