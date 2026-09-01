@@ -71,7 +71,7 @@ function HomeAR() {
   const [acquiredPetIds, setAcquiredPetIds] = useState<Set<string>>(new Set());
   const [hallOfFamePetIds, setHallOfFamePetIds] = useState<Set<string>>(new Set());
   const [customSpots, setCustomSpots] = useState<any[]>([]);
-  
+
   const [newSpotName, setNewSpotName] = useState('');
   const [newSpotFile, setNewSpotFile] = useState<File | null>(null);
   const [isUploadingSpot, setIsUploadingSpot] = useState(false);
@@ -388,7 +388,7 @@ function HomeAR() {
   const [hungerPercent, setHungerPercent] = useState(100);
   const [motivationPercent, setMotivationPercent] = useState(100);
   const [actionAnim, setActionAnim] = useState<string | null>(null);
-  
+
   const updateActionAnim = (animName: string | null) => {
     if (isDebugMode()) {
       console.log(`[Animation] Changing to: ${animName || '(none)'} at ${new Date().toLocaleTimeString()}`);
@@ -516,7 +516,7 @@ function HomeAR() {
         el.style.margin = '0';
       });
       const canvases = viewport.querySelectorAll('canvas');
-      canvases.forEach(canvas => {
+      canverses.forEach(canvas => {
         const el = canvas as HTMLCanvasElement;
         el.style.position = 'absolute';
         el.style.inset = '0';
@@ -857,7 +857,7 @@ function HomeAR() {
     } else {
       await supabase.from('user_inventory').insert({ user_id: userId, item_id: item.id, quantity: 1 });
     }
-    
+
     const { data: inv } = await supabase
       .from('user_inventory')
       .select('id, quantity, item_masters:item_id(*)')
@@ -1018,23 +1018,23 @@ function HomeAR() {
             setPetAttributes(attrs);
 
             const attrIds = attrs.map((a: any) => a.id);
-            
+
             const { data: weaknesses } = await supabase
               .from('attribute_weaknesses')
               .select('*, weak_against:weak_against_id(id, name, description)')
               .in('attribute_id', attrIds);
-            
+
             if (weaknesses && weaknesses.length > 0) {
               setPetAttributeWeaknesses(weaknesses);
             } else {
               setPetAttributeWeaknesses([]);
             }
-            
+
             const { data: affinities } = await supabase
               .from('attribute_item_affinities')
               .select('*')
               .in('attribute_id', attrIds);
-            
+
             if (affinities) setPetAffinities(affinities);
             else setPetAffinities([]);
           } else {
@@ -1422,7 +1422,7 @@ function HomeAR() {
         } else {
           await supabase.from('user_inventory').insert({ user_id: sessionUserId, item_id: item.id, quantity: 1 });
         }
-        
+
         const { data: inv } = await supabase.from('user_inventory').select('id, quantity, item_masters:item_id(*)').eq('user_id', sessionUserId).gt('quantity', 0);
         if (inv) setInventory(inv);
       }
@@ -1485,13 +1485,13 @@ function HomeAR() {
 
   useEffect(() => {
     if (viewMode !== 'mindar' || !petId || isEgg || isSleeping || !isDataLoaded) return;
-    
+
     const handlePetTap = (e: Event) => {
       const customEvent = e as CustomEvent;
       const id = customEvent.detail?.id || '';
-      
+
       if (!/^pet-hitbox-\d+$/.test(id)) return;
-      
+
       if (petCondition === 'starving' || petCondition === 'sick') {
         playSound('error');
         setActionAnim('Sad');
@@ -1499,7 +1499,7 @@ function HomeAR() {
         setShowConditionSOS(true);
         return;
       }
-      
+
       playSound('tap');
       setAffection(prev => {
         const val = prev + 1;
@@ -1514,7 +1514,7 @@ function HomeAR() {
       setTimeout(() => setActionAnim(null), 1500);
       addExperience(5);
     };
-    
+
     window.addEventListener('pet-tapped', handlePetTap);
     return () => window.removeEventListener('pet-tapped', handlePetTap);
   }, [viewMode, petId, supabase, isEgg, isSleeping, petCondition, isDataLoaded]);
@@ -1661,7 +1661,7 @@ function HomeAR() {
       if (!petMasters || petMasters.length === 0) {
         return alert('ペットのマスターデータが見つかりません。管理画面からペットを登録してください。');
       }
-      
+
       let selectedMaster = petMasters[Math.floor(Math.random() * petMasters.length)];
       if (forceMasterId) {
         const found = petMasters.find(p => String(p.id) === String(forceMasterId));
@@ -1684,23 +1684,23 @@ function HomeAR() {
         .from('pet_master_attributes')
         .select('attribute_id, attributes:attribute_id(id, name, description)')
         .eq('pet_master_id', selectedMaster.id);
-      
+
       if (attrRels && attrRels.length > 0) {
         const attrs = attrRels.map((rel: any) => rel.attributes).filter(Boolean);
         setPetAttributes(attrs);
         const attrIds = attrs.map((a: any) => a.id);
-        
+
         const { data: weaknesses } = await supabase
           .from('attribute_weaknesses')
           .select('*, weak_against:weak_against_id(id, name, description)')
           .in('attribute_id', attrIds);
-        
+
         if (weaknesses && weaknesses.length > 0) {
           setPetAttributeWeaknesses(weaknesses);
         } else {
           setPetAttributeWeaknesses([]);
         }
-        
+
         const { data: affinities } = await supabase.from('attribute_item_affinities').select('*').in('attribute_id', attrIds);
         if (affinities) setPetAffinities(affinities);
       } else {
@@ -1750,6 +1750,13 @@ function HomeAR() {
 
   const handleUseItem = async (invItem: any) => {
     if (!petId) return;
+
+    if (viewMode !== 'mindar' || detectedTargetIndex === null) {
+      playSound('error');
+      alert('ペットをARで表示している時だけアイテムを使えます。カメラをマーカーに向けてペットを呼び出してね！');
+      return;
+    }
+
     if (isSleeping) {
       playSound('error');
       alert('ペットは眠っています。起きてからアイテムを使ってね。');
@@ -2273,7 +2280,7 @@ function HomeAR() {
       {gpsEverActivated && extrasLoaded && (
         <Script src='https://raw.githack.com/AR-js-org/AR.js/master/aframe/build/aframe-ar.js' strategy='afterInteractive' onLoad={() => setArjsLoaded(true)} />
       )}
-      
+
       <Script type="module" src="https://ajax.googleapis.com/ajax/libs/model-viewer/3.1.1/model-viewer.min.js" strategy="lazyOnload" />
 
       {dataLoadError && (
@@ -2350,7 +2357,7 @@ function HomeAR() {
               <button onClick={() => handleHatchEgg(true)} className='w-full bg-pink-500 text-white font-bold py-2 rounded-lg shadow text-sm'>
                 条件無視で強制孵化させる (ランダム)
               </button>
-              
+
               <div className='flex gap-2 mt-2'>
                 <select
                   value={debugSelectedPetId}
@@ -2390,7 +2397,7 @@ function HomeAR() {
                 try {
                   const { data: items } = await supabase.from('item_masters').select('*');
                   if (!items || items.length === 0) return alert('アイテムマスターがありません');
-                  
+
                   for (const item of items) {
                     const { data: existing } = await supabase.from('user_inventory').select('id, quantity').eq('user_id', sessionUserId).eq('item_id', item.id).maybeSingle();
                     if (existing) {
@@ -2923,7 +2930,7 @@ function HomeAR() {
                 ✕
               </button>
             </div>
-            
+
             <div className='flex mb-4 gap-2'>
               <button onClick={() => setEncyclopediaTab('pets')} className={`flex-1 py-2 font-bold rounded-xl text-sm transition-colors ${encyclopediaTab === 'pets' ? 'bg-indigo-500 text-white shadow-md' : 'bg-gray-100 text-gray-500'}`}>
                 🐶 ペット
@@ -2976,7 +2983,7 @@ function HomeAR() {
                       {isUploadingSpot ? '保存中...' : '図鑑に記録する'}
                     </button>
                   </div>
-                  
+
                   {customSpots.length === 0 ? (
                     <p className='text-gray-400 text-center text-sm py-8'>まだ記録されたスポットがありません。</p>
                   ) : (
@@ -3179,7 +3186,7 @@ function HomeAR() {
                     const urlRegex = /(https?:\/\/[^\s]+)/g;
                     const urls = news.content.match(urlRegex) || [];
                     const contentWithoutUrl = news.content.replace(urlRegex, '').trim();
-                    
+
                     return (
                       <div key={news.id} className='bg-blue-50 border border-blue-100 rounded-xl p-3 text-black'>
                         <h4 className='font-bold text-blue-900 text-sm mb-1'>{news.title}</h4>
@@ -3264,7 +3271,7 @@ function HomeAR() {
                         </span>
                       ))}
                     </div>
-                    
+
                     {petAttributeWeaknesses.length > 0 && (
                       <div className='mt-2 text-xs font-bold text-red-400 mb-1.5'>⚠️ 弱点属性 (被ダメージUP)</div>
                     )}
@@ -3829,7 +3836,7 @@ function HomeAR() {
               </a-assets>
               <a-light type='ambient' color='#ffffff' intensity='0.5'></a-light>
               <a-light type='directional' color='#ffffff' intensity='1.5' position='-1 2 1' castShadow='true'></a-light>
-              
+
               <a-camera position='0 0 0' look-controls='enabled: false' cursor='rayOrigin: mouse; fuse: false;' raycaster='objects: .clickable'></a-camera>
 
               <a-entity mindar-image-target='targetIndex: 0' id='marker-target-0'>
@@ -3852,7 +3859,7 @@ function HomeAR() {
                   animation={hatchAnimating ? `property: scale; to: ${debugScaleX} ${debugScaleY} ${debugScaleZ}; dur: 800; easing: easeOutElastic` : undefined}
                 ></a-gltf-model>
               </a-entity>
-              
+
               <a-entity mindar-image-target='targetIndex: 1' id='marker-target-1'>
                 <a-entity
                   id='pet-hitbox-1'
