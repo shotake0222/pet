@@ -1568,20 +1568,27 @@ function HomeAR() {
 
             // 状態に応じたA-Frame標準アニメーションをモデルのラッパーに付与する
             if (clip === 'Idle') {
-              this.el.setAttribute('animation', 'property: position; to: 0 0.15 0; dir: alternate; dur: 1500; loop: true; easing: easeInOutSine');
-            } else if (clip === 'Happy') {
-              this.el.setAttribute('animation', 'property: rotation; to: 0 360 0; dur: 1000; loop: true; easing: linear');
-            } else if (clip === 'Jump') {
-              this.el.setAttribute('animation', 'property: position; to: 0 0.8 0; dir: alternate; dur: 250; loop: true; easing: easeOutQuad');
-            } else if (clip === 'Fly') {
-              this.el.setAttribute('animation', 'property: position; to: 0 1.2 0; dir: alternate; dur: 800; loop: true; easing: easeInOutSine');
-            } else if (clip === 'Sleep') {
-              this.el.setAttribute('animation', 'property: scale; to: 1.05 0.95 1.05; dir: alternate; dur: 1500; loop: true; easing: easeInOutSine');
-            } else if (clip === 'Sad') {
-              this.el.setAttribute('animation', 'property: rotation; to: 25 0 0; dir: alternate; dur: 1000; loop: true; easing: easeInOutSine');
-            } else if (clip === 'Angry') {
-              this.el.setAttribute('animation', 'property: position; to: 0.1 0 0; dir: alternate; dur: 80; loop: true; easing: linear');
-            }
+  // 呼吸のような上下運動を大きく、少しテンポアップ（Y: 0.15 -> 0.5, dur: 1500 -> 1000）
+  this.el.setAttribute('animation', 'property: position; to: 0 0.5 0; dir: alternate; dur: 1000; loop: true; easing: easeInOutSine');
+} else if (clip === 'Happy') {
+  // 1秒間で3回転（1080度）する超高速スピン（360 -> 1080）
+  this.el.setAttribute('animation', 'property: rotation; to: 0 1080 0; dur: 1000; loop: true; easing: linear');
+} else if (clip === 'Jump') {
+  // 画面から飛び出しかねない大ジャンプを高速で（Y: 0.8 -> 2.5, dur: 250 -> 200）
+  this.el.setAttribute('animation', 'property: position; to: 0 2.5 0; dir: alternate; dur: 200; loop: true; easing: easeOutQuad');
+} else if (clip === 'Fly') {
+  // はるか上空までフワァーっと飛んでいく（Y: 1.2 -> 4.0, dur: 800 -> 1000）
+  this.el.setAttribute('animation', 'property: position; to: 0 4.0 0; dir: alternate; dur: 1000; loop: true; easing: easeInOutSine');
+} else if (clip === 'Sleep') {
+  // 潰れるくらい大きく呼吸する（scale: 1.05 0.95 1.05 -> 1.4 0.6 1.4）
+  this.el.setAttribute('animation', 'property: scale; to: 1.4 0.6 1.4; dir: alternate; dur: 1500; loop: true; easing: easeInOutSine');
+} else if (clip === 'Sad') {
+  // 地面におでこがつくくらい深くうなだれる（角度: 25 -> 70）
+  this.el.setAttribute('animation', 'property: rotation; to: 70 0 0; dir: alternate; dur: 1000; loop: true; easing: easeInOutSine');
+} else if (clip === 'Angry') {
+  // 震えの幅を大きくし、さらに超高速で激しくブルブルさせる（X: 0.1 -> 0.4, dur: 80 -> 30）
+  this.el.setAttribute('animation', 'property: position; to: 0.4 0 0; dir: alternate; dur: 30; loop: true; easing: linear');
+}
           }
         }
       });
