@@ -3860,7 +3860,7 @@ function HomeAR() {
                   scale={hatchAnimating ? `${debugScaleX * 0.2} ${debugScaleY * 0.2} ${debugScaleZ * 0.2}` : `${debugScaleX} ${debugScaleY} ${debugScaleZ}`}
                   src='#pet-asset'
                   shadow='cast: true; receive: true'
-                  animation-mixer={isEgg || !debugAnimEnabled ? '' : `clip: ${actionAnim || currentMood.clip}; loop: ${actionAnim ? 'once' : 'repeat'}; crossFadeDuration: 0.3`}
+                  animation-mixer={(!isEgg && debugAnimEnabled) ? `clip: ${actionAnim || currentMood.clip}; loop: ${actionAnim ? 'once' : 'repeat'}; crossFadeDuration: 0.3` : undefined}
                   animation={hatchAnimating ? `property: scale; to: ${debugScaleX} ${debugScaleY} ${debugScaleZ}; dur: 800; easing: easeOutElastic` : undefined}
                 ></a-gltf-model>
               </a-entity>
@@ -3881,7 +3881,7 @@ function HomeAR() {
                   scale={hatchAnimating ? `${debugScaleX * 0.2} ${debugScaleY * 0.2} ${debugScaleZ * 0.2}` : `${debugScaleX} ${debugScaleY} ${debugScaleZ}`}
                   src='#pet-asset'
                   shadow='cast: true; receive: true'
-                  animation-mixer={isEgg || !debugAnimEnabled ? '' : `clip: ${actionAnim || currentMood.clip}; loop: ${actionAnim ? 'once' : 'repeat'}; crossFadeDuration: 0.3`}
+                  animation-mixer={(!isEgg && debugAnimEnabled) ? `clip: ${actionAnim || currentMood.clip}; loop: ${actionAnim ? 'once' : 'repeat'}; crossFadeDuration: 0.3` : undefined}
                   animation={hatchAnimating ? `property: scale; to: ${debugScaleX} ${debugScaleY} ${debugScaleZ}; dur: 800; easing: easeOutElastic` : undefined}
                 ></a-gltf-model>
               </a-entity>
@@ -3902,7 +3902,7 @@ function HomeAR() {
                   scale={hatchAnimating ? `${debugScaleX * 0.2} ${debugScaleY * 0.2} ${debugScaleZ * 0.2}` : `${debugScaleX} ${debugScaleY} ${debugScaleZ}`}
                   src='#pet-asset'
                   shadow='cast: true; receive: true'
-                  animation-mixer={isEgg || !debugAnimEnabled ? '' : `clip: ${actionAnim || currentMood.clip}; loop: ${actionAnim ? 'once' : 'repeat'}; crossFadeDuration: 0.3`}
+                  animation-mixer={(!isEgg && debugAnimEnabled) ? `clip: ${actionAnim || currentMood.clip}; loop: ${actionAnim ? 'once' : 'repeat'}; crossFadeDuration: 0.3` : undefined}
                   animation={hatchAnimating ? `property: scale; to: ${debugScaleX} ${debugScaleY} ${debugScaleZ}; dur: 800; easing: easeOutElastic` : undefined}
                 ></a-gltf-model>
               </a-entity>
@@ -3923,7 +3923,7 @@ function HomeAR() {
                   scale={hatchAnimating ? `${debugScaleX * 0.2} ${debugScaleY * 0.2} ${debugScaleZ * 0.2}` : `${debugScaleX} ${debugScaleY} ${debugScaleZ}`}
                   src='#pet-asset'
                   shadow='cast: true; receive: true'
-                  animation-mixer={isEgg || !debugAnimEnabled ? '' : `clip: ${actionAnim || currentMood.clip}; loop: ${actionAnim ? 'once' : 'repeat'}; crossFadeDuration: 0.3`}
+                  animation-mixer={(!isEgg && debugAnimEnabled) ? `clip: ${actionAnim || currentMood.clip}; loop: ${actionAnim ? 'once' : 'repeat'}; crossFadeDuration: 0.3` : undefined}
                   animation={hatchAnimating ? `property: scale; to: ${debugScaleX} ${debugScaleY} ${debugScaleZ}; dur: 800; easing: easeOutElastic` : undefined}
                 ></a-gltf-model>
               </a-entity>
