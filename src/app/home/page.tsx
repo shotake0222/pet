@@ -1520,41 +1520,6 @@ function HomeAR() {
   }, [viewMode, petId, supabase, isEgg, isSleeping, petCondition, isDataLoaded]);
 
   useEffect(() => {
-    if (viewMode !== 'mindar') return;
-    const viewport = arViewportRef.current;
-    if (!viewport) return;
-    const attached = new Map<Element, { onFound: EventListener; onLost: EventListener }>();
-    const bindIfNeeded = (el: Element) => {
-      if (attached.has(el)) return;
-      const match = /^marker-target-(\d+)$/.exec(el.id || '');
-      if (!match) return;
-      const idx = Number(match[1]);
-      const onFound = () => setDetectedTargetIndex(idx);
-      const onLost = () => setDetectedTargetIndex(prev => (prev === idx ? null : prev));
-      el.addEventListener('targetFound', onFound);
-      el.addEventListener('targetLost', onLost);
-      attached.set(el, { onFound, onLost });
-    };
-    const scanAndBind = () => {
-      Array.from({ length: MARKER_COUNT }).forEach((_, i) => {
-        const el = viewport.querySelector(`#marker-target-${i}`);
-        if (el) bindIfNeeded(el);
-      });
-    };
-    scanAndBind();
-    const observer = new MutationObserver(scanAndBind);
-    observer.observe(viewport, { childList: true, subtree: true });
-    return () => {
-      observer.disconnect();
-      attached.forEach(({ onFound, onLost }, el) => {
-        el.removeEventListener('targetFound', onFound);
-        el.removeEventListener('targetLost', onLost);
-      });
-      attached.clear();
-    };
-  }, [viewMode, sceneKey]);
-
-  useEffect(() => {
     if (!aframeLoaded || typeof window === 'undefined') return;
     const AFRAME = (window as any).AFRAME;
     if (AFRAME && !AFRAME.components['pet-interact']) {
@@ -1566,7 +1531,47 @@ function HomeAR() {
         }
       });
     }
+    if (AFRAME && !AFRAME.components['mindar-event-listener']) {
+      AFRAME.registerComponent('mindar-event-listener', {
+        init: function () {
+          this.el.addEventListener('targetFound', () => {
+            window.dispatchEvent(new CustomEvent('mindar-target-found', { detail: { id: this.el.id } }));
+          });
+          this.el.addEventListener('targetLost', () => {
+            window.dispatchEvent(new CustomEvent('mindar-target-lost', { detail: { id: this.el.id } }));
+          });
+        }
+      });
+    }
   }, [aframeLoaded]);
+
+  useEffect(() => {
+    if (viewMode !== 'mindar') return;
+
+    const onFound = (e: Event) => {
+      const customEvent = e as CustomEvent;
+      const id = customEvent.detail?.id || '';
+      const match = /^marker-target-(\d+)$/.exec(id);
+      if (match) setDetectedTargetIndex(Number(match[1]));
+    };
+
+    const onLost = (e: Event) => {
+      const customEvent = e as CustomEvent;
+      const id = customEvent.detail?.id || '';
+      const match = /^marker-target-(\d+)$/.exec(id);
+      if (match) {
+        const idx = Number(match[1]);
+        setDetectedTargetIndex(prev => (prev === idx ? null : prev));
+      }
+    };
+
+    window.addEventListener('mindar-target-found', onFound);
+    window.addEventListener('mindar-target-lost', onLost);
+    return () => {
+      window.removeEventListener('mindar-target-found', onFound);
+      window.removeEventListener('mindar-target-lost', onLost);
+    };
+  }, [viewMode]);
 
   useEffect(() => {
     if (viewMode !== 'mindar' || !(aframeLoaded && extrasLoaded && mindarLoaded) || isSwitchingMode) return;
@@ -3839,7 +3844,7 @@ function HomeAR() {
 
               <a-camera position='0 0 0' look-controls='enabled: false' cursor='rayOrigin: mouse; fuse: false;' raycaster='objects: .clickable'></a-camera>
 
-              <a-entity mindar-image-target='targetIndex: 0' id='marker-target-0'>
+              <a-entity mindar-image-target='targetIndex: 0' id='marker-target-0' mindar-event-listener="">
                 <a-entity
                   id='pet-hitbox-0'
                   class={(!isEgg && !isSleeping) ? 'clickable' : ''}
@@ -3860,7 +3865,7 @@ function HomeAR() {
                 ></a-gltf-model>
               </a-entity>
 
-              <a-entity mindar-image-target='targetIndex: 1' id='marker-target-1'>
+              <a-entity mindar-image-target='targetIndex: 1' id='marker-target-1' mindar-event-listener="">
                 <a-entity
                   id='pet-hitbox-1'
                   class={(!isEgg && !isSleeping) ? 'clickable' : ''}
@@ -3881,7 +3886,7 @@ function HomeAR() {
                 ></a-gltf-model>
               </a-entity>
 
-              <a-entity mindar-image-target='targetIndex: 2' id='marker-target-2'>
+              <a-entity mindar-image-target='targetIndex: 2' id='marker-target-2' mindar-event-listener="">
                 <a-entity
                   id='pet-hitbox-2'
                   class={(!isEgg && !isSleeping) ? 'clickable' : ''}
@@ -3902,7 +3907,7 @@ function HomeAR() {
                 ></a-gltf-model>
               </a-entity>
 
-              <a-entity mindar-image-target='targetIndex: 3' id='marker-target-3'>
+              <a-entity mindar-image-target='targetIndex: 3' id='marker-target-3' mindar-event-listener="">
                 <a-entity
                   id='pet-hitbox-3'
                   class={(!isEgg && !isSleeping) ? 'clickable' : ''}
