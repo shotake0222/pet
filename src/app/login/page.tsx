@@ -11,6 +11,7 @@ export default function Login() {
   const [isResending, setIsResending] = useState(false);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
+  const [mode, setMode] = useState<'login' | 'signup'>('login'); //
   const isSignupMode = mode === 'signup';
   const router = useRouter();
   const supabase = createClient();
