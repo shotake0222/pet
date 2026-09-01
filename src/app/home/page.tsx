@@ -446,10 +446,8 @@ function HomeAR() {
 
   const lastEncounterTime = useRef(0);
 
-  const targetDistanceToHatch = 1200;
-  const targetFeedCount = 3;
-  const targetLandmarkVisits = 2;
-  const targetEventCount = 1;
+  const targetDistanceToHatch = 7500;
+  const targetFeedCount = 10;
 
   const stepCount = Math.floor(walkDistance / 0.75);
 
@@ -518,7 +516,7 @@ function HomeAR() {
         el.style.margin = '0';
       });
       const canvases = viewport.querySelectorAll('canvas');
-      canvases.forEach(canvas => {
+      canases.forEach(canvas => {
         const el = canvas as HTMLCanvasElement;
         el.style.position = 'absolute';
         el.style.inset = '0';
@@ -1174,21 +1172,17 @@ function HomeAR() {
   const displayName = customName || petMasterName || '名無し';
 
   const getLevelRequirement = (levelNumber: number) => ({
-    distance: targetDistanceToHatch * levelNumber * 2,
-    feed: targetFeedCount * levelNumber * 2,
-    landmark: targetLandmarkVisits * levelNumber,
-    event: targetEventCount * levelNumber,
+    distance: targetDistanceToHatch * levelNumber,
+    feed: targetFeedCount * levelNumber,
   });
 
   const hatchProgress = {
     distance: Math.min(1, walkDistance / targetDistanceToHatch),
     feed: Math.min(1, feedCount / targetFeedCount),
-    landmark: Math.min(1, landmarkVisitCount / targetLandmarkVisits),
-    event: Math.min(1, eventCount / targetEventCount),
   };
-  const isHatchReady = !isEggUnregistered && isEgg && petId && hatchProgress.distance >= 1 && hatchProgress.feed >= 1 && hatchProgress.landmark >= 1 && hatchProgress.event >= 1;
+  const isHatchReady = !isEggUnregistered && isEgg && petId && hatchProgress.distance >= 1 && hatchProgress.feed >= 1;
   const nextLevelRequirements = getLevelRequirement(level);
-  const isNextLevelReady = !isEgg && petId && walkDistance >= nextLevelRequirements.distance && feedCount >= nextLevelRequirements.feed && landmarkVisitCount >= nextLevelRequirements.landmark && eventCount >= nextLevelRequirements.event;
+  const isNextLevelReady = !isEgg && petId && walkDistance >= nextLevelRequirements.distance && feedCount >= nextLevelRequirements.feed;
   const expNeededForNextLevel = level * 500; 
 
   const resetPetToEgg = async (reason: string) => {
@@ -1386,14 +1380,14 @@ function HomeAR() {
     const expNeeded = newLevel * 500;
     const nextRequirements = getLevelRequirement(newLevel);
     if (newExp >= expNeeded) {
-      if (walkDistance >= nextRequirements.distance && feedCount >= nextRequirements.feed && landmarkVisitCount >= nextRequirements.landmark && eventCount >= nextRequirements.event) {
+      if (walkDistance >= nextRequirements.distance && feedCount >= nextRequirements.feed) {
         newExp -= expNeeded;
         newLevel += 1;
         leveledUp = true;
       } else {
         setExp(newExp);
         await supabase.from('pets').update({ exp: newExp }).eq('id', petId);
-        return alert(`🌱 もうすぐレベルアップ！ でもまだ条件が揃っていません。\n必要: 歩行 ${nextRequirements.distance}m / 給餌 ${nextRequirements.feed}回 / ランドマーク ${nextRequirements.landmark}回 / イベント ${nextRequirements.event}回`);
+        return alert(`🌱 もうすぐレベルアップ！ でもまだ条件が揃っていません。\n必要: 歩行 ${nextRequirements.distance}m / 給餌 ${nextRequirements.feed}回`);
       }
     }
     setExp(newExp);
@@ -1648,7 +1642,7 @@ function HomeAR() {
       setSceneKey(prev => prev + 1);
 
       playSound('item');
-      alert(`不思議な卵を発見した！\nさんぽ、給餌、ランドマーク、イベントの全てをこなして孵化させよう！`);
+      alert(`不思議な卵を発見した！\nさんぽ、給餌の条件をこなして孵化させよう！`);
       setNamingInput('');
       setShowNamingScreen(true);
     } catch (err: any) {
@@ -1660,7 +1654,7 @@ function HomeAR() {
   const handleHatchEgg = async (force = false, forceMasterId?: string) => {
     if (!petId) return;
     if (!isHatchReady && !force) {
-      return alert('まだ孵化条件が揃っていません。歩数・給餌・ランドマーク・イベントを全て満たしてから試してください。');
+      return alert('まだ孵化条件が揃っていません。歩数・給餌の条件を全て満たしてから試してください。');
     }
     try {
       const { data: petMasters } = await supabase.from('pet_masters').select('*');
@@ -2187,8 +2181,6 @@ function HomeAR() {
     if (!petId) return;
     setWalkDistance(targetDistanceToHatch);
     setFeedCount(targetFeedCount);
-    setLandmarkVisitCount(targetLandmarkVisits);
-    setEventCount(targetEventCount);
     await supabase.from('pets').update({ walk_distance_m: targetDistanceToHatch }).eq('id', petId);
     alert('孵化条件をMAXにしました');
   };
@@ -2393,14 +2385,27 @@ function HomeAR() {
               <button onClick={() => { const newDist = walkDistance + 1000; setWalkDistance(newDist); supabase.from('pets').update({ walk_distance_m: newDist }).eq('id', petId); }} className='w-full bg-green-500 text-white font-bold py-2 rounded-lg shadow text-sm'>
                 歩行距離 +1000m
               </button>
-              <button onClick={() => {
-                const debugItems = [
-                  { id: 'full1', name: '🍖 ご飯', item_type: 'food', image_url: null },
-                  { id: 'full2', name: '🏥 薬', item_type: 'medicine', image_url: null },
-                  { id: 'full3', name: '🛏️ ベッド', item_type: 'sleep', image_url: null },
-                  { id: 'full4', name: '✨ 香水', item_type: 'exp', image_url: null },
-                ];
-                showItemReward(debugItems, 'フルセット取得', '📦');
+              <button onClick={async () => {
+                if (!sessionUserId) return;
+                try {
+                  const { data: items } = await supabase.from('item_masters').select('*');
+                  if (!items || items.length === 0) return alert('アイテムマスターがありません');
+                  
+                  for (const item of items) {
+                    const { data: existing } = await supabase.from('user_inventory').select('id, quantity').eq('user_id', sessionUserId).eq('item_id', item.id).maybeSingle();
+                    if (existing) {
+                      await supabase.from('user_inventory').update({ quantity: existing.quantity + 99 }).eq('id', existing.id);
+                    } else {
+                      await supabase.from('user_inventory').insert({ user_id: sessionUserId, item_id: item.id, quantity: 99 });
+                    }
+                  }
+                  const { data: inv } = await supabase.from('user_inventory').select('id, quantity, item_masters:item_id(*)').eq('user_id', sessionUserId).gt('quantity', 0);
+                  if (inv) setInventory(inv);
+                  alert('📦 すべてのアイテムを99個ずつ追加しました！');
+                } catch(e) {
+                  console.error(e);
+                  alert('アイテム追加エラー');
+                }
               }} className='w-full bg-purple-600 text-white font-bold py-2 rounded-lg shadow text-sm'>
                 📦 持ち物満タンテスト
               </button>
@@ -2898,7 +2903,7 @@ function HomeAR() {
               <div className='bg-yellow-50 p-3 rounded-xl border border-yellow-100'>
                 <h3 className='font-bold text-yellow-700 mb-1'>🌟 経験値を貯めて進化！</h3>
                 <p className='text-gray-700 leading-relaxed'>
-                  歩数・給餌・スポット訪問・タップの全ての条件を満たすとレベルアップ！<br/>レベルが上がると姿が変わるかも…？<br/>最大レベル99を目指しましょう！
+                  歩数・給餌の全ての条件を満たすとレベルアップ！<br/>レベルが上がると姿が変わるかも…？<br/>最大レベル99を目指しましょう！
                 </p>
               </div>
             </div>
@@ -3236,20 +3241,6 @@ function HomeAR() {
                   <div className='w-full h-3 bg-gray-800 rounded-full overflow-hidden'>
                     <div className='h-full bg-orange-400' style={{ width: `${Math.min(100, hatchProgress.feed * 100)}%` }}></div>
                   </div>
-                  <div className='flex justify-between'>
-                    <span>📍 ランドマーク {landmarkVisitCount} / {targetLandmarkVisits}回</span>
-                    <span>{Math.floor(hatchProgress.landmark * 100)}%</span>
-                  </div>
-                  <div className='w-full h-3 bg-gray-800 rounded-full overflow-hidden'>
-                    <div className='h-full bg-cyan-400' style={{ width: `${Math.min(100, hatchProgress.landmark * 100)}%` }}></div>
-                  </div>
-                  <div className='flex justify-between'>
-                    <span>✨ イベント {eventCount} / {targetEventCount}回</span>
-                    <span>{Math.floor(hatchProgress.event * 100)}%</span>
-                  </div>
-                  <div className='w-full h-3 bg-gray-800 rounded-full overflow-hidden'>
-                    <div className='h-full bg-pink-400' style={{ width: `${Math.min(100, hatchProgress.event * 100)}%` }}></div>
-                  </div>
                 </div>
               </div>
             )}
@@ -3341,20 +3332,6 @@ function HomeAR() {
                   </div>
                   <div className='w-full h-2 bg-gray-800 rounded-full overflow-hidden'>
                     <div className='h-full bg-orange-400' style={{ width: `${Math.min(100, (feedCount / nextLevelRequirements.feed) * 100)}%` }}></div>
-                  </div>
-                  <div className='flex justify-between'>
-                    <span>📍 ランドマーク {landmarkVisitCount} / {nextLevelRequirements.landmark}回</span>
-                    <span>{Math.floor(Math.min(100, (landmarkVisitCount / nextLevelRequirements.landmark) * 100))}%</span>
-                  </div>
-                  <div className='w-full h-2 bg-gray-800 rounded-full overflow-hidden'>
-                    <div className='h-full bg-cyan-400' style={{ width: `${Math.min(100, (landmarkVisitCount / nextLevelRequirements.landmark) * 100)}%` }}></div>
-                  </div>
-                  <div className='flex justify-between'>
-                    <span>✨ イベント {eventCount} / {nextLevelRequirements.event}回</span>
-                    <span>{Math.floor(Math.min(100, (eventCount / nextLevelRequirements.event) * 100))}%</span>
-                  </div>
-                  <div className='w-full h-2 bg-gray-800 rounded-full overflow-hidden'>
-                    <div className='h-full bg-pink-400' style={{ width: `${Math.min(100, (eventCount / nextLevelRequirements.event) * 100)}%` }}></div>
                   </div>
                 </div>
               </>
