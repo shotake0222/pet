@@ -4,6 +4,7 @@ import { useState, useEffect, useMemo, Suspense, useRef, useCallback, type FormE
 import Script from 'next/script';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { createClient } from '@/utils/supabase/client';
+import { isDebugMode } from '@/utils/debugMode';
 
 const ModelViewer = 'model-viewer' as any;
 
@@ -61,6 +62,7 @@ function HomeAR() {
   const [petRarity, setPetRarity] = useState('?');
 
   const [petAttributes, setPetAttributes] = useState<any[]>([]);
+  const [petAttributeWeaknesses, setPetAttributeWeaknesses] = useState<any[]>([]); // 🌟 タスク17対応：属性弱点情報
   const [petAffinities, setPetAffinities] = useState<any[]>([]);
 
   const [isEncyclopediaOpen, setIsEncyclopediaOpen] = useState(false);
@@ -388,6 +390,14 @@ function HomeAR() {
   const [hungerPercent, setHungerPercent] = useState(100);
   const [motivationPercent, setMotivationPercent] = useState(100);
   const [actionAnim, setActionAnim] = useState<string | null>(null);
+  
+  // 🌟 タスク12対応：アニメーション切り替え時にデバッグ情報を記録
+  const updateActionAnim = (animName: string | null) => {
+    if (isDebugMode()) {
+      console.log(`[Animation] Changing to: ${animName || '(none)'} at ${new Date().toLocaleTimeString()}`);
+    }
+    setActionAnim(animName);
+  };
   const [itemActionEffect, setItemActionEffect] = useState<ItemActionEffect | null>(null);
   const [itemActionProgress, setItemActionProgress] = useState(0);
   const [gameOverNotice, setGameOverNotice] = useState<string | null>(null);
@@ -408,6 +418,7 @@ function HomeAR() {
   const [landmarks, setLandmarks] = useState<any[]>([]);
   const [activeLandmark, setActiveLandmark] = useState<any | null>(null);
   const [isSpotMapOpen, setIsSpotMapOpen] = useState(false);
+  const [mapZoomLevel, setMapZoomLevel] = useState(3); // 🌟 タスク10対応：地図ズームレベル
   const [cameraFacing, setCameraFacing] = useState<'environment' | 'user'>('environment');
   const [sceneKey, setSceneKey] = useState(0);
   const arViewportRef = useRef<HTMLDivElement>(null);
@@ -1012,6 +1023,19 @@ function HomeAR() {
             setPetAttributes(attrs);
 
             const attrIds = attrs.map((a: any) => a.id);
+            
+            // 🌟 タスク17対応：属性弱点情報を取得
+            const { data: weaknesses } = await supabase
+              .from('attribute_weaknesses')
+              .select('*, weak_against:weak_against_id(id, name, description)')
+              .in('attribute_id', attrIds);
+            
+            if (weaknesses && weaknesses.length > 0) {
+              setPetAttributeWeaknesses(weaknesses);
+            } else {
+              setPetAttributeWeaknesses([]);
+            }
+            
             const { data: affinities } = await supabase
               .from('attribute_item_affinities')
               .select('*')
@@ -1021,10 +1045,12 @@ function HomeAR() {
             else setPetAffinities([]);
           } else {
             setPetAttributes([]);
+            setPetAttributeWeaknesses([]);
             setPetAffinities([]);
           }
         } else {
           setPetAttributes([]);
+          setPetAttributeWeaknesses([]);
           setPetAffinities([]);
         }
 
@@ -1133,9 +1159,14 @@ function HomeAR() {
     }
   };
 
-  const closeRainbowBridge = () => {
+  const closeRainbowBridge = async () => {
     setShowRainbowBridge(false);
-    window.location.reload();
+    // 🚀 虹の橋を渡った後、新しい卵を自動作成
+    if (sessionUserId) {
+      await handleCreateEgg();
+    } else {
+      window.location.reload();
+    }
   };
 
   const getCurrentModelUrl = () => {
@@ -1669,9 +1700,23 @@ function HomeAR() {
         const attrs = attrRels.map((rel: any) => rel.attributes).filter(Boolean);
         setPetAttributes(attrs);
         const attrIds = attrs.map((a: any) => a.id);
+        
+        // 🌟 タスク17対応：属性弱点情報を取得
+        const { data: weaknesses } = await supabase
+          .from('attribute_weaknesses')
+          .select('*, weak_against:weak_against_id(id, name, description)')
+          .in('attribute_id', attrIds);
+        
+        if (weaknesses && weaknesses.length > 0) {
+          setPetAttributeWeaknesses(weaknesses);
+        } else {
+          setPetAttributeWeaknesses([]);
+        }
+        
         const { data: affinities } = await supabase.from('attribute_item_affinities').select('*').in('attribute_id', attrIds);
         if (affinities) setPetAffinities(affinities);
       } else {
+        setPetAttributeWeaknesses([]);
         setPetAttributes([]);
         setPetAffinities([]);
       }
@@ -2348,8 +2393,24 @@ function HomeAR() {
               <button onClick={() => addExperience(1000)} className='w-full bg-blue-500 text-white font-bold py-2 rounded-lg shadow text-sm'>
                 経験値 +1000 (レベルアップ)
               </button>
+              {/* 🌟 タスク16対応：大幅なレベルアップ機能追加 */}
+              <button onClick={() => addExperience(50000)} className='w-full bg-blue-600 text-white font-bold py-2 rounded-lg shadow text-sm'>
+                経験値 +50000 (大幅レベルアップ)
+              </button>
               <button onClick={() => { const newDist = walkDistance + 1000; setWalkDistance(newDist); supabase.from('pets').update({ walk_distance_m: newDist }).eq('id', petId); }} className='w-full bg-green-500 text-white font-bold py-2 rounded-lg shadow text-sm'>
                 歩行距離 +1000m
+              </button>
+              {/* 🌟 タスク16対応：持ち物満タン機能追加 */}
+              <button onClick={() => {
+                const debugItems = [
+                  { id: 'full1', name: '🍖 ご飯', item_type: 'food', image_url: null },
+                  { id: 'full2', name: '🏥 薬', item_type: 'medicine', image_url: null },
+                  { id: 'full3', name: '🛏️ ベッド', item_type: 'sleep', image_url: null },
+                  { id: 'full4', name: '✨ 香水', item_type: 'exp', image_url: null },
+                ];
+                showItemReward(debugItems, 'フルセット取得', '📦');
+              }} className='w-full bg-purple-600 text-white font-bold py-2 rounded-lg shadow text-sm'>
+                📦 持ち物満タンテスト
               </button>
               <button onClick={() => triggerRainbowBridge(petId!, generation)} className='w-full bg-black text-white font-bold py-2 rounded-lg shadow text-sm'>
                 🌈 寿命(殿堂入り)テスト
@@ -2957,17 +3018,44 @@ function HomeAR() {
               <p className='text-center text-gray-500 my-10'>GPS座標を取得中...</p>
             ) : (
               <div className='flex-1 overflow-y-auto pr-1'>
+                {/* 🌟 タスク10対応：地図ズームコントロール */}
+                <div className='flex gap-2 mb-3 justify-center'>
+                  <button
+                    onClick={() => setMapZoomLevel(Math.max(1, mapZoomLevel - 1))}
+                    className='bg-blue-500 text-white font-bold px-4 py-2 rounded-lg hover:bg-blue-600 active:scale-95 transition-transform text-sm'
+                  >
+                    🔍− ズームアウト
+                  </button>
+                  <span className='text-sm font-bold text-gray-600 px-3 py-2 bg-gray-100 rounded-lg'>
+                    レベル: {mapZoomLevel}
+                  </span>
+                  <button
+                    onClick={() => setMapZoomLevel(Math.min(5, mapZoomLevel + 1))}
+                    className='bg-blue-500 text-white font-bold px-4 py-2 rounded-lg hover:bg-blue-600 active:scale-95 transition-transform text-sm'
+                  >
+                    🔍+ ズームイン
+                  </button>
+                </div>
                 <div className='relative w-full aspect-square bg-gray-100 rounded-2xl overflow-hidden mb-4 shadow-inner border border-gray-300'>
-                  <iframe
-                    width='100%'
-                    height='100%'
-                    frameBorder='0'
-                    scrolling='no'
-                    marginHeight={0}
-                    marginWidth={0}
-                    src={`https://www.openstreetmap.org/export/embed.html?bbox=${location.lng - 0.005}%2C${location.lat - 0.005}%2C${location.lng + 0.005}%2C${location.lat + 0.005}&layer=mapnik`}
-                    className='absolute inset-0 z-0 pointer-events-none'
-                  ></iframe>
+                  {(() => {
+                    // 🌟 タスク10対応：ズームレベルに応じたbbox計算
+                    const zoomFactors: Record<number, number> = { 1: 0.01, 2: 0.007, 3: 0.005, 4: 0.003, 5: 0.001 };
+                    const factor = zoomFactors[mapZoomLevel] || 0.005;
+                    const bbox = `${location.lng - factor}%2C${location.lat - factor}%2C${location.lng + factor}%2C${location.lat + factor}`;
+                    return (
+                      <iframe
+                        key={`map-${mapZoomLevel}`}
+                        width='100%'
+                        height='100%'
+                        frameBorder='0'
+                        scrolling='no'
+                        marginHeight={0}
+                        marginWidth={0}
+                        src={`https://www.openstreetmap.org/export/embed.html?bbox=${bbox}&layer=mapnik`}
+                        className='absolute inset-0 z-0 pointer-events-none'
+                      ></iframe>
+                    );
+                  })()}
                   <div className='absolute inset-0 z-10 flex items-center justify-center pointer-events-none'>
                     <div className='w-5 h-5 bg-red-500 rounded-full border-2 border-white shadow-md animate-pulse'></div>
                   </div>
@@ -2976,10 +3064,13 @@ function HomeAR() {
                       const master = spot.landmark_masters;
                       const facilityType = master?.facility_type && master.facility_type !== 'normal' ? master.facility_type : getFacilityType(spot.name);
                       const typeIcon = facilityType === 'hospital' ? '🏥' : facilityType === 'restaurant' ? '🍽️' : facilityType === 'hotel' ? '🏨' : '📍';
-                      const topPercent = 50 - ((spot.latitude - location.lat) / 0.01) * 100;
-                      const leftPercent = 50 + ((spot.longitude - location.lng) / 0.01) * 100;
+                      const zoomFactors: Record<number, number> = { 1: 0.01, 2: 0.007, 3: 0.005, 4: 0.003, 5: 0.001 };
+                      const factor = zoomFactors[mapZoomLevel] || 0.005;
+                      const topPercent = 50 - ((spot.latitude - location.lat) / (factor * 2)) * 100;
+                      const leftPercent = 50 + ((spot.longitude - location.lng) / (factor * 2)) * 100;
                       return (
-                        <div key={`radar-${spot.id}`} className='absolute w-8 h-8 -ml-4 -mt-4 text-xl flex items-center justify-center filter drop-shadow bg-white/90 rounded-full border border-gray-300 shadow-sm' style={{ top: `${topPercent}%`, left: `${leftPercent}%` }} title={spot.name}>
+                        // 🌟 タスク11対応：スポットアイコンサイズを拡大 (w-8 h-8 → w-12 h-12)
+                        <div key={`radar-${spot.id}`} className='absolute w-12 h-12 -ml-6 -mt-6 text-2xl flex items-center justify-center filter drop-shadow bg-white/90 rounded-full border-2 border-gray-300 shadow-md' style={{ top: `${topPercent}%`, left: `${leftPercent}%` }} title={spot.name}>
                           {typeIcon}
                         </div>
                       );
@@ -3090,13 +3181,33 @@ function HomeAR() {
                 <p className='text-gray-500 text-center py-4 text-sm'>現在お知らせはありません</p>
               ) : (
                 <div className='space-y-3'>
-                  {newsList.map(news => (
-                    <div key={news.id} className='bg-blue-50 border border-blue-100 rounded-xl p-3 text-black'>
-                      <h4 className='font-bold text-blue-900 text-sm mb-1'>{news.title}</h4>
-                      <p className='text-xs text-gray-700 whitespace-pre-wrap'>{news.content}</p>
-                      <div className='text-[10px] text-gray-500 mt-2 text-right'>{new Date(news.published_at).toLocaleDateString()}</div>
-                    </div>
-                  ))}
+                  {newsList.map(news => {
+                    // 🌟 タスク15対応：URLを検出して外部リンク処理
+                    const urlRegex = /(https?:\/\/[^\s]+)/g;
+                    const urls = news.content.match(urlRegex) || [];
+                    const contentWithoutUrl = news.content.replace(urlRegex, '').trim();
+                    
+                    return (
+                      <div key={news.id} className='bg-blue-50 border border-blue-100 rounded-xl p-3 text-black'>
+                        <h4 className='font-bold text-blue-900 text-sm mb-1'>{news.title}</h4>
+                        <p className='text-xs text-gray-700 whitespace-pre-wrap'>{contentWithoutUrl || news.content}</p>
+                        {urls.length > 0 && (
+                          <div className='mt-2 space-y-1'>
+                            {urls.map((url, idx) => (
+                              <button
+                                key={idx}
+                                onClick={() => window.open(url, '_blank')}
+                                className='block text-xs font-bold text-blue-600 hover:text-blue-800 hover:underline bg-blue-100 px-2 py-1 rounded transition-colors w-full text-left'
+                              >
+                                📎 {url.substring(0, 50)}...
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                        <div className='text-[10px] text-gray-500 mt-2 text-right'>{new Date(news.published_at).toLocaleDateString()}</div>
+                      </div>
+                    );
+                  })}
                 </div>
               )}
             </div>
@@ -3174,6 +3285,23 @@ function HomeAR() {
                         </span>
                       ))}
                     </div>
+                    
+                    {/* 🌟 タスク17対応：弱点属性の詳細表示 */}
+                    {petAttributeWeaknesses.length > 0 && (
+                      <div className='mt-2 text-xs font-bold text-red-400 mb-1.5'>⚠️ 弱点属性 (被ダメージUP)</div>
+                    )}
+                    {petAttributeWeaknesses.length > 0 && (
+                      <div className='flex flex-wrap gap-2'>
+                        {petAttributeWeaknesses.map((weakness: any) => (
+                          <div key={`weakness-${weakness.id}`} className='flex items-center gap-1'>
+                            <span className='bg-red-900 border border-red-600 px-2 py-1 rounded text-xs font-bold text-red-200 shadow-sm'>
+                              {weakness.weak_against?.name || '?'}
+                            </span>
+                            <span className='text-xs text-gray-500'>← 弱点</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 )}
 
@@ -3279,6 +3407,12 @@ function HomeAR() {
               <span className='text-white font-bold text-3xl drop-shadow-lg bg-black/30 px-3 py-1 rounded-xl backdrop-blur-sm'>{isEggUnregistered ? '' : displayName}</span>
             )}
             <span className={`${currentMood.color} text-white px-4 py-2 rounded-xl font-bold shadow-xl text-md transition-colors duration-300 border border-white/20 pointer-events-auto`}>{currentMood.text}</span>
+            {/* 🌟 タスク12対応：デバッグモード時にアニメーション情報を表示 */}
+            {isDebugMode() && !isEgg && (
+              <span className='text-white font-bold text-xs drop-shadow-lg bg-black/50 px-2 py-1 rounded border border-yellow-400 backdrop-blur-sm'>
+                🎬 Anim: {actionAnim || currentMood.clip}
+              </span>
+            )}
           </div>
         </div>
       )}
@@ -3751,8 +3885,8 @@ function HomeAR() {
                   scale={hatchAnimating ? `${debugScaleX * 0.2} ${debugScaleY * 0.2} ${debugScaleZ * 0.2}` : `${debugScaleX} ${debugScaleY} ${debugScaleZ}`}
                   src='#pet-asset'
                   shadow='cast: true; receive: true'
-                  animation-mixer={isEgg || !debugAnimEnabled ? '' : `clip: ${actionAnim || currentMood.clip}; loop: ${actionAnim ? 'once' : 'repeat'}; crossFadeDuration: 0.3;`}
-                  animation={hatchAnimating ? `property: scale; to: ${debugScaleX} ${debugScaleY} ${debugScaleZ}; dur: 800; easing: easeOutElastic;` : undefined}
+                  animation-mixer={isEgg || !debugAnimEnabled ? '' : `clip: ${actionAnim || currentMood.clip}; loop: ${actionAnim ? 'once' : 'repeat'}; crossFadeDuration: 0.3`}
+                  animation={hatchAnimating ? `property: scale; to: ${debugScaleX} ${debugScaleY} ${debugScaleZ}; dur: 800; easing: easeOutElastic` : undefined}
                 ></a-gltf-model>
               </a-entity>
               
@@ -3772,8 +3906,8 @@ function HomeAR() {
                   scale={hatchAnimating ? `${debugScaleX * 0.2} ${debugScaleY * 0.2} ${debugScaleZ * 0.2}` : `${debugScaleX} ${debugScaleY} ${debugScaleZ}`}
                   src='#pet-asset'
                   shadow='cast: true; receive: true'
-                  animation-mixer={isEgg || !debugAnimEnabled ? '' : `clip: ${actionAnim || currentMood.clip}; loop: ${actionAnim ? 'once' : 'repeat'}; crossFadeDuration: 0.3;`}
-                  animation={hatchAnimating ? `property: scale; to: ${debugScaleX} ${debugScaleY} ${debugScaleZ}; dur: 800; easing: easeOutElastic;` : undefined}
+                  animation-mixer={isEgg || !debugAnimEnabled ? '' : `clip: ${actionAnim || currentMood.clip}; loop: ${actionAnim ? 'once' : 'repeat'}; crossFadeDuration: 0.3`}
+                  animation={hatchAnimating ? `property: scale; to: ${debugScaleX} ${debugScaleY} ${debugScaleZ}; dur: 800; easing: easeOutElastic` : undefined}
                 ></a-gltf-model>
               </a-entity>
 
@@ -3793,8 +3927,8 @@ function HomeAR() {
                   scale={hatchAnimating ? `${debugScaleX * 0.2} ${debugScaleY * 0.2} ${debugScaleZ * 0.2}` : `${debugScaleX} ${debugScaleY} ${debugScaleZ}`}
                   src='#pet-asset'
                   shadow='cast: true; receive: true'
-                  animation-mixer={isEgg || !debugAnimEnabled ? '' : `clip: ${actionAnim || currentMood.clip}; loop: ${actionAnim ? 'once' : 'repeat'}; crossFadeDuration: 0.3;`}
-                  animation={hatchAnimating ? `property: scale; to: ${debugScaleX} ${debugScaleY} ${debugScaleZ}; dur: 800; easing: easeOutElastic;` : undefined}
+                  animation-mixer={isEgg || !debugAnimEnabled ? '' : `clip: ${actionAnim || currentMood.clip}; loop: ${actionAnim ? 'once' : 'repeat'}; crossFadeDuration: 0.3`}
+                  animation={hatchAnimating ? `property: scale; to: ${debugScaleX} ${debugScaleY} ${debugScaleZ}; dur: 800; easing: easeOutElastic` : undefined}
                 ></a-gltf-model>
               </a-entity>
 
@@ -3814,8 +3948,8 @@ function HomeAR() {
                   scale={hatchAnimating ? `${debugScaleX * 0.2} ${debugScaleY * 0.2} ${debugScaleZ * 0.2}` : `${debugScaleX} ${debugScaleY} ${debugScaleZ}`}
                   src='#pet-asset'
                   shadow='cast: true; receive: true'
-                  animation-mixer={isEgg || !debugAnimEnabled ? '' : `clip: ${actionAnim || currentMood.clip}; loop: ${actionAnim ? 'once' : 'repeat'}; crossFadeDuration: 0.3;`}
-                  animation={hatchAnimating ? `property: scale; to: ${debugScaleX} ${debugScaleY} ${debugScaleZ}; dur: 800; easing: easeOutElastic;` : undefined}
+                  animation-mixer={isEgg || !debugAnimEnabled ? '' : `clip: ${actionAnim || currentMood.clip}; loop: ${actionAnim ? 'once' : 'repeat'}; crossFadeDuration: 0.3`}
+                  animation={hatchAnimating ? `property: scale; to: ${debugScaleX} ${debugScaleY} ${debugScaleZ}; dur: 800; easing: easeOutElastic` : undefined}
                 ></a-gltf-model>
               </a-entity>
             </a-scene>

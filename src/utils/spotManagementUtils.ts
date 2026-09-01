@@ -79,7 +79,8 @@ export const isSpotActive = (spot: any): boolean => {
 };
 
 /**
- * スポットを作成
+ * スポット（ランドマーク）を作成
+ * 🔧 landmarks テーブルに統一
  */
 export const createSpot = async (spotData: {
   name: string;
@@ -93,23 +94,33 @@ export const createSpot = async (spotData: {
 }) => {
   const supabase = createClient();
 
-  const { data, error } = await supabase
-    .from('spots')
-    .insert({
-      ...spotData,
-      start_date: spotData.start_date?.toISOString(),
-      end_date: spotData.end_date?.toISOString(),
-      status: 'active',
-    })
-    .select()
-    .single();
+  try {
+    const { data, error } = await supabase
+      .from('landmarks')
+      .insert({
+        name: spotData.name,
+        description: spotData.description,
+        latitude: spotData.latitude,
+        longitude: spotData.longitude,
+        radius_meters: spotData.radius_meters,
+        start_time: spotData.start_date?.toISOString() || null,
+        end_time: spotData.end_date?.toISOString() || null,
+        is_limited_time: spotData.is_limited_time || false,
+      })
+      .select()
+      .single();
 
-  if (error) throw error;
-  return data;
+    if (error) throw error;
+    return data;
+  } catch (err: any) {
+    console.error('❌ createSpot error:', err);
+    throw err;
+  }
 };
 
 /**
- * スポットを更新
+ * スポット（ランドマーク）を更新
+ * 🔧 landmarks テーブルに統一
  */
 export const updateSpot = async (
   spotId: bigint,
@@ -127,52 +138,74 @@ export const updateSpot = async (
 ) => {
   const supabase = createClient();
 
-  const payload: any = { ...updates };
-  if (updates.start_date !== undefined) {
-    payload.start_date = updates.start_date?.toISOString() || null;
-  }
-  if (updates.end_date !== undefined) {
-    payload.end_date = updates.end_date?.toISOString() || null;
-  }
+  try {
+    const payload: any = {};
+    if (updates.name !== undefined) payload.name = updates.name;
+    if (updates.description !== undefined) payload.description = updates.description;
+    if (updates.latitude !== undefined) payload.latitude = updates.latitude;
+    if (updates.longitude !== undefined) payload.longitude = updates.longitude;
+    if (updates.radius_meters !== undefined) payload.radius_meters = updates.radius_meters;
+    if (updates.start_date !== undefined) payload.start_time = updates.start_date?.toISOString() || null;
+    if (updates.end_date !== undefined) payload.end_time = updates.end_date?.toISOString() || null;
+    if (updates.is_limited_time !== undefined) payload.is_limited_time = updates.is_limited_time;
 
-  const { data, error } = await supabase
-    .from('spots')
-    .update(payload)
-    .eq('id', spotId)
-    .select()
-    .single();
+    const { data, error } = await supabase
+      .from('landmarks')
+      .update(payload)
+      .eq('id', spotId)
+      .select()
+      .single();
 
-  if (error) throw error;
-  return data;
+    if (error) throw error;
+    return data;
+  } catch (err: any) {
+    console.error('❌ updateSpot error:', err);
+    throw err;
+  }
 };
 
 /**
- * スポットを削除
+ * スポット（ランドマーク）を削除
+ * 🔧 landmarks テーブルに統一
  */
 export const deleteSpot = async (spotId: bigint) => {
   const supabase = createClient();
 
-  const { error } = await supabase
-    .from('spots')
-    .delete()
-    .eq('id', spotId);
+  try {
+    const { error } = await supabase
+      .from('landmarks')
+      .delete()
+      .eq('id', spotId);
 
-  if (error) throw error;
+    if (error) throw error;
+  } catch (err: any) {
+    console.error('❌ deleteSpot error:', err);
+    throw err;
+  }
 };
 
 /**
- * すべてのスポットを取得
+ * すべてのスポット（ランドマーク）を取得
+ * 🔧 spots テーブルではなく landmarks テーブルから取得（統一）
  */
 export const getAllSpots = async () => {
   const supabase = createClient();
 
-  const { data, error } = await supabase
-    .from('spots')
-    .select('*')
-    .order('start_date', { ascending: false });
+  try {
+    const { data, error } = await supabase
+      .from('landmarks')
+      .select('*')
+      .order('created_at', { ascending: false });
 
-  if (error) throw error;
-  return data || [];
+    if (error) {
+      console.error('❌ getAllSpots error:', error);
+      throw error;
+    }
+    return data || [];
+  } catch (err: any) {
+    console.error('❌ getAllSpots exception:', err);
+    throw err;
+  }
 };
 
 /**

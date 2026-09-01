@@ -7,7 +7,8 @@ import { createClient } from '@/utils/supabase/client';
 export default function Login() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [mode, setMode] = useState<'login' | 'signup'>('login');
+  const [resendEmail, setResendEmail] = useState('');
+  const [isResending, setIsResending] = useState(false);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
   const isSignupMode = mode === 'signup';
@@ -163,11 +164,15 @@ export default function Login() {
     setMessage({ text: 'Googleアカウント選択画面へ移動します…', type: 'success' });
 
     try {
+      // ✅ Googleログイン前にコールバックURLをログして確認
+      const callbackUrl = getAuthCallbackUrl();
+      console.log('🔍 Google OAuth Callback URL:', callbackUrl);
+
       const { data, error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
-          redirectTo: getAuthCallbackUrl(),
-          skipBrowserRedirect: true,
+          redirectTo: callbackUrl,
+          skipBrowserRedirect: false, // 🔧 ブラウザリダイレクトを有効に
           queryParams: {
             access_type: 'offline',
             prompt: 'select_account',
@@ -175,19 +180,56 @@ export default function Login() {
         },
       });
 
-      if (error) throw error;
+      if (error) {
+        console.error('❌ Google OAuth Error:', error);
+        throw error;
+      }
+
       if (data?.url) {
-        window.location.assign(data.url);
+        console.log('✅ Google OAuth URL received, redirecting...');
+        window.location.href = data.url;
         return;
       }
 
       throw new Error('Google認証の開始URLが取得できませんでした');
     } catch (error: any) {
+      console.error('❌ Google Login Error:', error);
       setMessage({
-        text: error?.message || 'Googleログインに失敗しました。Supabase の OAuth 設定に localhost / 本番URL が登録されているか確認してください。',
+        text: `Googleログインに失敗しました。\n${error?.message || ''}`,
         type: 'error',
       });
       setLoading(false);
+    }
+  };
+
+  // 🌟 確認メール再送関数
+  const handleResendConfirmationEmail = async () => {
+    if (!resendEmail) {
+      setMessage({ text: '新規登録時に使用したメールアドレスを入力してください', type: 'error' });
+      return;
+    }
+
+    setIsResending(true);
+    try {
+      const { error } = await supabase.auth.resend({
+        type: 'signup',
+        email: resendEmail,
+      });
+
+      if (error) throw error;
+
+      setMessage({
+        text: `${resendEmail} に確認メールを再送しました。メールボックスを確認してください。（スパムフォルダも確認してください）`,
+        type: 'success',
+      });
+      setResendEmail('');
+    } catch (error: any) {
+      setMessage({
+        text: `再送に失敗しました: ${error?.message || ''}`,
+        type: 'error',
+      });
+    } finally {
+      setIsResending(false);
     }
   };
 
@@ -211,6 +253,27 @@ export default function Login() {
             {message.text}
           </div>
         )}
+
+        {/* 🌟 確認メール再送フォーム */}
+        <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4">
+          <p className="text-xs font-bold text-amber-800 mb-3">📧 メール確認メールが届かない場合</p>
+          <div className="space-y-2">
+            <input
+              type="email"
+              value={resendEmail}
+              onChange={(e) => setResendEmail(e.target.value)}
+              placeholder="登録時のメールアドレス"
+              className="w-full border border-amber-300 p-2 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-amber-400"
+            />
+            <button
+              onClick={handleResendConfirmationEmail}
+              disabled={isResending || !resendEmail}
+              className="w-full text-xs font-bold bg-amber-500 text-white py-2 rounded-lg hover:bg-amber-600 disabled:bg-amber-300 transition-all"
+            >
+              {isResending ? '再送中...' : '確認メール再送'}
+            </button>
+          </div>
+        </div>
 
         <div className="space-y-6">
           <div className="rounded-2xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-800">

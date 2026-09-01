@@ -8,12 +8,31 @@ export async function GET(request: Request) {
 
   if (code) {
     const supabase = await createClient();
-    const { error } = await supabase.auth.exchangeCodeForSession(code);
+    const { error, data } = await supabase.auth.exchangeCodeForSession(code);
 
-    if (!error) {
+    if (!error && data?.user) {
+      // ✅ Googleログイン後のユーザープロファイル確保
+      const { data: existingProfile } = await supabase
+        .from('user_profiles')
+        .select('id')
+        .eq('id', data.user.id)
+        .maybeSingle();
+
+      if (!existingProfile) {
+        await supabase.from('user_profiles').insert({
+          id: data.user.id,
+          email_notify_feed: true,
+          email_notify_news: true,
+          last_login_date: new Date().toLocaleDateString('sv-SE'),
+          login_days: 1,
+          is_admin: false
+        });
+      }
+      
       return NextResponse.redirect(`${origin}${next}`);
     }
   }
 
+  // エラー時またはコード無しはログインページへ
   return NextResponse.redirect(`${origin}/login`);
 }

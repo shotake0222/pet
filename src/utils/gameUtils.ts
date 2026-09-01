@@ -35,6 +35,7 @@ export const isUserAtSpot = (
 
 /**
  * 利用可能なスポットを取得
+ * 🚨 期間外のスポットをフィルタリング：start_time と end_time で制御
  */
 export const getAvailableSpots = async (
   userLat: number,
@@ -44,11 +45,17 @@ export const getAvailableSpots = async (
 ) => {
   const supabase = createClient();
 
+  const now = new Date().toISOString();
+
   // デバッグモード：位置チェック無視
   if (isDebugMode) {
     const { data, error } = await supabase
       .from('spots')
-      .select('*');
+      .select('*')
+      // 期間フィルタリング：start_time is null OR start_time <= now
+      .or(`start_time.is.null,start_time.lte.${now}`)
+      // 期間フィルタリング：end_time is null OR end_time >= now
+      .or(`end_time.is.null,end_time.gte.${now}`);
     
     if (error) throw error;
     return data || [];
@@ -63,7 +70,11 @@ export const getAvailableSpots = async (
     .gte('latitude', userLat - latOffset)
     .lte('latitude', userLat + latOffset)
     .gte('longitude', userLng - lngOffset)
-    .lte('longitude', userLng + lngOffset);
+    .lte('longitude', userLng + lngOffset)
+    // 🚨 期間フィルタリング：start_time is null OR start_time <= now
+    .or(`start_time.is.null,start_time.lte.${now}`)
+    // 🚨 期間フィルタリング：end_time is null OR end_time >= now
+    .or(`end_time.is.null,end_time.gte.${now}`);
 
   if (error) throw error;
 

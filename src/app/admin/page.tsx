@@ -44,7 +44,6 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { createClient } from '@/utils/supabase/client';
-import { SpotAdminPanel } from '@/components/admin/SpotAdminPanel';
 import { CouponAdminPanel } from '@/components/admin/CouponAdminPanel';
 
 // Supabaseの公開URLから、Storageのファイルパス（バケット名以降）を抽出するヘルパー関数
@@ -240,7 +239,7 @@ function MultiSelectDropdown({
 
 export default function AdminDashboard() {
   const supabase = createClient();
-  const [activeTab, setActiveTab] = useState<'pets' | 'landmarks' | 'items' | 'coupons' | 'drops' | 'news' | 'users' | 'settings' | 'spots' | 'rewards' | 'reports'>('pets');
+  const [activeTab, setActiveTab] = useState<'pets' | 'landmarks' | 'items' | 'coupons' | 'drops' | 'news' | 'users' | 'settings' | 'rewards' | 'reports'>('pets');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // --- 登録済みデータ一覧用のState ---
@@ -335,6 +334,14 @@ export default function AdminDashboard() {
   const [lmGenStartTime, setLmGenStartTime] = useState('');
   const [lmGenEndTime, setLmGenEndTime] = useState('');
   const [activeMassGenMaster, setActiveMassGenMaster] = useState<any | null>(null);
+  
+  // 🌟 マスターから手動個別配置用
+  const [activeManualPlaceMaster, setActiveManualPlaceMaster] = useState<any | null>(null);
+  const [manualPlaceSpotName, setManualPlaceSpotName] = useState('');
+  const [manualPlaceLat, setManualPlaceLat] = useState('');
+  const [manualPlaceLng, setManualPlaceLng] = useState('');
+  const [manualPlaceStartTime, setManualPlaceStartTime] = useState('');
+  const [manualPlaceEndTime, setManualPlaceEndTime] = useState('');
 
   // 2. 個別配置用
   const [landmarkName, setLandmarkName] = useState('');
@@ -353,7 +360,8 @@ export default function AdminDashboard() {
   const [itemDesc, setItemDesc] = useState('');
   const [itemType, setItemType] = useState('food');
   const [itemPrice, setItemPrice] = useState('100');
-  const [itemPriceType, setItemPriceType] = useState<'paid' | 'free'>('paid'); 
+  const [itemPriceType, setItemPriceType] = useState<'paid' | 'free'>('paid');
+  const [editingItemId, setEditingItemId] = useState<number | null>(null); 
   const [itemDropWeight, setItemDropWeight] = useState('100');                 
   const [itemEffect, setItemEffect] = useState('10');
   const [itemImageFile, setItemImageFile] = useState<File | null>(null);
@@ -375,6 +383,7 @@ export default function AdminDashboard() {
   const [dropCouponId, setDropCouponId] = useState('');
   const [dropAmount, setDropAmount] = useState('1');
   const [dropRate, setDropRate] = useState('100');
+  const [dropLandmarkId, setDropLandmarkId] = useState<number | null>(null); // 🌟 タスク8対応：特別スポット個別選択
 
   // --- お知らせ用State ---
   const [newsTitle, setNewsTitle] = useState('');
@@ -433,7 +442,7 @@ export default function AdminDashboard() {
     ] = await Promise.all([
       supabase.from('pet_masters').select('*').order('id', { ascending: false }),
       supabase.from('landmark_masters').select('*').order('id', { ascending: false }),
-      supabase.from('landmarks').select('*').order('id', { ascending: false }),
+      supabase.from('landmarks').select('*').order('id', { ascending: false }).limit(50000), // 🌟 タスク9対応：行数制限を増加
       supabase.from('item_masters').select('*').order('id', { ascending: false }),
       supabase.from('coupon_masters').select('*').order('id', { ascending: false }),
       supabase.from('announcements').select('*').order('published_at', { ascending: false }),
@@ -442,7 +451,7 @@ export default function AdminDashboard() {
       supabase.from('attributes').select('*').order('id', { ascending: true }),
       supabase.from('pet_master_attributes').select('*'),
       supabase.from('pets').select('*, pet_masters(name)').order('created_at', { ascending: false }),
-      supabase.from('facility_drop_masters').select('*, item_masters(name, image_url), coupon_masters(name, qr_image_url)').order('id', { ascending: false }),
+      supabase.from('facility_drop_masters').select('*, item_masters(name, image_url), coupon_masters(name, qr_image_url), landmark_masters(name, description)').order('id', { ascending: false }),
       supabase.from('attribute_item_affinities').select('*, item_masters(name)').order('id', { ascending: true }),
       supabase.from('egg_masters').select('*').order('id', { ascending: true }),
       supabase.from('attribute_weaknesses').select('*').order('id', { ascending: true }), 
@@ -862,7 +871,18 @@ export default function AdminDashboard() {
         
         alert(`スポット「${master.name}」をリストに登録し、全国に ${count} 箇所ランダム配置しました！`);
       } else {
-        alert(`スポット「${master.name}」をリストに登録しました！`);
+        // 🌟 タスク2対応：自動生成チェック不要で常に20000個ランダム配置（期間なし）
+        const autoGenSpots = generateRandomSpots(master, 20000, '', '');
+        
+        // 大量のデータをチャンクに分割してインサート
+        const chunkSize = 1000;
+        for (let i = 0; i < autoGenSpots.length; i += chunkSize) {
+          const chunk = autoGenSpots.slice(i, i + chunkSize);
+          const { error: genErr } = await supabase.from('landmarks').insert(chunk);
+          if (genErr) throw genErr;
+        }
+        
+        alert(`スポット「${master.name}」をリストに登録しました（全国に自動で 20000 箇所ランダム配置）！`);
       }
 
       setLmMasterName(''); setLmMasterDesc(''); setLmMasterFacilityType('normal'); setLmMasterModelFile(null); setLmAutoGenerate(false);
@@ -933,6 +953,46 @@ export default function AdminDashboard() {
     }
   };
 
+  // 🌟 マスターから手動個別配置
+  const handleManualPlaceFromMaster = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!activeManualPlaceMaster) return;
+    if (!manualPlaceLat || !manualPlaceLng) {
+      alert('緯度・経度を入力してください');
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      const { error } = await supabase.from('landmarks').insert({
+        master_id: activeManualPlaceMaster.id,
+        name: manualPlaceSpotName || activeManualPlaceMaster.name,
+        description: activeManualPlaceMaster.description,
+        latitude: parseFloat(manualPlaceLat),
+        longitude: parseFloat(manualPlaceLng),
+        radius_meters: activeManualPlaceMaster.radius_meters,
+        bonus_points: activeManualPlaceMaster.bonus_points,
+        model_url: activeManualPlaceMaster.model_url,
+        start_time: manualPlaceStartTime ? new Date(manualPlaceStartTime).toISOString() : null,
+        end_time: manualPlaceEndTime ? new Date(manualPlaceEndTime).toISOString() : null,
+      });
+
+      if (error) throw error;
+      alert('スポットを配置しました！');
+      setActiveManualPlaceMaster(null);
+      setManualPlaceSpotName('');
+      setManualPlaceLat('');
+      setManualPlaceLng('');
+      setManualPlaceStartTime('');
+      setManualPlaceEndTime('');
+      await fetchData();
+    } catch (err: any) {
+      alert(`エラー: ${err.message}`);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   const handleAddItem = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!itemName) return alert('アイテム名が必要です');
@@ -943,19 +1003,41 @@ export default function AdminDashboard() {
         imageUrl = await uploadFile(itemImageFile, 'items');
       }
 
-      const { error } = await supabase.from('item_masters').insert({
-        name: itemName,
-        description: itemDesc,
-        item_type: itemType,
-        price_jpy: itemPriceType === 'free' ? 0 : parseInt(itemPrice, 10),
-        price_type: itemPriceType,           
-        drop_weight: parseInt(itemDropWeight, 10), 
-        effect_value: parseInt(itemEffect, 10),
-        image_url: imageUrl
-      });
-      if (error) throw error;
+      if (editingItemId) {
+        // 🌟 タスク14対応：編集モード
+        const updateData: any = {
+          name: itemName,
+          description: itemDesc,
+          item_type: itemType,
+          price_jpy: itemPriceType === 'free' ? 0 : parseInt(itemPrice, 10),
+          price_type: itemPriceType,
+          drop_weight: parseInt(itemDropWeight, 10),
+          effect_value: parseInt(itemEffect, 10),
+        };
+        if (imageUrl) updateData.image_url = imageUrl;
+        
+        const { error } = await supabase.from('item_masters').update(updateData).eq('id', editingItemId);
+        if (error) throw error;
+        
+        alert(`アイテム「${itemName}」を更新しました！`);
+        setEditingItemId(null);
+      } else {
+        // 新規追加モード
+        const { error } = await supabase.from('item_masters').insert({
+          name: itemName,
+          description: itemDesc,
+          item_type: itemType,
+          price_jpy: itemPriceType === 'free' ? 0 : parseInt(itemPrice, 10),
+          price_type: itemPriceType,           
+          drop_weight: parseInt(itemDropWeight, 10), 
+          effect_value: parseInt(itemEffect, 10),
+          image_url: imageUrl
+        });
+        if (error) throw error;
 
-      alert(`アイテム「${itemName}」をショップに並べました！`);
+        alert(`アイテム「${itemName}」をショップに並べました！`);
+      }
+      
       setItemName(''); setItemDesc(''); setItemPrice('100'); setItemEffect('10'); setItemImageFile(null);
       setItemPriceType('paid'); setItemDropWeight('100');
       await fetchData(); 
@@ -1032,19 +1114,29 @@ export default function AdminDashboard() {
     e.preventDefault();
     if (dropRewardType === 'item' && !dropItemId) return alert('アイテムを選択してください');
     if (dropRewardType === 'coupon' && !dropCouponId) return alert('クーポンを選択してください');
+    // 🌟 タスク8対応：特別スポット選択時は landmark_id を要求
+    if (dropFacilityType === 'special' && !dropLandmarkId) return alert('特別スポットを選択してください');
+    
     setIsSubmitting(true);
     try {
-      const { error } = await supabase.from('facility_drop_masters').insert({
+      const insertData: any = {
         facility_type: dropFacilityType,
         reward_type: dropRewardType,
         item_id: dropRewardType === 'item' ? parseInt(dropItemId, 10) : null,
         coupon_id: dropRewardType === 'coupon' ? parseInt(dropCouponId, 10) : null,
         drop_amount: parseInt(dropAmount, 10),
         drop_rate_percent: parseInt(dropRate, 10)
-      });
+      };
+      
+      // 🌟 タスク8対応：特別スポット選択時は landmark_id を保存
+      if (dropFacilityType === 'special' && dropLandmarkId) {
+        insertData.landmark_id = dropLandmarkId;
+      }
+      
+      const { error } = await supabase.from('facility_drop_masters').insert(insertData);
       if (error) throw error;
       alert('ドロップ報酬を設定しました！');
-      setDropItemId(''); setDropCouponId(''); setDropAmount('1'); setDropRate('100');
+      setDropItemId(''); setDropCouponId(''); setDropAmount('1'); setDropRate('100'); setDropLandmarkId(null);
       await fetchData(); 
     } catch (e: any) {
       alert(`エラー: ${e.message}`);
@@ -1225,7 +1317,7 @@ export default function AdminDashboard() {
       
       {/* タブ切り替え */}
       <div className="flex gap-2 mb-8 overflow-x-auto pb-2">
-        {(['pets', 'landmarks', 'spots', 'items', 'coupons', 'rewards', 'drops', 'news', 'users', 'reports', 'settings'] as const).map(tab => (
+        {(['pets', 'landmarks', 'items', 'coupons', 'rewards', 'drops', 'news', 'users', 'reports', 'settings'] as const).map(tab => (
           <button 
             key={tab} 
             onClick={() => setActiveTab(tab)} 
@@ -1233,7 +1325,6 @@ export default function AdminDashboard() {
           >
             {tab === 'pets' && '🐶 ペット管理'}
             {tab === 'landmarks' && '📍 ランドマーク'}
-            {tab === 'spots' && '🎮 スポット管理'}
             {tab === 'items' && '🛒 アイテム管理'}
             {tab === 'coupons' && '🎫 クーポン'}
             {tab === 'rewards' && '🎁 報酬管理'}
@@ -1249,16 +1340,15 @@ export default function AdminDashboard() {
       {/* コンテンツエリア */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
         
-        {/* === 新しいタブ: スポット管理・報酬管理は単独で表示 === */}
-        {(activeTab === 'spots' || activeTab === 'rewards') && (
+        {/* === 報酬管理は単独で表示 === */}
+        {activeTab === 'rewards' && (
           <div className="lg:col-span-2">
-            {activeTab === 'spots' && <SpotAdminPanel onRefresh={() => {}} />}
-            {activeTab === 'rewards' && <CouponAdminPanel onRefresh={() => {}} />}
+            <CouponAdminPanel onRefresh={() => {}} />
           </div>
         )}
 
         {/* === 左・右カラムは「設定」および新しいタブ以外の時だけ描画する === */}
-        {activeTab !== 'settings' && activeTab !== 'spots' && activeTab !== 'rewards' && activeTab !== 'reports' && (
+        {activeTab !== 'settings' && activeTab !== 'rewards' && activeTab !== 'reports' && (
           <>
             {/* --- 左カラム: 登録・サマリー --- */}
             <div>
@@ -1506,7 +1596,22 @@ export default function AdminDashboard() {
               {/* 3. アイテム追加フォーム */}
               {activeTab === 'items' && (
                 <form onSubmit={handleAddItem} className="space-y-5 bg-gray-50 p-6 rounded-2xl border border-gray-100">
-                  <h2 className="text-xl font-bold">新規アイテム追加</h2>
+                  <div className="flex justify-between items-center">
+                    <h2 className="text-xl font-bold">{editingItemId ? '✏️ アイテム編集' : '新規アイテム追加'}</h2>
+                    {editingItemId && (
+                      <button 
+                        type="button" 
+                        onClick={() => {
+                          setEditingItemId(null);
+                          setItemName(''); setItemDesc(''); setItemPrice('100'); setItemEffect('10'); setItemImageFile(null);
+                          setItemPriceType('paid'); setItemDropWeight('100');
+                        }}
+                        className="text-sm font-bold text-gray-500 hover:text-gray-700 underline"
+                      >
+                        キャンセル
+                      </button>
+                    )}
+                  </div>
                   <div className="flex gap-4">
                     <div className="flex-1">
                       <label className="block text-sm font-bold mb-1">アイテム名</label>
@@ -1609,7 +1714,7 @@ export default function AdminDashboard() {
                   <div className="space-y-4">
                     <div>
                       <label className="block text-sm font-bold mb-1 text-pink-900">対象の施設タイプ</label>
-                      <select value={dropFacilityType} onChange={e => setDropFacilityType(e.target.value)} className="w-full border p-3 rounded-lg focus:ring-2 focus:ring-pink-500">
+                      <select value={dropFacilityType} onChange={e => { setDropFacilityType(e.target.value); setDropLandmarkId(null); }} className="w-full border p-3 rounded-lg focus:ring-2 focus:ring-pink-500">
                         <option value="normal">📍 通常スポット</option>
                         <option value="special">🌟 特別スポット</option>
                         <option value="restaurant">🍽️ ご飯屋さん</option>
@@ -1617,6 +1722,31 @@ export default function AdminDashboard() {
                         <option value="hotel">🏨 ホテル (休憩所)</option>
                       </select>
                     </div>
+
+                    {/* 🌟 タスク8対応：特別スポット選択時に個別スポット選択UI */}
+                    {dropFacilityType === 'special' && (
+                      <div>
+                        <label className="block text-sm font-bold mb-1 text-pink-900">対象の特別スポット (個別選択)</label>
+                        <select 
+                          value={dropLandmarkId || ''} 
+                          onChange={e => setDropLandmarkId(e.target.value ? parseInt(e.target.value, 10) : null)}
+                          className="w-full border p-3 rounded-lg focus:ring-2 focus:ring-pink-500 bg-pink-50"
+                          required
+                        >
+                          <option value="">特別スポットを選択してください</option>
+                          {landmarkMastersList
+                            .filter((master: any) => master.facility_type === 'special')
+                            .map((master: any) => (
+                              <option key={master.id} value={master.id}>
+                                {master.name} {master.description ? `(${master.description})` : ''}
+                              </option>
+                            ))}
+                        </select>
+                        {landmarkMastersList.filter((master: any) => master.facility_type === 'special').length === 0 && (
+                          <p className="text-xs text-pink-600 mt-1">※ 特別スポット（facility_type='special'）が登録されていません</p>
+                        )}
+                      </div>
+                    )}
 
                     <div>
                       <label className="block text-sm font-bold mb-1 text-pink-900">報酬タイプ</label>
@@ -1866,6 +1996,9 @@ export default function AdminDashboard() {
                               <div className="text-xs text-gray-500">半径: {master.radius_meters}m | 獲得pt: {master.bonus_points}</div>
                             </div>
                             <div className="flex gap-2">
+                              <button onClick={() => { setActiveManualPlaceMaster(master); setManualPlaceSpotName(''); setManualPlaceLat(''); setManualPlaceLng(''); setManualPlaceStartTime(''); setManualPlaceEndTime(''); }} className="bg-blue-100 text-blue-800 font-bold text-xs px-3 py-1.5 rounded hover:bg-blue-200 border border-blue-300 shadow-sm">
+                                📍 手動配置
+                              </button>
                               <button onClick={() => { setActiveMassGenMaster(master); setLmGenStartTime(''); setLmGenEndTime(''); setLmGenCount('100'); }} className="bg-yellow-100 text-yellow-800 font-bold text-xs px-3 py-1.5 rounded hover:bg-yellow-200 border border-yellow-300 shadow-sm">
                                 🚀 大量発生タイム設定
                               </button>
@@ -1896,6 +2029,40 @@ export default function AdminDashboard() {
                               <div className="flex justify-end gap-2">
                                 <button type="button" onClick={() => setActiveMassGenMaster(null)} className="px-4 py-2 bg-gray-200 text-gray-700 rounded font-bold text-sm">キャンセル</button>
                                 <button type="submit" disabled={isSubmitting} className="px-4 py-2 bg-yellow-500 text-white rounded font-bold text-sm shadow hover:bg-yellow-600">発生させる！</button>
+                              </div>
+                            </form>
+                          )}
+
+                          {/* 🌟 手動配置インラインフォーム */}
+                          {activeManualPlaceMaster?.id === master.id && (
+                            <form onSubmit={handleManualPlaceFromMaster} className="mt-2 p-4 bg-blue-50 border border-blue-200 rounded-xl">
+                              <h4 className="font-bold mb-3 text-sm text-blue-900">📍 手動個別配置</h4>
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
+                                <div>
+                                  <label className="text-xs font-bold text-gray-700 block mb-1">スポット名 (デフォルト: {master.name})</label>
+                                  <input type="text" value={manualPlaceSpotName} onChange={e => setManualPlaceSpotName(e.target.value)} placeholder={master.name} className="w-full border p-2 rounded text-sm" />
+                                </div>
+                                <div></div>
+                                <div>
+                                  <label className="text-xs font-bold text-gray-700 block mb-1">緯度 *</label>
+                                  <input type="number" step="0.00001" value={manualPlaceLat} onChange={e => setManualPlaceLat(e.target.value)} placeholder="35.6895" className="w-full border p-2 rounded text-sm" required />
+                                </div>
+                                <div>
+                                  <label className="text-xs font-bold text-gray-700 block mb-1">経度 *</label>
+                                  <input type="number" step="0.00001" value={manualPlaceLng} onChange={e => setManualPlaceLng(e.target.value)} placeholder="139.6917" className="w-full border p-2 rounded text-sm" required />
+                                </div>
+                                <div>
+                                  <label className="text-xs font-bold text-gray-700 block mb-1">開始日時 (任意)</label>
+                                  <input type="datetime-local" value={manualPlaceStartTime} onChange={e => setManualPlaceStartTime(e.target.value)} className="w-full border p-2 rounded text-sm" />
+                                </div>
+                                <div>
+                                  <label className="text-xs font-bold text-gray-700 block mb-1">終了日時 (任意)</label>
+                                  <input type="datetime-local" value={manualPlaceEndTime} onChange={e => setManualPlaceEndTime(e.target.value)} className="w-full border p-2 rounded text-sm" />
+                                </div>
+                              </div>
+                              <div className="flex justify-end gap-2">
+                                <button type="button" onClick={() => setActiveManualPlaceMaster(null)} className="px-4 py-2 bg-gray-200 text-gray-700 rounded font-bold text-sm">キャンセル</button>
+                                <button type="submit" disabled={isSubmitting} className="px-4 py-2 bg-blue-500 text-white rounded font-bold text-sm shadow hover:bg-blue-600">配置する</button>
                               </div>
                             </form>
                           )}
@@ -2021,12 +2188,30 @@ export default function AdminDashboard() {
                               </button>
                             </div>
                           </div>
-                          <button 
-                            onClick={() => handleDeleteItem(item.id, item.image_url)}
-                            className="bg-red-50 text-red-600 font-bold px-4 py-2 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-100 border border-red-200"
-                          >
-                            削除
-                          </button>
+                          <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                            {/* 🌟 タスク14対応：編集ボタン */}
+                            <button
+                              onClick={() => {
+                                setEditingItemId(item.id);
+                                setItemName(item.name);
+                                setItemDesc(item.description);
+                                setItemType(item.item_type);
+                                setItemPrice(String(item.price_jpy || 0));
+                                setItemPriceType(item.price_type === 'free' ? 'free' : 'paid');
+                                setItemEffect(String(item.effect_value || 10));
+                                setItemDropWeight(String(item.drop_weight || 100));
+                              }}
+                              className="bg-blue-50 text-blue-600 font-bold px-4 py-2 rounded-lg hover:bg-blue-100 border border-blue-200"
+                            >
+                              編集
+                            </button>
+                            <button 
+                              onClick={() => handleDeleteItem(item.id, item.image_url)}
+                              className="bg-red-50 text-red-600 font-bold px-4 py-2 rounded-lg hover:bg-red-100 border border-red-200"
+                            >
+                              削除
+                            </button>
+                          </div>
                         </div>
                       );
                     })}
@@ -2078,10 +2263,16 @@ export default function AdminDashboard() {
                     {facilityDropsList.map(drop => (
                       <div key={drop.id} className="p-4 border rounded-xl bg-white hover:bg-gray-50 flex items-center gap-4 transition-colors group shadow-sm">
                         <div className="flex-1">
-                          <div className="flex items-center gap-3">
+                          <div className="flex items-center gap-3 flex-wrap">
                             <span className="text-lg font-bold text-gray-800">
                               {drop.facility_type === 'special' ? '🌟 特別スポット' : drop.facility_type === 'restaurant' ? '🍽️ ご飯屋さん' : drop.facility_type === 'hospital' ? '🏥 病院' : drop.facility_type === 'hotel' ? '🏨 ホテル' : '📍 通常スポット'}
                             </span>
+                            {/* 🌟 タスク8対応：特別スポット選択時は対象スポット名を表示 */}
+                            {drop.facility_type === 'special' && drop.landmark_masters && (
+                              <span className="text-sm bg-pink-100 text-pink-800 px-2 py-1 rounded border border-pink-300 font-bold">
+                                📍 {drop.landmark_masters.name}
+                              </span>
+                            )}
                             <span className="text-gray-400 font-bold">→</span>
                             <span className="font-bold text-blue-700">
                               {drop.reward_type === 'coupon' 
