@@ -521,7 +521,7 @@ function HomeAR() {
         el.style.margin = '0';
       });
       const canvases = viewport.querySelectorAll('canvas');
-      canvases.forEach(canvas => {
+      canases.forEach(canvas => {
         const el = canvas as HTMLCanvasElement;
         el.style.position = 'absolute';
         el.style.inset = '0';
@@ -3193,7 +3193,7 @@ function HomeAR() {
                         <p className='text-xs text-gray-700 whitespace-pre-wrap'>{contentWithoutUrl || news.content}</p>
                         {urls.length > 0 && (
                           <div className='mt-2 space-y-1'>
-                            {urls.map((url, idx) => (
+                            {urls.map((url: string, idx: number) => (
                               <button
                                 key={idx}
                                 onClick={() => window.open(url, '_blank')}
