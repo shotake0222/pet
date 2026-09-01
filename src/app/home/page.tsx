@@ -1603,6 +1603,7 @@ function HomeAR() {
         }
       });
     }
+  }, [aframeLoaded]); //
 
   useEffect(() => {
     if (viewMode !== 'mindar') return;
