@@ -489,6 +489,8 @@ function HomeAR() {
       const videos = viewport.querySelectorAll('video');
       videos.forEach(video => {
         const el = video as HTMLVideoElement;
+        el.setAttribute('playsinline', '');
+        el.setAttribute('webkit-playsinline', '');
         el.style.position = 'absolute';
         el.style.inset = '0';
         el.style.display = 'block';
@@ -1523,7 +1525,6 @@ function HomeAR() {
     if (!aframeLoaded || typeof window === 'undefined') return;
     const AFRAME = (window as any).AFRAME;
 
-    // クリック判定用のコンポーネント
     if (AFRAME && !AFRAME.components['pet-interact']) {
       AFRAME.registerComponent('pet-interact', {
         init: function () {
@@ -1534,7 +1535,6 @@ function HomeAR() {
       });
     }
 
-    // マーカー検出用のコンポーネント
     if (AFRAME && !AFRAME.components['mindar-event-listener']) {
       AFRAME.registerComponent('mindar-event-listener', {
         init: function () {
@@ -1548,8 +1548,6 @@ function HomeAR() {
       });
     }
 
-   // 💡 プログラムからモデル全体を動かすためのアニメーションコントローラー
-    // glTF自体にアニメーションがなくても、位置や回転を強制的に上書きして動かします
     if (AFRAME && !AFRAME.components['pet-anim-controller']) {
       AFRAME.registerComponent('pet-anim-controller', {
         schema: {
@@ -1557,7 +1555,6 @@ function HomeAR() {
         },
         update: function (oldData: any) {
           if (this.data.clip !== oldData.clip) {
-            // アニメーションを切り替える前に、全てのアニメーションを削除し位置などを0にリセットする
             ['animation', 'animation__pos', 'animation__rot', 'animation__scl'].forEach(attr => {
               this.el.removeAttribute(attr);
             });
@@ -1568,34 +1565,26 @@ function HomeAR() {
             const clip = this.data.clip;
             if (!clip) return;
 
-            // 状態に応じて「位置(pos)」「回転(rot)」「拡縮(scl)」を複数組み合わせて大袈裟に動かす
             if (clip === 'Idle') {
-              // ゆったりと大きく上下に浮遊しながら、わずかに呼吸（スケール）
               this.el.setAttribute('animation__pos', 'property: position; to: 0 0.3 0; dir: alternate; dur: 2000; loop: true; easing: easeInOutSine');
               this.el.setAttribute('animation__scl', 'property: scale; to: 1.05 0.95 1.05; dir: alternate; dur: 2000; loop: true; easing: easeInOutSine');
             } else if (clip === 'Happy') {
-              // 嬉しくて高速でスピンしながら、ピョンピョン高く跳ねる
               this.el.setAttribute('animation__rot', 'property: rotation; to: 0 360 0; dur: 800; loop: true; easing: linear');
               this.el.setAttribute('animation__pos', 'property: position; to: 0 1.2 0; dir: alternate; dur: 400; loop: true; easing: easeOutQuad');
             } else if (clip === 'Jump') {
-              // 一気に高く跳び上がり、縦に伸び縮みして躍動感を出す
               this.el.setAttribute('animation__pos', 'property: position; to: 0 1.8 0; dir: alternate; dur: 350; loop: true; easing: easeOutQuad');
               this.el.setAttribute('animation__scl', 'property: scale; to: 0.8 1.2 0.8; dir: alternate; dur: 350; loop: true; easing: easeOutQuad');
             } else if (clip === 'Fly') {
-              // 高く舞い上がり、少し傾きながら全体をゆっくり旋回させる
               this.el.setAttribute('animation__pos', 'property: position; to: 0 2.5 0; dir: alternate; dur: 1000; loop: true; easing: easeInOutSine');
               this.el.setAttribute('animation__rot', 'property: rotation; to: 15 360 -15; dur: 3000; loop: true; easing: linear');
             } else if (clip === 'Sleep') {
-              // Z軸に90度バタン！と倒れて、いびきをかくように大きく伸び縮みする
               this.el.setAttribute('animation__rot', 'property: rotation; to: 0 0 -90; dur: 600; loop: false; easing: easeOutBounce');
               this.el.setAttribute('animation__scl', 'property: scale; to: 1.25 0.7 1.25; dir: alternate; dur: 1800; loop: true; easing: easeInOutSine');
             } else if (clip === 'Sad') {
-              // 深くうつむき、全体的にしぼんで地面に沈み込む
               this.el.setAttribute('animation__rot', 'property: rotation; to: 45 0 0; dir: alternate; dur: 1500; loop: true; easing: easeInOutSine');
               this.el.setAttribute('animation__scl', 'property: scale; to: 0.75 0.75 0.75; dir: alternate; dur: 1500; loop: true; easing: easeInOutSine');
               this.el.setAttribute('animation__pos', 'property: position; to: 0 -0.2 0; dir: alternate; dur: 1500; loop: true; easing: easeInOutSine');
             } else if (clip === 'Angry') {
-              // 体を1.3倍に大きく膨らませて威嚇し、激しく左右に震える
               this.el.setAttribute('animation__scl', 'property: scale; to: 1.3 1.3 1.3; dur: 300; loop: false; easing: easeOutQuad');
               this.el.setAttribute('animation__pos', 'property: position; to: 0.3 0 0; dir: alternate; dur: 50; loop: true; easing: linear');
             }
@@ -1603,7 +1592,7 @@ function HomeAR() {
         }
       });
     }
-  }, [aframeLoaded]); //
+  }, [aframeLoaded]);
 
   useEffect(() => {
     if (viewMode !== 'mindar') return;
@@ -2266,7 +2255,6 @@ function HomeAR() {
     );
   }
 
-  // 👇 モデルの動き（Idle, Happyなど）を文字列で取得します
   const currentAnim = actionAnim || currentMood.clip;
 
   return (
@@ -2301,7 +2289,7 @@ function HomeAR() {
           overflow: hidden;
           isolation: isolate;
           contain: layout paint;
-          background: #000;
+          background: transparent;
           touch-action: none;
         }
         .ar-camera-viewport a-scene,
@@ -2332,9 +2320,16 @@ function HomeAR() {
           pointer-events: auto !important;
         }
         .ar-camera-viewport .a-enter-vr,
-        .ar-camera-viewport .mindar-ui-overlay,
-        .ar-camera-viewport .arjs-loader {
+        .mindar-ui-overlay,
+        .mindar-ui-loading,
+        .mindar-ui-scanning,
+        .mindar-ui-error,
+        .arjs-loader {
           display: none !important;
+          opacity: 0 !important;
+          visibility: hidden !important;
+          pointer-events: none !important;
+          background: transparent !important;
         }
       `}</style>
 
@@ -3886,9 +3881,10 @@ function HomeAR() {
           <div key={`mindar-container-${sceneKey}`} className='absolute inset-0 pointer-events-none'>
             <a-scene
               embedded
+              background="transparent: true"
               style={{ position: 'absolute', inset: 0, height: '100%', width: '100%', pointerEvents: 'auto' }}
-              mindar-image={`imageTargetSrc: ${petMarkerUrl}; autoStart: true; uiLoading: no; uiError: no; maxTrack: 1; filterMinCF: 0.0001; filterBeta: 0.001;`}
-              renderer='alpha: true; preserveDrawingBuffer: true; colorManagement: true; physicallyCorrectLights: true;'
+              mindar-image={`imageTargetSrc: ${petMarkerUrl}; autoStart: true; uiLoading: no; uiError: no; uiScanning: no; maxTrack: 1; filterMinCF: 0.0001; filterBeta: 0.001;`}
+              renderer='alpha: true; preserveDrawingBuffer: true; colorManagement: true; physicallyCorrectLights: true; clearColor: #000000; clearColorAlpha: 0;'
               color-space='sRGB'
               vr-mode-ui='enabled: false'
               device-orientation-permission-ui='enabled: false'
@@ -3917,7 +3913,6 @@ function HomeAR() {
                   pet-interact
                 ></a-entity>
                 
-                {/* 👇 新設：プログラム制御によるアニメーションラッパー */}
                 <a-entity 
                   id='pet-anim-wrapper-0' 
                   pet-anim-controller={`clip: ${(!isEgg && debugAnimEnabled) ? currentAnim : ''}`}
@@ -4015,9 +4010,10 @@ function HomeAR() {
           <div key={`gps-container-${sceneKey}-${cameraFacing}`} className='absolute inset-0 pointer-events-none'>
             <a-scene
               embedded
+              background="transparent: true"
               style={{ position: 'absolute', inset: 0, height: '100%', width: '100%', pointerEvents: 'none' }}
               vr-mode-ui='enabled: false'
-              renderer='alpha: true; preserveDrawingBuffer: true; colorManagement: true;'
+              renderer='alpha: true; preserveDrawingBuffer: true; colorManagement: true; clearColor: #000000; clearColorAlpha: 0;'
               arjs={`sourceType: webcam; videoTexture: true; debugUIEnabled: false; facingMode: ${cameraFacing};`}
             >
               <a-assets>
