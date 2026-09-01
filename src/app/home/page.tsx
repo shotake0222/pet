@@ -557,6 +557,10 @@ function HomeAR() {
         if (tag === 'SCRIPT' || tag === 'STYLE' || tag === 'LINK' || tag === 'META' || tag === 'NOSCRIPT' || tag === 'VIDEO' || tag === 'TITLE') {
           return;
         }
+        // MindARのビデオコンテナを誤って非表示にしないように、videoタグを含む要素は除外する
+        if (child.querySelector('video') || tag === 'VIDEO') {
+          return;
+        }
         const el = child as HTMLElement;
         if (el.dataset.strayOverlaySuppressed === 'true') return;
         el.style.setProperty('pointer-events', 'none', 'important');
@@ -681,12 +685,6 @@ function HomeAR() {
   }, [viewMode, isAuthChecking, isDataLoaded]);
 
   useEffect(() => {
-    if (!isSwitchingMode) return;
-    const timer = window.setTimeout(() => setIsSwitchingMode(false), 2000);
-    return () => window.clearTimeout(timer);
-  }, [isSwitchingMode]);
-
-  useEffect(() => {
     if (viewMode === 'report') {
       setCameraReady(true);
       setCameraTrulyReady(true);
@@ -699,8 +697,8 @@ function HomeAR() {
     let tries = 0;
     const maxTries = 75; 
     const timer = window.setInterval(() => {
-      const viewport = arViewportRef.current;
-      const videos = Array.from(viewport?.querySelectorAll('video') ?? []) as HTMLVideoElement[];
+      // document全体からvideoを探すよう修正
+      const videos = Array.from(document.querySelectorAll('video')) as HTMLVideoElement[];
       const ready = videos.some(v => v.readyState >= 2 && v.videoWidth > 0 && v.videoHeight > 0);
       if (ready) {
         setCameraReady(true);
