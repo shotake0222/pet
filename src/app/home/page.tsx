@@ -7,6 +7,21 @@ import { createClient } from '@/utils/supabase/client';
 import { isDebugMode } from '@/utils/debugMode';
 
 declare global {
+  namespace React {
+    namespace JSX {
+      interface IntrinsicElements {
+        'a-scene': any;
+        'a-assets': any;
+        'a-asset-item': any;
+        'a-light': any;
+        'a-camera': any;
+        'a-entity': any;
+        'a-gltf-model': any;
+        'a-box': any;
+        [elemName: string]: any;
+      }
+    }
+  }
   namespace JSX {
     interface IntrinsicElements {
       [elemName: string]: any;
