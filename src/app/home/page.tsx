@@ -516,7 +516,7 @@ function HomeAR() {
         el.style.margin = '0';
       });
       const canvases = viewport.querySelectorAll('canvas');
-      canvases.forEach(canvas => {
+      canuses.forEach(canvas => {
         const el = canvas as HTMLCanvasElement;
         el.style.position = 'absolute';
         el.style.inset = '0';
@@ -907,7 +907,17 @@ function HomeAR() {
       const { data: spots } = await supabase
         .from('landmarks')
         .select('*, landmark_masters:landmark_master_id(facility_type)');
-      if (spots) setLandmarks(spots);
+      if (spots) {
+        // 数値としてパースすることで、getDistance 等での NaN エラーを防ぎ確実にマップ等で表示させる
+        const parsedSpots = spots.map((spot: any) => ({
+          ...spot,
+          latitude: Number(spot.latitude),
+          longitude: Number(spot.longitude),
+          radius_meters: Number(spot.radius_meters) || 50,
+          bonus_points: Number(spot.bonus_points) || 10
+        }));
+        setLandmarks(parsedSpots);
+      }
 
       const { data: news } = await supabase.from('announcements').select('*').eq('is_active', true).order('published_at', { ascending: false });
       if (news) setNewsList(news);
@@ -1414,7 +1424,32 @@ function HomeAR() {
     if (now - lastEncounterTime.current < 300000) return;
     lastEncounterTime.current = now;
     try {
-      let { data: item } = await supabase.from('item_masters').select('id').eq('name', 'ぺたるの香り').maybeSingle();
+      const newNotification = {
+        user_id: sessionUserId,
+        title: 'すれ違い通信',
+        content: 'ほかのユーザーとすれ違いました！「ぺたるの香り」を手に入れました。\n下のボタンから受け取ってください。',
+      };
+      
+      const { data: insertedNotif, error } = await supabase
+        .from('user_notifications')
+        .insert(newNotification)
+        .select('*')
+        .single();
+        
+      if (error) throw error;
+
+      setUserNotifications(prev => [insertedNotif, ...prev]);
+      alert('📡 すれ違い通信が発生しました！お知らせを確認してください。');
+      playSound('item');
+    } catch (err) {
+      console.error('すれ違い処理エラー', err);
+    }
+  };
+
+  const handleReceiveEncounterItem = async (notification: any) => {
+    if (!sessionUserId) return;
+    try {
+      let { data: item } = await supabase.from('item_masters').select('*').eq('name', 'ぺたるの香り').maybeSingle();
       if (item) {
         const { data: inventoryItem } = await supabase.from('user_inventory').select('id, quantity').eq('user_id', sessionUserId).eq('item_id', item.id).maybeSingle();
         if (inventoryItem) {
@@ -1422,21 +1457,19 @@ function HomeAR() {
         } else {
           await supabase.from('user_inventory').insert({ user_id: sessionUserId, item_id: item.id, quantity: 1 });
         }
-
+        
         const { data: inv } = await supabase.from('user_inventory').select('id, quantity, item_masters:item_id(*)').eq('user_id', sessionUserId).gt('quantity', 0);
         if (inv) setInventory(inv);
+        
+        showItemReward([item], 'すれ違い通信', '📡');
       }
-      const newNotification = {
-        user_id: sessionUserId,
-        title: 'すれ違い通信',
-        content: 'ほかのユーザーとすれ違いました！「ぺたるの香り」を手に入れました。もちものから使用して経験値を獲得しましょう！',
-      };
-      await supabase.from('user_notifications').insert(newNotification);
-      setUserNotifications(prev => [newNotification, ...prev]);
-      alert('📡 すれ違い通信が発生しました！お知らせを確認してください。');
-      playSound('item');
+      
+      await supabase.from('user_notifications').delete().eq('id', notification.id);
+      setUserNotifications(prev => prev.filter(n => n.id !== notification.id));
+      
     } catch (err) {
-      console.error('すれ違い処理エラー', err);
+      console.error('アイテム受け取りエラー', err);
+      alert('アイテムの受け取りに失敗しました。');
     }
   };
 
@@ -1523,7 +1556,6 @@ function HomeAR() {
     if (!aframeLoaded || typeof window === 'undefined') return;
     const AFRAME = (window as any).AFRAME;
 
-    // クリック判定用のコンポーネント
     if (AFRAME && !AFRAME.components['pet-interact']) {
       AFRAME.registerComponent('pet-interact', {
         init: function () {
@@ -1534,7 +1566,6 @@ function HomeAR() {
       });
     }
 
-    // マーカー検出用のコンポーネント
     if (AFRAME && !AFRAME.components['mindar-event-listener']) {
       AFRAME.registerComponent('mindar-event-listener', {
         init: function () {
@@ -1548,8 +1579,6 @@ function HomeAR() {
       });
     }
 
-    // 💡 プログラムからモデル全体を動かすためのアニメーションコントローラー
-    // glTF自体にアニメーションがなくても、位置や回転を強制的に上書きして動かします
     if (AFRAME && !AFRAME.components['pet-anim-controller']) {
       AFRAME.registerComponent('pet-anim-controller', {
         schema: {
@@ -1557,7 +1586,6 @@ function HomeAR() {
         },
         update: function (oldData: any) {
           if (this.data.clip !== oldData.clip) {
-            // アニメーションを切り替える前に、古いアニメーションを削除し位置などを0にリセットする
             this.el.removeAttribute('animation');
             this.el.setAttribute('position', '0 0 0');
             this.el.setAttribute('rotation', '0 0 0');
@@ -1566,27 +1594,19 @@ function HomeAR() {
             const clip = this.data.clip;
             if (!clip) return;
 
-            // 状態に応じたA-Frame標準アニメーションをモデルのラッパーに付与する
             if (clip === 'Idle') {
-  // 呼吸のような上下運動を大きく、少しテンポアップ（Y: 0.15 -> 0.5, dur: 1500 -> 1000）
   this.el.setAttribute('animation', 'property: position; to: 0 0.5 0; dir: alternate; dur: 1000; loop: true; easing: easeInOutSine');
 } else if (clip === 'Happy') {
-  // 1秒間で3回転（1080度）する超高速スピン（360 -> 1080）
   this.el.setAttribute('animation', 'property: rotation; to: 0 1080 0; dur: 1000; loop: true; easing: linear');
 } else if (clip === 'Jump') {
-  // 画面から飛び出しかねない大ジャンプを高速で（Y: 0.8 -> 2.5, dur: 250 -> 200）
   this.el.setAttribute('animation', 'property: position; to: 0 2.5 0; dir: alternate; dur: 200; loop: true; easing: easeOutQuad');
 } else if (clip === 'Fly') {
-  // はるか上空までフワァーっと飛んでいく（Y: 1.2 -> 4.0, dur: 800 -> 1000）
   this.el.setAttribute('animation', 'property: position; to: 0 4.0 0; dir: alternate; dur: 1000; loop: true; easing: easeInOutSine');
 } else if (clip === 'Sleep') {
-  // 潰れるくらい大きく呼吸する（scale: 1.05 0.95 1.05 -> 1.4 0.6 1.4）
   this.el.setAttribute('animation', 'property: scale; to: 1.4 0.6 1.4; dir: alternate; dur: 1500; loop: true; easing: easeInOutSine');
 } else if (clip === 'Sad') {
-  // 地面におでこがつくくらい深くうなだれる（角度: 25 -> 70）
   this.el.setAttribute('animation', 'property: rotation; to: 70 0 0; dir: alternate; dur: 1000; loop: true; easing: easeInOutSine');
 } else if (clip === 'Angry') {
-  // 震えの幅を大きくし、さらに超高速で激しくブルブルさせる（X: 0.1 -> 0.4, dur: 80 -> 30）
   this.el.setAttribute('animation', 'property: position; to: 0.4 0 0; dir: alternate; dur: 30; loop: true; easing: linear');
 }
           }
@@ -2256,7 +2276,6 @@ function HomeAR() {
     );
   }
 
-  // 👇 モデルの動き（Idle, Happyなど）を文字列で取得します
   const currentAnim = actionAnim || currentMood.clip;
 
   return (
@@ -3137,34 +3156,47 @@ function HomeAR() {
                   </div>
                 </div>
 
-                <div className='space-y-3'>
-                  {landmarks.map(spot => {
+                {(() => {
+                  const nearbySpots = landmarks.filter(spot => {
                     const dist = getDistance(location.lat, location.lng, spot.latitude, spot.longitude);
-                    const master = spot.landmark_masters;
-                    const facilityType = master?.facility_type && master.facility_type !== 'normal' ? master.facility_type : getFacilityType(spot.name);
-                    return (
-                      <div key={`list-${spot.id}`} className='bg-gray-50 border rounded-xl p-3 flex justify-between items-center shadow-sm'>
-                        <div>
-                          <div className='font-bold text-gray-800 flex items-center gap-1'>
-                            {facilityType === 'hospital' ? '🏥' : facilityType === 'restaurant' ? '🍽️' : facilityType === 'hotel' ? '🏨' : '📍'} {spot.name}
+                    return dist <= 10000;
+                  }).sort((a, b) => {
+                    const distA = getDistance(location.lat, location.lng, a.latitude, a.longitude);
+                    const distB = getDistance(location.lat, location.lng, b.latitude, b.longitude);
+                    return distA - distB;
+                  });
+
+                  return (
+                    <div className='space-y-3'>
+                      {nearbySpots.map(spot => {
+                        const dist = getDistance(location.lat, location.lng, spot.latitude, spot.longitude);
+                        const master = spot.landmark_masters;
+                        const facilityType = master?.facility_type && master.facility_type !== 'normal' ? master.facility_type : getFacilityType(spot.name);
+                        return (
+                          <div key={`list-${spot.id}`} className='bg-gray-50 border rounded-xl p-3 flex justify-between items-center shadow-sm'>
+                            <div>
+                              <div className='font-bold text-gray-800 flex items-center gap-1'>
+                                {facilityType === 'hospital' ? '🏥' : facilityType === 'restaurant' ? '🍽️' : facilityType === 'hotel' ? '🏨' : '📍'} {spot.name}
+                              </div>
+                              <div className='text-xs text-gray-500'>現在地から約 {Math.floor(dist)}m</div>
+                            </div>
+                            <button
+                              onClick={() => {
+                                handleModeChange('gps');
+                                setIsSpotMapOpen(false);
+                                setCameraFacing('environment');
+                              }}
+                              className='bg-teal-600 text-white text-xs font-bold px-3 py-2 rounded-lg active:scale-95 transition-transform'
+                            >
+                              ARで見る
+                            </button>
                           </div>
-                          <div className='text-xs text-gray-500'>現在地から約 {Math.floor(dist)}m</div>
-                        </div>
-                        <button
-                          onClick={() => {
-                            handleModeChange('gps');
-                            setIsSpotMapOpen(false);
-                            setCameraFacing('environment');
-                          }}
-                          className='bg-teal-600 text-white text-xs font-bold px-3 py-2 rounded-lg active:scale-95 transition-transform'
-                        >
-                          ARで見る
-                        </button>
-                      </div>
-                    );
-                  })}
-                  {landmarks.length === 0 && <p className='text-xs text-gray-500 text-center'>周辺にスポットが見つかりません</p>}
-                </div>
+                        );
+                      })}
+                      {nearbySpots.length === 0 && <p className='text-xs text-gray-500 text-center py-4'>周辺10km圏内にスポットが見つかりません</p>}
+                    </div>
+                  );
+                })()}
               </div>
             )}
 
@@ -3227,6 +3259,24 @@ function HomeAR() {
                     <div key={n.id} className='bg-pink-50 border border-pink-100 rounded-xl p-3 text-black'>
                       <h4 className='font-bold text-pink-900 text-sm mb-1'>{n.title}</h4>
                       <p className='text-xs text-gray-700 whitespace-pre-wrap'>{n.content}</p>
+                      {n.title === 'すれ違い通信' ? (
+                        <button
+                          onClick={() => handleReceiveEncounterItem(n)}
+                          className='mt-3 w-full bg-pink-500 text-white font-bold py-2 rounded-lg text-sm active:scale-95'
+                        >
+                          🎁 受け取る
+                        </button>
+                      ) : (
+                        <button
+                          onClick={async () => {
+                            await supabase.from('user_notifications').delete().eq('id', n.id);
+                            setUserNotifications(prev => prev.filter(notif => notif.id !== n.id));
+                          }}
+                          className='mt-3 w-full bg-gray-300 text-gray-700 font-bold py-2 rounded-lg text-sm active:scale-95'
+                        >
+                          確認して消す
+                        </button>
+                      )}
                       <div className='text-[10px] text-gray-500 mt-2 text-right'>{new Date(n.created_at).toLocaleString()}</div>
                     </div>
                   ))}
@@ -3907,7 +3957,6 @@ function HomeAR() {
                   pet-interact
                 ></a-entity>
                 
-                {/* 👇 新設：プログラム制御によるアニメーションラッパー */}
                 <a-entity 
                   id='pet-anim-wrapper-0' 
                   pet-anim-controller={`clip: ${(!isEgg && debugAnimEnabled) ? currentAnim : ''}`}
