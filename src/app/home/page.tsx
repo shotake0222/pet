@@ -759,7 +759,7 @@ function HomeAR() {
     }, 600);
   }, [playSound, releaseCameraResources]);
 
-  // ▼▼▼ ここから追加: さんぽモード(GPS)専用のオートフォーカス制御 ▼▼▼
+// ▼▼▼ ここから追加: さんぽモード(GPS)専用のオートフォーカス制御 ▼▼▼
   useEffect(() => {
     // さんぽモード以外、またはカメラの準備ができていない場合は処理しない
     if (viewMode !== 'gps' || !cameraTrulyReady) return;
@@ -781,12 +781,14 @@ function HomeAR() {
 
           // 端末がフォーカス制御をサポートしているか確認
           if (typeof track.getCapabilities === 'function') {
-            const capabilities = track.getCapabilities();
+            // TSエラー回避のため any にキャスト
+            const capabilities = track.getCapabilities() as any;
             
             // continuous（コンティニュアスAF）がサポートされていれば適用
             if (capabilities.focusMode && capabilities.focusMode.includes('continuous')) {
               await track.applyConstraints({
-                advanced: [{ focusMode: 'continuous' }]
+                // ここもTSエラー回避のため any にキャスト
+                advanced: [{ focusMode: 'continuous' } as any]
               });
               if (isDebugMode()) {
                 console.log('✅ カメラのオートフォーカスを有効にしました');
