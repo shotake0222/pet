@@ -120,7 +120,7 @@ const generateRandomSpots = (master: any, count: number, startTime: string, endT
     const lngOffset = r * Math.sin(theta);
 
     spots.push({
-      master_id: master.id,
+      landmark_master_id: master.id,
       name: master.name,
       description: master.description,
       radius_meters: master.radius_meters,
@@ -919,7 +919,7 @@ export default function AdminDashboard() {
 
       // 🌟 2. 作成したマスターのIDを使用して実体を配置する
       const { error: landmarkError } = await supabase.from('landmarks').insert({
-        master_id: master.id,
+        landmark_master_id: master.id,
         name: landmarkName,
         description: landmarkDesc,
         latitude: parseFloat(landmarkLat),
@@ -984,7 +984,7 @@ export default function AdminDashboard() {
     setIsSubmitting(true);
     try {
       const { error } = await supabase.from('landmarks').insert({
-        master_id: activeManualPlaceMaster.id,
+        landmark_master_id: activeManualPlaceMaster.id,
         name: manualPlaceSpotName || activeManualPlaceMaster.name,
         description: activeManualPlaceMaster.description,
         latitude: parseFloat(manualPlaceLat),
