@@ -1130,10 +1130,32 @@ function HomeAR() {
     fetchGameData();
   }, [fetchGameData]);
 
-  const handleAddCustomSpot = async () => {
+const handleAddCustomSpot = async () => {
     if (!sessionUserId || !newSpotName || !newSpotFile) return;
     setIsUploadingSpot(true);
     try {
+      // ▼▼▼ 追加: GPS情報の確実な取得 ▼▼▼
+      let currentLat = location?.lat;
+      let currentLng = location?.lng;
+
+      if (!currentLat || !currentLng) {
+        if (!navigator.geolocation) {
+          throw new Error('お使いの端末はGPSに対応していません。');
+        }
+        await new Promise<void>((resolve, reject) => {
+          navigator.geolocation.getCurrentPosition(
+            (pos) => {
+              currentLat = pos.coords.latitude;
+              currentLng = pos.coords.longitude;
+              resolve();
+            },
+            () => reject(new Error('GPSの取得に失敗しました。位置情報の権限を許可してください。')),
+            { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+          );
+        });
+      }
+      // ▲▲▲ 追加終わり ▲▲▲
+
       const fileExt = newSpotFile.name.split('.').pop();
       const fileName = `${sessionUserId}_${Date.now()}.${fileExt}`;
       const { error: uploadError } = await supabase.storage.from('spot_images').upload(fileName, newSpotFile);
@@ -1146,8 +1168,8 @@ function HomeAR() {
         user_id: sessionUserId,
         name: newSpotName,
         image_url: imageUrl,
-        latitude: location?.lat || null,
-        longitude: location?.lng || null
+        latitude: currentLat, // ▼ 修正
+        longitude: currentLng // ▼ 修正
       }).select('*').single();
 
       if (insertError) throw insertError;
@@ -1539,10 +1561,11 @@ function HomeAR() {
   }, [viewMode, petId, supabase]);
 
   useEffect(() => {
-    if (viewMode === 'gps' && location && landmarks.length > 0) {
-      setActiveLandmark(landmarks.find(lm => getDistance(location.lat, location.lng, lm.latitude, lm.longitude) <= lm.radius_meters) || null);
+    // landmarks ではなく、カスタムスポットも含む allMapSpots を判定対象にする
+    if (viewMode === 'gps' && location && allMapSpots.length > 0) {
+      setActiveLandmark(allMapSpots.find(spot => getDistance(location.lat, location.lng, spot.latitude, spot.longitude) <= spot.radius_meters) || null);
     }
-  }, [location, landmarks, viewMode]);
+  }, [location, allMapSpots, viewMode]);
 
   useEffect(() => {
     if (viewMode !== 'gps') {
