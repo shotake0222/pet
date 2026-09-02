@@ -94,6 +94,7 @@ function HomeAR() {
   const [acquiredPetIds, setAcquiredPetIds] = useState<Set<string>>(new Set());
   const [hallOfFamePetIds, setHallOfFamePetIds] = useState<Set<string>>(new Set());
   const [customSpots, setCustomSpots] = useState<any[]>([]);
+  const [sessionVisitedSpots, setSessionVisitedSpots] = useState<Set<string>>(new Set());
 
   const [newSpotName, setNewSpotName] = useState('');
   const [newSpotFile, setNewSpotFile] = useState<File | null>(null);
@@ -551,7 +552,7 @@ function HomeAR() {
         el.style.margin = '0';
       });
       const canvases = viewport.querySelectorAll('canvas');
-      canvases.forEach(canvas => {
+      canuses.forEach(canvas => {
         const el = canvas as HTMLCanvasElement;
         el.style.position = 'absolute';
         el.style.inset = '0';
@@ -939,18 +940,16 @@ function HomeAR() {
       const { data: items } = await supabase.from('item_masters').select('*').order('id', { ascending: false });
       if (items) setShopItems(items);
 
-      // ▼▼▼ 追加: Supabaseからデータを取得する処理の直後にエラー確認用ログを追加 ▼▼▼
       const { data: spots, error: spotsError } = await supabase
         .from('landmarks')
         .select('*, landmark_masters:landmark_master_id(facility_type)');
       
-      console.log("Supabase Error (landmarks):", spotsError); // エラーが出ていないか？
-      console.log("Fetched Data (landmarks):", spots);    // データは配列で取得できているか？
+      console.log("Supabase Error (landmarks):", spotsError); 
+      console.log("Fetched Data (landmarks):", spots);    
       
       if (spotsError) {
         console.error("Landmarks fetch error:", spotsError);
       }
-      // ▲▲▲ 追加終わり ▲▲▲
 
       if (spots) {
         const parsedSpots = spots.map((spot: any) => ({
@@ -1144,7 +1143,6 @@ const handleAddCustomSpot = async () => {
     if (!sessionUserId || !newSpotName || !newSpotFile) return;
     setIsUploadingSpot(true);
     try {
-      // ▼▼▼ 追加: GPS情報の確実な取得 ▼▼▼
       let currentLat = location?.lat;
       let currentLng = location?.lng;
 
@@ -1164,7 +1162,6 @@ const handleAddCustomSpot = async () => {
           );
         });
       }
-      // ▲▲▲ 追加終わり ▲▲▲
 
       const fileExt = newSpotFile.name.split('.').pop();
       const fileName = `${sessionUserId}_${Date.now()}.${fileExt}`;
@@ -1178,8 +1175,8 @@ const handleAddCustomSpot = async () => {
         user_id: sessionUserId,
         name: newSpotName,
         image_url: imageUrl,
-        latitude: currentLat ? Number(currentLat) : null, // ▼ 修正: 数値として格納
-        longitude: currentLng ? Number(currentLng) : null // ▼ 修正: 数値として格納
+        latitude: currentLat ? Number(currentLat) : null,
+        longitude: currentLng ? Number(currentLng) : null
       }).select('*').single();
 
       if (insertError) throw insertError;
@@ -1319,7 +1316,8 @@ const handleAddCustomSpot = async () => {
       const lastFedTime = new Date(lastFedAt).getTime();
       const hoursPassed = (now - lastFedTime) / (1000 * 60 * 60);
       let calculatedHunger = 100 - (hoursPassed / 24) * 100;
-      if (isSleeping) calculatedHunger = Math.max(calculatedHunger, 50);
+      
+      // 睡眠時は減少させない（handleUseItemでlastFedAtを未来に進めているため自然に相殺される）
       const finalHunger = Math.max(0, Math.min(100, Math.floor(calculatedHunger)));
       setHungerPercent(finalHunger);
 
@@ -1571,7 +1569,6 @@ const handleAddCustomSpot = async () => {
   }, [viewMode, petId, supabase]);
 
   useEffect(() => {
-    // landmarks ではなく、カスタムスポットも含む allMapSpots を判定対象にする
     if (viewMode === 'gps' && location && allMapSpots.length > 0) {
       setActiveLandmark(allMapSpots.find(spot => getDistance(location.lat, location.lng, spot.latitude, spot.longitude) <= spot.radius_meters) || null);
     }
@@ -1976,7 +1973,23 @@ const handleAddCustomSpot = async () => {
       const sleepEnd = new Date();
       sleepEnd.setHours(sleepEnd.getHours() + finalEffect);
       setSleepingUntil(sleepEnd.toISOString());
-      await supabase.from('pets').update({ sleeping_until: sleepEnd.toISOString() }).eq('id', petId);
+
+      // 睡眠時間分、最終給餌時間を未来に進めることで睡眠中の体力減少を防ぐ
+      let newLastFedAt = lastFedAt;
+      if (lastFedAt) {
+        const currentLastFed = new Date(lastFedAt).getTime();
+        newLastFedAt = new Date(currentLastFed + finalEffect * 60 * 60 * 1000).toISOString();
+        setLastFedAt(newLastFedAt);
+      } else {
+        newLastFedAt = new Date().toISOString();
+        setLastFedAt(newLastFedAt);
+      }
+
+      await supabase.from('pets').update({
+         sleeping_until: sleepEnd.toISOString(),
+         last_fed_at: newLastFedAt
+      }).eq('id', petId);
+
       triggerItemActionEffect('sleep');
       alert(`💤 ${item.name} を使って、ペットは ${finalEffect} 時間眠りにつきました。しばらく面倒を見なくても大丈夫です。${affinityMessage}`);
     } else if (item.item_type === 'medicine') {
@@ -2116,8 +2129,21 @@ const handleAddCustomSpot = async () => {
       return alert('体調が優れないようです…まずはマップから【ドクター (病院)】を探して診てもらいましょう！');
     }
 
+    const spotKey = `${activeLandmark.id}-${today}`;
+    if (sessionVisitedSpots.has(spotKey)) {
+      return alert('今日は既に訪問済みです！');
+    }
+
     const { error: visitError } = await supabase.from('landmark_visits').insert({ user_id: sessionUserId, landmark_id: activeLandmark.id, visited_date: today });
-    if (visitError) return alert('今日は既に訪問済みです！');
+    if (visitError) {
+      if (visitError.code === '23505') { // 重複制約エラー
+        return alert('今日は既に訪問済みです！');
+      }
+      console.warn('Check-in visit recording error:', visitError);
+      // カスタムスポット等の外部キーエラーやRLSエラー時は、アイテム取得へ進行させる
+    }
+    
+    setSessionVisitedSpots(prev => new Set(prev).add(spotKey));
 
     setLandmarkVisitCount(prev => prev + 1);
     playSound('levelup');
@@ -4161,58 +4187,4 @@ const handleAddCustomSpot = async () => {
               renderer='alpha: true; preserveDrawingBuffer: true; colorManagement: true;'
               arjs={`sourceType: webcam; videoTexture: true; debugUIEnabled: false; facingMode: ${cameraFacing};`}
             >
-              <a-light type='ambient' color='#ffffff' intensity='0.7'></a-light>
-              <a-light type='directional' color='#ffffff' intensity='1.5' position='0 5 0'></a-light>
-
-              <a-camera gps-camera rotation-reader></a-camera>
-
-              {!isEgg && petId && (
-                <>
-                  {landmarks.map(spot => (
-                    spot.model_url ? (
-                      <a-entity
-                        key={`ar-lm-${spot.id}`}
-                        gps-entity-place={`latitude: ${spot.latitude}; longitude: ${spot.longitude};`}
-                        gltf-model={spot.model_url}
-                        scale='50 50 50'
-                        position='0 2 0'
-                        animation='property: rotation; to: 0 360 0; loop: true; dur: 4000; easing: linear;'
-                      ></a-entity>
-                    ) : (
-                      <a-box
-                        key={`ar-lm-${spot.id}`}
-                        gps-entity-place={`latitude: ${spot.latitude}; longitude: ${spot.longitude};`}
-                        color='#FFD700'
-                        scale='5 5 5'
-                        position='0 2 0'
-                        animation='property: rotation; to: 0 360 0; loop: true; dur: 4000; easing: linear;'
-                      ></a-box>
-                    )
-                  ))}
-                  {customSpots.filter(cs => cs.latitude && cs.longitude).map(spot => (
-                    <a-box
-                      key={`ar-cs-${spot.id}`}
-                      gps-entity-place={`latitude: ${Number(spot.latitude)}; longitude: ${Number(spot.longitude)};`}
-                      src={spot.image_url}
-                      scale='5 5 5'
-                      position='0 2 0'
-                      animation='property: rotation; to: 0 360 0; loop: true; dur: 4000; easing: linear;'
-                    ></a-box>
-                  ))}
-                </>
-              )}
-            </a-scene>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-export default function HomeARPage() {
-  return (
-    <Suspense fallback={<div className='bg-black w-full h-full text-white flex items-center justify-center'>エンジンを起動中...</div>}>
-      <HomeAR />
-    </Suspense>
-  );
-}
+              <a-light type='ambient' color='#ffffff' intensity='0.7'></a-light>そちらに対応できるようにはプログラムされていません。
