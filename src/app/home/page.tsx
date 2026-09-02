@@ -71,6 +71,7 @@ function HomeAR() {
   const [acquiredPetIds, setAcquiredPetIds] = useState<Set<string>>(new Set());
   const [hallOfFamePetIds, setHallOfFamePetIds] = useState<Set<string>>(new Set());
   const [customSpots, setCustomSpots] = useState<any[]>([]);
+  const [visitedCustomSpots, setVisitedCustomSpots] = useState<Set<string>>(new Set());
 
   const [newSpotName, setNewSpotName] = useState('');
   const [newSpotFile, setNewSpotFile] = useState<File | null>(null);
@@ -423,6 +424,22 @@ function HomeAR() {
 
   const isSleeping = sleepingUntil ? new Date(sleepingUntil) > new Date() : false;
 
+  const allLandmarks = useMemo(() => {
+    const custom = customSpots
+      .filter(s => s.latitude != null && s.longitude != null)
+      .map(s => ({
+        id: `custom_${s.id}`,
+        name: s.name,
+        latitude: Number(s.latitude),
+        longitude: Number(s.longitude),
+        radius_meters: 50,
+        bonus_points: 5,
+        landmark_masters: { facility_type: 'custom' },
+        is_custom: true
+      }));
+    return [...landmarks, ...custom];
+  }, [landmarks, customSpots]);
+
   useEffect(() => {
     const setAppHeight = () => {
       const h = window.visualViewport?.height ?? window.innerHeight;
@@ -679,12 +696,6 @@ function HomeAR() {
   }, [viewMode, isAuthChecking, isDataLoaded]);
 
   useEffect(() => {
-    if (!isSwitchingMode) return;
-    const timer = window.setTimeout(() => setIsSwitchingMode(false), 2000);
-    return () => window.clearTimeout(timer);
-  }, [isSwitchingMode]);
-
-  useEffect(() => {
     if (viewMode === 'report') {
       setCameraReady(true);
       setCameraTrulyReady(true);
@@ -904,11 +915,13 @@ function HomeAR() {
       const { data: items } = await supabase.from('item_masters').select('*').order('id', { ascending: false });
       if (items) setShopItems(items);
 
+      const { data: cs } = await supabase.from('custom_spots').select('*').eq('user_id', sessionUserId).order('created_at', { ascending: false });
+      if (cs) setCustomSpots(cs);
+
       const { data: spots } = await supabase
         .from('landmarks')
         .select('*, landmark_masters:landmark_master_id(facility_type)');
       if (spots) {
-        // 数値としてパースすることで、getDistance 等での NaN エラーを防ぎ確実にマップ等で表示させる
         const parsedSpots = spots.map((spot: any) => ({
           ...spot,
           latitude: Number(spot.latitude),
@@ -939,9 +952,6 @@ function HomeAR() {
         setAcquiredPetIds(acquired);
         setHallOfFamePetIds(hof);
       }
-
-      const { data: cs } = await supabase.from('custom_spots').select('*').eq('user_id', sessionUserId).order('created_at', { ascending: false });
-      if (cs) setCustomSpots(cs);
 
       setGameOverNotice(null);
       setGameOverHandled(false);
@@ -1100,6 +1110,18 @@ function HomeAR() {
     if (!sessionUserId || !newSpotName || !newSpotFile) return;
     setIsUploadingSpot(true);
     try {
+      const currentPos = await new Promise<{lat: number, lng: number}>((resolve) => {
+        if (!navigator.geolocation) {
+          resolve(location || { lat: 35.6895, lng: 139.6917 });
+          return;
+        }
+        navigator.geolocation.getCurrentPosition(
+          pos => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+          err => resolve(location || { lat: 35.6895, lng: 139.6917 }),
+          { enableHighAccuracy: true, timeout: 5000 }
+        );
+      });
+
       const fileExt = newSpotFile.name.split('.').pop();
       const fileName = `${sessionUserId}_${Date.now()}.${fileExt}`;
       const { error: uploadError } = await supabase.storage.from('spot_images').upload(fileName, newSpotFile);
@@ -1112,8 +1134,8 @@ function HomeAR() {
         user_id: sessionUserId,
         name: newSpotName,
         image_url: imageUrl,
-        latitude: location?.lat || null,
-        longitude: location?.lng || null
+        latitude: currentPos.lat,
+        longitude: currentPos.lng
       }).select('*').single();
 
       if (insertError) throw insertError;
@@ -1505,10 +1527,10 @@ function HomeAR() {
   }, [viewMode, petId, supabase]);
 
   useEffect(() => {
-    if (viewMode === 'gps' && location && landmarks.length > 0) {
-      setActiveLandmark(landmarks.find(lm => getDistance(location.lat, location.lng, lm.latitude, lm.longitude) <= lm.radius_meters) || null);
+    if (viewMode === 'gps' && location && allLandmarks.length > 0) {
+      setActiveLandmark(allLandmarks.find(lm => getDistance(location.lat, location.lng, lm.latitude, lm.longitude) <= lm.radius_meters) || null);
     }
-  }, [location, landmarks, viewMode]);
+  }, [location, allLandmarks, viewMode]);
 
   useEffect(() => {
     if (viewMode !== 'gps') {
@@ -1550,7 +1572,7 @@ function HomeAR() {
 
     window.addEventListener('pet-tapped', handlePetTap);
     return () => window.removeEventListener('pet-tapped', handlePetTap);
-  }, [viewMode, petId, supabase, isEgg, isSleeping, petCondition, isDataLoaded]);
+  }, [viewMode, petId, supabase, isEgg, isSleeping, petCondition, isDataLoaded, affection, eventCount, exp, level, walkDistance, feedCount]);
 
   useEffect(() => {
     if (!aframeLoaded || typeof window === 'undefined') return;
@@ -1595,20 +1617,20 @@ function HomeAR() {
             if (!clip) return;
 
             if (clip === 'Idle') {
-  this.el.setAttribute('animation', 'property: position; to: 0 0.5 0; dir: alternate; dur: 1000; loop: true; easing: easeInOutSine');
-} else if (clip === 'Happy') {
-  this.el.setAttribute('animation', 'property: rotation; to: 0 1080 0; dur: 1000; loop: true; easing: linear');
-} else if (clip === 'Jump') {
-  this.el.setAttribute('animation', 'property: position; to: 0 2.5 0; dir: alternate; dur: 200; loop: true; easing: easeOutQuad');
-} else if (clip === 'Fly') {
-  this.el.setAttribute('animation', 'property: position; to: 0 4.0 0; dir: alternate; dur: 1000; loop: true; easing: easeInOutSine');
-} else if (clip === 'Sleep') {
-  this.el.setAttribute('animation', 'property: scale; to: 1.4 0.6 1.4; dir: alternate; dur: 1500; loop: true; easing: easeInOutSine');
-} else if (clip === 'Sad') {
-  this.el.setAttribute('animation', 'property: rotation; to: 70 0 0; dir: alternate; dur: 1000; loop: true; easing: easeInOutSine');
-} else if (clip === 'Angry') {
-  this.el.setAttribute('animation', 'property: position; to: 0.4 0 0; dir: alternate; dur: 30; loop: true; easing: linear');
-}
+              this.el.setAttribute('animation', 'property: position; to: 0 0.5 0; dir: alternate; dur: 1000; loop: true; easing: easeInOutSine');
+            } else if (clip === 'Happy') {
+              this.el.setAttribute('animation', 'property: rotation; to: 0 1080 0; dur: 1000; loop: true; easing: linear');
+            } else if (clip === 'Jump') {
+              this.el.setAttribute('animation', 'property: position; to: 0 2.5 0; dir: alternate; dur: 200; loop: true; easing: easeOutQuad');
+            } else if (clip === 'Fly') {
+              this.el.setAttribute('animation', 'property: position; to: 0 4.0 0; dir: alternate; dur: 1000; loop: true; easing: easeInOutSine');
+            } else if (clip === 'Sleep') {
+              this.el.setAttribute('animation', 'property: scale; to: 1.4 0.6 1.4; dir: alternate; dur: 1500; loop: true; easing: easeInOutSine');
+            } else if (clip === 'Sad') {
+              this.el.setAttribute('animation', 'property: rotation; to: 70 0 0; dir: alternate; dur: 1000; loop: true; easing: easeInOutSine');
+            } else if (clip === 'Angry') {
+              this.el.setAttribute('animation', 'property: position; to: 0.4 0 0; dir: alternate; dur: 30; loop: true; easing: linear');
+            }
           }
         }
       });
@@ -2049,8 +2071,13 @@ function HomeAR() {
       return alert('体調が優れないようです…まずはマップから【ドクター (病院)】を探して診てもらいましょう！');
     }
 
-    const { error: visitError } = await supabase.from('landmark_visits').insert({ user_id: sessionUserId, landmark_id: activeLandmark.id, visited_date: today });
-    if (visitError) return alert('今日は既に訪問済みです！');
+    if (activeLandmark.is_custom) {
+      if (visitedCustomSpots.has(activeLandmark.id)) return alert('今日は既に訪問済みです！');
+      setVisitedCustomSpots(prev => new Set(prev).add(activeLandmark.id));
+    } else {
+      const { error: visitError } = await supabase.from('landmark_visits').insert({ user_id: sessionUserId, landmark_id: activeLandmark.id, visited_date: today });
+      if (visitError) return alert('今日は既に訪問済みです！');
+    }
 
     setLandmarkVisitCount(prev => prev + 1);
     playSound('levelup');
@@ -3139,10 +3166,10 @@ function HomeAR() {
                     <div className='w-5 h-5 bg-red-500 rounded-full border-2 border-white shadow-md animate-pulse'></div>
                   </div>
                   <div className='absolute inset-0 z-20 pointer-events-none'>
-                    {landmarks.map(spot => {
+                    {allLandmarks.map(spot => {
                       const master = spot.landmark_masters;
                       const facilityType = master?.facility_type && master.facility_type !== 'normal' ? master.facility_type : getFacilityType(spot.name);
-                      const typeIcon = facilityType === 'hospital' ? '🏥' : facilityType === 'restaurant' ? '🍽️' : facilityType === 'hotel' ? '🏨' : '📍';
+                      const typeIcon = facilityType === 'hospital' ? '🏥' : facilityType === 'restaurant' ? '🍽️' : facilityType === 'hotel' ? '🏨' : facilityType === 'custom' ? '📸' : '📍';
                       const zoomFactors: Record<number, number> = { 1: 0.01, 2: 0.007, 3: 0.005, 4: 0.003, 5: 0.001 };
                       const factor = zoomFactors[mapZoomLevel] || 0.005;
                       const topPercent = 50 - ((spot.latitude - location.lat) / (factor * 2)) * 100;
@@ -3157,7 +3184,7 @@ function HomeAR() {
                 </div>
 
                 {(() => {
-                  const nearbySpots = landmarks.filter(spot => {
+                  const nearbySpots = allLandmarks.filter(spot => {
                     const dist = getDistance(location.lat, location.lng, spot.latitude, spot.longitude);
                     return dist <= 10000;
                   }).sort((a, b) => {
@@ -3172,11 +3199,12 @@ function HomeAR() {
                         const dist = getDistance(location.lat, location.lng, spot.latitude, spot.longitude);
                         const master = spot.landmark_masters;
                         const facilityType = master?.facility_type && master.facility_type !== 'normal' ? master.facility_type : getFacilityType(spot.name);
+                        const typeIcon = facilityType === 'hospital' ? '🏥' : facilityType === 'restaurant' ? '🍽️' : facilityType === 'hotel' ? '🏨' : facilityType === 'custom' ? '📸' : '📍';
                         return (
                           <div key={`list-${spot.id}`} className='bg-gray-50 border rounded-xl p-3 flex justify-between items-center shadow-sm'>
                             <div>
                               <div className='font-bold text-gray-800 flex items-center gap-1'>
-                                {facilityType === 'hospital' ? '🏥' : facilityType === 'restaurant' ? '🍽️' : facilityType === 'hotel' ? '🏨' : '📍'} {spot.name}
+                                {typeIcon} {spot.name}
                               </div>
                               <div className='text-xs text-gray-500'>現在地から約 {Math.floor(dist)}m</div>
                             </div>
@@ -3905,14 +3933,14 @@ function HomeAR() {
                 return (
                   <span
                     key={`${itemActionEffect.kind}-${index}`}
-                    className='absolute rounded-full bg-white/90 shadow-[0_0_14px_rgba(255,255,255,0.8)]'
+                    className='absolute rounded-full bg-white/90 shadow-[0_0_14px_rgba(255,255,255,0.9)] blur-[1px]'
                     style={{
                       left: `${particleX}%`,
                       top: `${particleY}%`,
-                      width: `${7 + index * 1.4}px`,
-                      height: `${7 + index * 1.4}px`,
+                      width: `${4 + (index % 4)}px`,
+                      height: `${4 + (index % 4)}px`,
+                      transform: `translate(-50%, -50%) scale(${1 + burstProgress * 1.5})`,
                       opacity: `${particleOpacity}`,
-                      transform: `translate(-50%, -50%) scale(${1 + burstProgress * 1.35})`,
                       background: itemActionEffect.trailColor,
                     }}
                   />
@@ -3922,174 +3950,111 @@ function HomeAR() {
           );
         })()}
 
-        {viewMode === 'mindar' && sessionUserId && isDataLoaded && scriptsReadyForMindar && !isSwitchingMode && (
-          <div key={`mindar-container-${sceneKey}`} className='absolute inset-0 pointer-events-none'>
-            <a-scene
-              embedded
-              style={{ position: 'absolute', inset: 0, height: '100%', width: '100%', pointerEvents: 'auto' }}
-              mindar-image={`imageTargetSrc: ${petMarkerUrl}; autoStart: true; uiLoading: no; uiError: no; maxTrack: 1; filterMinCF: 0.0001; filterBeta: 0.001;`}
-              renderer='alpha: true; preserveDrawingBuffer: true; colorManagement: true; physicallyCorrectLights: true;'
-              color-space='sRGB'
-              vr-mode-ui='enabled: false'
-              device-orientation-permission-ui='enabled: false'
-              onLoad={(e: any) => {
-                const sceneEl = e?.target;
-                sceneEl?.addEventListener?.('arError', (err: any) => {
-                  console.error('MindAR起動エラー:', err?.detail || err);
-                });
-              }}
-            >
-              <a-assets>
-                <a-asset-item id='pet-asset' src={activeModelUrl}></a-asset-item>
-              </a-assets>
-              <a-light type='ambient' color='#ffffff' intensity='0.5'></a-light>
-              <a-light type='directional' color='#ffffff' intensity='1.5' position='-1 2 1' castShadow='true'></a-light>
+        {viewMode === 'mindar' && scriptsReadyForMindar && !isSwitchingMode && (
+          <a-scene
+            key={`mindar-scene-${sceneKey}`}
+            mindar-image={`imageTargetSrc: ${petMarkerUrl}; filterMinCF: 0.0001; filterBeta: 0.01; warmupTolerance: 5; missTolerance: 5`}
+            color-space='sRGB'
+            renderer='colorManagement: true, physicallyCorrectLights: true'
+            vr-mode-ui='enabled: false'
+            device-orientation-permission-ui='enabled: false'
+          >
+            <a-assets>
+              <a-asset-item id='pet-asset' src={activeModelUrl}></a-asset-item>
+            </a-assets>
+            <a-camera position='0 0 0' look-controls='enabled: false' mouse-cursor raycaster='objects: .clickable'></a-camera>
 
-              <a-camera position='0 0 0' look-controls='enabled: false' cursor='rayOrigin: mouse; fuse: false;' raycaster='objects: .clickable'></a-camera>
+            <a-light type='ambient' color='#ffffff' intensity='1.2'></a-light>
+            <a-light type='directional' color='#ffffff' intensity='0.8' position='0 2 1'></a-light>
+            <a-light type='directional' color='#ffd4a3' intensity='0.4' position='-1 1 -1'></a-light>
 
-              <a-entity mindar-image-target='targetIndex: 0' id='marker-target-0' mindar-event-listener="">
-                <a-entity
-                  id='pet-hitbox-0'
-                  class={(!isEgg && !isSleeping) ? 'clickable' : ''}
-                  geometry='primitive: cylinder; radius: 1.5; height: 3'
-                  material='transparent: true; opacity: 0; depthWrite: false'
-                  position='0 1.5 0'
-                  pet-interact
-                ></a-entity>
-                
-                <a-entity 
-                  id='pet-anim-wrapper-0' 
-                  pet-anim-controller={`clip: ${(!isEgg && debugAnimEnabled) ? currentAnim : ''}`}
-                >
-                  <a-gltf-model
-                    id='pet-model-0'
-                    rotation={`${debugRotX} ${debugRotY} ${debugRotZ}`}
-                    position='0 0 0'
-                    scale={hatchAnimating ? `${debugScaleX * 0.2} ${debugScaleY * 0.2} ${debugScaleZ * 0.2}` : `${debugScaleX} ${debugScaleY} ${debugScaleZ}`}
-                    src='#pet-asset'
-                    shadow='cast: true; receive: true'
-                    animation={hatchAnimating ? `property: scale; to: ${debugScaleX} ${debugScaleY} ${debugScaleZ}; dur: 800; easing: easeOutElastic` : undefined}
-                  ></a-gltf-model>
-                </a-entity>
-              </a-entity>
-
-              <a-entity mindar-image-target='targetIndex: 1' id='marker-target-1' mindar-event-listener="">
-                <a-entity
-                  id='pet-hitbox-1'
-                  class={(!isEgg && !isSleeping) ? 'clickable' : ''}
-                  geometry='primitive: cylinder; radius: 1.5; height: 3'
-                  material='transparent: true; opacity: 0; depthWrite: false'
-                  position='0 1.5 0'
-                  pet-interact
-                ></a-entity>
-                <a-entity 
-                  id='pet-anim-wrapper-1' 
-                  pet-anim-controller={`clip: ${(!isEgg && debugAnimEnabled) ? currentAnim : ''}`}
-                >
-                  <a-gltf-model
-                    id='pet-model-1'
-                    rotation={`${debugRotX} ${debugRotY} ${debugRotZ}`}
-                    position='0 0 0'
-                    scale={hatchAnimating ? `${debugScaleX * 0.2} ${debugScaleY * 0.2} ${debugScaleZ * 0.2}` : `${debugScaleX} ${debugScaleY} ${debugScaleZ}`}
-                    src='#pet-asset'
-                    shadow='cast: true; receive: true'
-                    animation={hatchAnimating ? `property: scale; to: ${debugScaleX} ${debugScaleY} ${debugScaleZ}; dur: 800; easing: easeOutElastic` : undefined}
-                  ></a-gltf-model>
-                </a-entity>
-              </a-entity>
-
-              <a-entity mindar-image-target='targetIndex: 2' id='marker-target-2' mindar-event-listener="">
-                <a-entity
-                  id='pet-hitbox-2'
-                  class={(!isEgg && !isSleeping) ? 'clickable' : ''}
-                  geometry='primitive: cylinder; radius: 1.5; height: 3'
-                  material='transparent: true; opacity: 0; depthWrite: false'
-                  position='0 1.5 0'
-                  pet-interact
-                ></a-entity>
-                <a-entity 
-                  id='pet-anim-wrapper-2' 
-                  pet-anim-controller={`clip: ${(!isEgg && debugAnimEnabled) ? currentAnim : ''}`}
-                >
-                  <a-gltf-model
-                    id='pet-model-2'
-                    rotation={`${debugRotX} ${debugRotY} ${debugRotZ}`}
-                    position='0 0 0'
-                    scale={hatchAnimating ? `${debugScaleX * 0.2} ${debugScaleY * 0.2} ${debugScaleZ * 0.2}` : `${debugScaleX} ${debugScaleY} ${debugScaleZ}`}
-                    src='#pet-asset'
-                    shadow='cast: true; receive: true'
-                    animation={hatchAnimating ? `property: scale; to: ${debugScaleX} ${debugScaleY} ${debugScaleZ}; dur: 800; easing: easeOutElastic` : undefined}
-                  ></a-gltf-model>
-                </a-entity>
-              </a-entity>
-
-              <a-entity mindar-image-target='targetIndex: 3' id='marker-target-3' mindar-event-listener="">
-                <a-entity
-                  id='pet-hitbox-3'
-                  class={(!isEgg && !isSleeping) ? 'clickable' : ''}
-                  geometry='primitive: cylinder; radius: 1.5; height: 3'
-                  material='transparent: true; opacity: 0; depthWrite: false'
-                  position='0 1.5 0'
-                  pet-interact
-                ></a-entity>
-                <a-entity 
-                  id='pet-anim-wrapper-3' 
-                  pet-anim-controller={`clip: ${(!isEgg && debugAnimEnabled) ? currentAnim : ''}`}
-                >
-                  <a-gltf-model
-                    id='pet-model-3'
-                    rotation={`${debugRotX} ${debugRotY} ${debugRotZ}`}
-                    position='0 0 0'
-                    scale={hatchAnimating ? `${debugScaleX * 0.2} ${debugScaleY * 0.2} ${debugScaleZ * 0.2}` : `${debugScaleX} ${debugScaleY} ${debugScaleZ}`}
-                    src='#pet-asset'
-                    shadow='cast: true; receive: true'
-                    animation={hatchAnimating ? `property: scale; to: ${debugScaleX} ${debugScaleY} ${debugScaleZ}; dur: 800; easing: easeOutElastic` : undefined}
-                  ></a-gltf-model>
-                </a-entity>
-              </a-entity>
-            </a-scene>
-          </div>
-        )}
-        {viewMode === 'gps' && isDataLoaded && scriptsReadyForGps && !isSwitchingMode && (
-          <div key={`gps-container-${sceneKey}-${cameraFacing}`} className='absolute inset-0 pointer-events-none'>
-            <a-scene
-              embedded
-              style={{ position: 'absolute', inset: 0, height: '100%', width: '100%', pointerEvents: 'none' }}
-              vr-mode-ui='enabled: false'
-              renderer='alpha: true; preserveDrawingBuffer: true; colorManagement: true;'
-              arjs={`sourceType: webcam; videoTexture: true; debugUIEnabled: false; facingMode: ${cameraFacing};`}
-            >
-              <a-assets>
-                {activeLandmark && activeLandmark.model_url && (
-                  <a-asset-item id='landmark-asset-dynamic' src={activeLandmark.model_url}></a-asset-item>
+            {Array.from({ length: MARKER_COUNT }).map((_, i) => (
+              <a-entity key={i} id={`marker-target-${i}`} mindar-image-target={`targetIndex: ${i}`} mindar-event-listener>
+                {(!isEggUnregistered || (isEggUnregistered && detectedTargetIndex === i)) && (
+                  <a-entity
+                    id={`pet-container-${i}`}
+                    position='0 0 0.1'
+                    scale={isDebugMode() ? `${debugScaleX} ${debugScaleY} ${debugScaleZ}` : `${MODEL_SCALE} ${MODEL_SCALE} ${MODEL_SCALE}`}
+                    rotation={isDebugMode() ? `${debugRotX} ${debugRotY} ${debugRotZ}` : '90 0 0'}
+                    pet-anim-controller={debugAnimEnabled ? `clip: ${currentAnim}` : ''}
+                  >
+                    <a-entity
+                      id={`pet-model-${i}`}
+                      gltf-model='#pet-asset'
+                      animation-mixer={debugAnimEnabled ? (isEgg ? 'clip: *;' : `clip: ${currentAnim};`) : ''}
+                      shadow='cast: true; receive: true'
+                    ></a-entity>
+                    <a-box id={`pet-hitbox-${i}`} class='clickable' position='0 1 0' scale='2 2 2' material='opacity: 0; transparent: true' pet-interact></a-box>
+                  </a-entity>
                 )}
-              </a-assets>
+              </a-entity>
+            ))}
+          </a-scene>
+        )}
 
-              <a-light type='ambient' color='#ffffff' intensity='0.7'></a-light>
-              <a-light type='directional' color='#ffffff' intensity='1.5' position='0 5 0'></a-light>
+        {viewMode === 'gps' && scriptsReadyForGps && !isSwitchingMode && (
+          <a-scene
+            key={`gps-scene-${sceneKey}`}
+            vr-mode-ui='enabled: false'
+            renderer='logarithmicDepthBuffer: true; colorManagement: true'
+            arjs='sourceType: webcam; sourceWidth:1280; sourceHeight:960; displayWidth: 1280; displayHeight: 960; debugUIEnabled: false;'
+          >
+            <a-assets>
+              <a-asset-item id='gps-pet-asset' src={activeModelUrl}></a-asset-item>
+            </a-assets>
 
-              <a-camera gps-camera rotation-reader></a-camera>
+            <a-camera gps-camera={`simulateLatitude: ${location?.lat || 0}; simulateLongitude: ${location?.lng || 0}`} rotation-reader></a-camera>
 
-              {activeLandmark && !isEgg && petId && (
+            <a-light type='ambient' color='#ffffff' intensity='1.2'></a-light>
+            <a-light type='directional' color='#ffffff' intensity='1.0' position='0 2 1'></a-light>
+
+            {!isEggUnregistered && location && (
+              <a-entity
+                gps-entity-place={`latitude: ${location.lat + 0.00005}; longitude: ${location.lng}`}
+                scale={isDebugMode() ? `${debugScaleX} ${debugScaleY} ${debugScaleZ}` : '2 2 2'}
+                position='0 -2 -5'
+                look-at='[gps-camera]'
+              >
                 <a-entity
-                  gps-entity-place={`latitude: ${activeLandmark.latitude}; longitude: ${activeLandmark.longitude};`}
-                  gltf-model={activeLandmark.model_url ? '#landmark-asset-dynamic' : '/models/treasure.glb'}
-                  scale='5 5 5'
-                  position='0 2 0'
-                  animation='property: rotation; to: 0 360 0; loop: true; dur: 4000; easing: linear;'
-                ></a-entity>
-              )}
-            </a-scene>
-          </div>
+                  id='gps-pet-container'
+                  pet-anim-controller={debugAnimEnabled ? `clip: ${currentAnim}` : ''}
+                >
+                  <a-entity
+                    gltf-model='#gps-pet-asset'
+                    animation-mixer={debugAnimEnabled ? (isEgg ? 'clip: *;' : `clip: ${currentAnim};`) : ''}
+                  ></a-entity>
+                </a-entity>
+              </a-entity>
+            )}
+
+            {allLandmarks.map(spot => (
+              <a-entity key={`gps-landmark-${spot.id}`} gps-entity-place={`latitude: ${spot.latitude}; longitude: ${spot.longitude}`} position='0 2 0' scale='5 5 5' look-at='[gps-camera]'>
+                <a-text
+                  value={`${spot.name}\n${Math.floor(getDistance(location?.lat || 0, location?.lng || 0, spot.latitude, spot.longitude))}m`}
+                  align='center'
+                  color='#FFFFFF'
+                  outline-color='#000000'
+                  outline-width='0.1'
+                  scale='2 2 2'
+                ></a-text>
+              </a-entity>
+            ))}
+          </a-scene>
         )}
       </div>
     </div>
   );
 }
 
-export default function HomeARPage() {
+export default function App() {
   return (
-    <Suspense fallback={<div className='bg-black w-full h-full text-white flex items-center justify-center'>エンジンを起動中...</div>}>
+    <Suspense
+      fallback={
+        <div className='bg-black w-screen h-screen flex items-center justify-center text-white'>
+          <div className='w-10 h-10 border-4 border-gray-500 border-t-white rounded-full animate-spin'></div>
+        </div>
+      }
+    >
       <HomeAR />
     </Suspense>
   );
