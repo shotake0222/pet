@@ -3,7 +3,7 @@
  */
 
 import { createClient } from '@/utils/supabase/client';
-import crypto from 'crypto';
+// import crypto from 'crypto'; // 必要な場合はコメントアウトを外してください
 
 /**
  * ユニークなリワードコードを生成
@@ -69,13 +69,15 @@ export const createGameReward = async (
  */
 export const isSpotActive = (spot: any): boolean => {
   const now = new Date();
-  const startDate = spot.start_date ? new Date(spot.start_date) : null;
-  const endDate = spot.end_date ? new Date(spot.end_date) : null;
+  // 修正: DBのカラム名に合わせて start_time / end_time を参照
+  const startDate = spot.start_time ? new Date(spot.start_time) : null;
+  const endDate = spot.end_time ? new Date(spot.end_time) : null;
 
   if (startDate && now < startDate) return false; // まだ開始していない
   if (endDate && now > endDate) return false; // 終了している
 
-  return spot.status === 'active';
+  // 修正: DBのステータスが未設定(null)の場合も有効とみなす
+  return spot.status === 'active' || spot.status == null;
 };
 
 /**
@@ -106,6 +108,7 @@ export const createSpot = async (spotData: {
         start_time: spotData.start_date?.toISOString() || null,
         end_time: spotData.end_date?.toISOString() || null,
         is_limited_time: spotData.is_limited_time || false,
+        status: 'active', // 修正: 新規作成時はデフォルトでactiveにする
       })
       .select()
       .single();
@@ -148,6 +151,8 @@ export const updateSpot = async (
     if (updates.start_date !== undefined) payload.start_time = updates.start_date?.toISOString() || null;
     if (updates.end_date !== undefined) payload.end_time = updates.end_date?.toISOString() || null;
     if (updates.is_limited_time !== undefined) payload.is_limited_time = updates.is_limited_time;
+    // 修正: statusの更新処理を追加
+    if (updates.status !== undefined) payload.status = updates.status;
 
     const { data, error } = await supabase
       .from('landmarks')
@@ -213,8 +218,9 @@ export const getAllSpots = async () => {
  */
 export const getSpotStatus = (spot: any): 'active' | 'inactive' | 'pending' => {
   const now = new Date();
-  const startDate = spot.start_date ? new Date(spot.start_date) : null;
-  const endDate = spot.end_date ? new Date(spot.end_date) : null;
+  // 修正: DBのカラム名に合わせて start_time / end_time を参照
+  const startDate = spot.start_time ? new Date(spot.start_time) : null;
+  const endDate = spot.end_time ? new Date(spot.end_time) : null;
 
   if (startDate && now < startDate) return 'pending';
   if (endDate && now > endDate) return 'inactive';
@@ -319,7 +325,7 @@ export const getSpotFromQRData = async (qrData: string) => {
 
     const supabase = createClient();
     const { data, error } = await supabase
-      .from('spots')
+      .from('landmarks') // 修正: 'spots' テーブルから 'landmarks' テーブルへ変更
       .select('*')
       .eq('id', parsed.spotId)
       .single();

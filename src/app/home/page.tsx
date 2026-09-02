@@ -555,7 +555,7 @@ function HomeAR() {
         el.style.margin = '0';
       });
       const canvases = viewport.querySelectorAll('canvas');
-      canvases.forEach(canvas => {
+      canuses.forEach(canvas => {
         const el = canvas as HTMLCanvasElement;
         el.style.position = 'absolute';
         el.style.inset = '0';
@@ -4175,7 +4175,7 @@ function HomeAR() {
                 >
                   <a-gltf-model
                     id='pet-model-0'
-　　　　　　　　　　　　src='#pet-asset'
+                    src='#pet-asset'
                     position='0 0 0'
                     scale={`${debugScaleX} ${debugScaleY} ${debugScaleZ}`}
                     rotation={`${debugRotX} ${debugRotY} ${debugRotZ}`}
