@@ -551,7 +551,7 @@ function HomeAR() {
         el.style.margin = '0';
       });
       const canvases = viewport.querySelectorAll('canvas');
-      canvases.forEach(canvas => {
+      canverses.forEach(canvas => {
         const el = canvas as HTMLCanvasElement;
         el.style.position = 'absolute';
         el.style.inset = '0';
@@ -939,9 +939,19 @@ function HomeAR() {
       const { data: items } = await supabase.from('item_masters').select('*').order('id', { ascending: false });
       if (items) setShopItems(items);
 
-      const { data: spots } = await supabase
+      // ▼▼▼ 追加: Supabaseからデータを取得する処理の直後にエラー確認用ログを追加 ▼▼▼
+      const { data: spots, error: spotsError } = await supabase
         .from('landmarks')
         .select('*, landmark_masters:landmark_master_id(facility_type)');
+      
+      console.log("Supabase Error (landmarks):", spotsError); // エラーが出ていないか？
+      console.log("Fetched Data (landmarks):", spots);    // データは配列で取得できているか？
+      
+      if (spotsError) {
+        console.error("Landmarks fetch error:", spotsError);
+      }
+      // ▲▲▲ 追加終わり ▲▲▲
+
       if (spots) {
         const parsedSpots = spots.map((spot: any) => ({
           ...spot,
@@ -1168,8 +1178,8 @@ const handleAddCustomSpot = async () => {
         user_id: sessionUserId,
         name: newSpotName,
         image_url: imageUrl,
-        latitude: currentLat, // ▼ 修正
-        longitude: currentLng // ▼ 修正
+        latitude: currentLat ? Number(currentLat) : null, // ▼ 修正: 数値として格納
+        longitude: currentLng ? Number(currentLng) : null // ▼ 修正: 数値として格納
       }).select('*').single();
 
       if (insertError) throw insertError;
