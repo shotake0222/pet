@@ -759,6 +759,58 @@ function HomeAR() {
     }, 600);
   }, [playSound, releaseCameraResources]);
 
+  // ▼▼▼ ここから追加: さんぽモード(GPS)専用のオートフォーカス制御 ▼▼▼
+  useEffect(() => {
+    // さんぽモード以外、またはカメラの準備ができていない場合は処理しない
+    if (viewMode !== 'gps' || !cameraTrulyReady) return;
+
+    const enableAutofocus = async () => {
+      try {
+        const viewport = arViewportRef.current;
+        if (!viewport) return;
+        
+        // 生成されたカメラ映像(video要素)を取得
+        const videos = viewport.querySelectorAll('video');
+        
+        videos.forEach(async (video) => {
+          if (!video.srcObject) return;
+          
+          // 映像ストリームのトラックを取得
+          const track = (video.srcObject as MediaStream).getVideoTracks()[0];
+          if (!track) return;
+
+          // 端末がフォーカス制御をサポートしているか確認
+          if (typeof track.getCapabilities === 'function') {
+            const capabilities = track.getCapabilities();
+            
+            // continuous（コンティニュアスAF）がサポートされていれば適用
+            if (capabilities.focusMode && capabilities.focusMode.includes('continuous')) {
+              await track.applyConstraints({
+                advanced: [{ focusMode: 'continuous' }]
+              });
+              if (isDebugMode()) {
+                console.log('✅ カメラのオートフォーカスを有効にしました');
+              }
+            }
+          }
+        });
+      } catch (err) {
+        console.warn('⚠️ オートフォーカスの設定に失敗しました:', err);
+      }
+    };
+
+    // カメラストリームの読み込み直後は適用に失敗することがあるため、
+    // 0.5秒後と2秒後の2回タイミングを分けて適用を試みます
+    const timer1 = window.setTimeout(enableAutofocus, 500);
+    const timer2 = window.setTimeout(enableAutofocus, 2000);
+
+    return () => {
+      window.clearTimeout(timer1);
+      window.clearTimeout(timer2);
+    };
+  }, [viewMode, cameraTrulyReady, sceneKey]);
+  // ▲▲▲ ここまで追加 ▲▲▲
+
   // GPSモード用の独自のカメラ背景描画フック (AR.jsを使わない)
   useEffect(() => {
     if (viewMode !== 'gps') return;
