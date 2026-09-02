@@ -555,7 +555,7 @@ function HomeAR() {
         el.style.margin = '0';
       });
       const canvases = viewport.querySelectorAll('canvas');
-      canvases.forEach(canvas => {
+      canverses.forEach(canvas => {
         const el = canvas as HTMLCanvasElement;
         el.style.position = 'absolute';
         el.style.inset = '0';
@@ -782,10 +782,11 @@ function HomeAR() {
     }
 
     navigator.mediaDevices.getUserMedia({
+      audio: false,
       video: { 
         facingMode: cameraFacing,
-        width: { ideal: 1920 },
-        height: { ideal: 1080 }
+        width: { ideal: 1280, max: 1920 },
+        height: { ideal: 720, max: 1080 }
       }
     }).then(s => {
       const track = s.getVideoTracks()[0];
@@ -4134,9 +4135,7 @@ function HomeAR() {
                   transform: `translate(-50%, -50%) scale(${scale}) rotate(${rotation}deg)`,
                   opacity: `${emphasis}`,
                 }}
-              >
-                <span className='text-3xl drop-shadow-sm'>{itemActionEffect.emoji}</span>
-              </div>
+              />
 
               <div
                 className='absolute flex items-center justify-center rounded-full border border-white/80 bg-white/80 shadow-[0_0_18px_rgba(255,255,255,0.8)] backdrop-blur-sm'
@@ -4148,9 +4147,7 @@ function HomeAR() {
                   transform: `translate(-50%, -50%) scale(${0.9 + progress * 0.7})`,
                   opacity: `${Math.max(0, 1 - progress * 0.2)}`,
                 }}
-              >
-                <span className='text-lg'>{moodBadge}</span>
-              </div>
+              />
 
               {particles.map((_, index) => {
                 const burstProgress = Math.max(0, (progress - 0.58) / 0.42);
