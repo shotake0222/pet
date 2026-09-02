@@ -555,7 +555,7 @@ function HomeAR() {
         el.style.margin = '0';
       });
       const canvases = viewport.querySelectorAll('canvas');
-      canvases.forEach(canvas => {
+      canuses.forEach(canvas => {
         const el = canvas as HTMLCanvasElement;
         el.style.position = 'absolute';
         el.style.inset = '0';
@@ -782,8 +782,21 @@ function HomeAR() {
     }
 
     navigator.mediaDevices.getUserMedia({
-      video: { facingMode: cameraFacing }
+      video: { 
+        facingMode: cameraFacing,
+        width: { ideal: 1920 },
+        height: { ideal: 1080 }
+      }
     }).then(s => {
+      const track = s.getVideoTracks()[0];
+      if (track && typeof track.getCapabilities === 'function') {
+        const caps = track.getCapabilities() as any;
+        if (caps.focusMode && caps.focusMode.includes('continuous')) {
+          track.applyConstraints({
+            advanced: [{ focusMode: 'continuous' } as any]
+          }).catch(e => console.warn('フォーカス設定エラー:', e));
+        }
+      }
       stream = s;
       videoEl.srcObject = s;
     }).catch(err => {
