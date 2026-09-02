@@ -351,9 +351,10 @@ export default function AdminDashboard() {
   const [landmarkRadius, setLandmarkRadius] = useState('50');
   const [landmarkPoints, setLandmarkPoints] = useState('100');
   const [landmarkModelFile, setLandmarkModelFile] = useState<File | null>(null);
-  // 🌟 手動配置用の期間設定を追加
+  // 🌟 手動配置用の期間・施設タイプ設定を追加
   const [landmarkStartTime, setLandmarkStartTime] = useState('');
   const [landmarkEndTime, setLandmarkEndTime] = useState('');
+  const [landmarkFacilityType, setLandmarkFacilityType] = useState('special');
 
   // --- アイテム用State ---
   const [itemName, setItemName] = useState('');
@@ -895,13 +896,30 @@ export default function AdminDashboard() {
     }
   };
 
+  // 🌟 手動個別配置（マスター作成＆実体配置）
   const handleAddLandmarkManual = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!landmarkModelFile || !landmarkName || !landmarkLat || !landmarkLng) return alert('必須項目が不足しています');
     setIsSubmitting(true);
     try {
       const modelUrl = await uploadFile(landmarkModelFile, 'models');
-      const { error } = await supabase.from('landmarks').insert({
+      
+      // 🌟 1. マスターを作成する（報酬設定の紐付けとアプリ側のエラー防止のため）
+      const { data: master, error: masterError } = await supabase.from('landmark_masters').insert({
+        name: landmarkName,
+        description: landmarkDesc,
+        facility_type: landmarkFacilityType,
+        radius_meters: parseInt(landmarkRadius, 10),
+        bonus_points: parseInt(landmarkPoints, 10),
+        model_url: modelUrl,
+        is_public: true // 個別に配置する＝利用可能な状態としてマスターも公開する
+      }).select('id').single();
+
+      if (masterError) throw masterError;
+
+      // 🌟 2. 作成したマスターのIDを使用して実体を配置する
+      const { error: landmarkError } = await supabase.from('landmarks').insert({
+        master_id: master.id,
         name: landmarkName,
         description: landmarkDesc,
         latitude: parseFloat(landmarkLat),
@@ -909,15 +927,16 @@ export default function AdminDashboard() {
         radius_meters: parseInt(landmarkRadius, 10),
         bonus_points: parseInt(landmarkPoints, 10),
         model_url: modelUrl,
-        // 🌟 個別配置用の期間設定を追加して保存
         start_time: landmarkStartTime ? new Date(landmarkStartTime).toISOString() : null,
         end_time: landmarkEndTime ? new Date(landmarkEndTime).toISOString() : null
       });
-      if (error) throw error;
 
-      alert(`スポット「${landmarkName}」を地図上に設置しました！`);
+      if (landmarkError) throw landmarkError;
+
+      alert(`スポット「${landmarkName}」を地図上に設置しました！\n（ドロップ報酬設定にもマスターとして紐付け可能になりました）`);
       setLandmarkName(''); setLandmarkDesc(''); setLandmarkLat(''); setLandmarkLng(''); setLandmarkModelFile(null);
-      setLandmarkStartTime(''); setLandmarkEndTime(''); // リセット
+      setLandmarkStartTime(''); setLandmarkEndTime(''); 
+      setLandmarkFacilityType('special'); // デフォルトに戻す
       await fetchData(); 
     } catch (e: any) {
       alert(`エラー: ${e.message}`);
@@ -1028,7 +1047,7 @@ export default function AdminDashboard() {
           description: itemDesc,
           item_type: itemType,
           price_jpy: itemPriceType === 'free' ? 0 : parseInt(itemPrice, 10),
-          price_type: itemPriceType,           
+          price_type: itemPriceType,            
           drop_weight: parseInt(itemDropWeight, 10), 
           effect_value: parseInt(itemEffect, 10),
           image_url: imageUrl
@@ -1539,14 +1558,25 @@ export default function AdminDashboard() {
                     <form onSubmit={handleAddLandmarkManual} className="space-y-5 bg-gray-50 p-6 rounded-2xl border border-gray-100">
                       <h2 className="text-xl font-bold">スポット個別配置</h2>
                       <div className="flex gap-4">
-                        <div className="flex-1">
+                        <div className="flex-[2]">
                           <label className="block text-sm font-bold mb-1">スポット名</label>
                           <input type="text" value={landmarkName} onChange={e => setLandmarkName(e.target.value)} className="w-full border p-3 rounded-lg focus:ring-2 focus:ring-green-500" required />
                         </div>
-                        <div className="flex-1">
-                          <label className="block text-sm font-bold mb-1">説明</label>
-                          <input type="text" value={landmarkDesc} onChange={e => setLandmarkDesc(e.target.value)} className="w-full border p-3 rounded-lg focus:ring-2 focus:ring-green-500" />
+                        {/* 🌟 施設タイプをプルダウンで指定可能にする（報酬設定との紐付け用） */}
+                        <div className="flex-[1]">
+                          <label className="block text-sm font-bold mb-1 text-teal-700">施設タイプ 🌟</label>
+                          <select value={landmarkFacilityType} onChange={e => setLandmarkFacilityType(e.target.value)} className="w-full border p-3 rounded-lg focus:ring-2 focus:ring-teal-500 font-bold bg-teal-50 text-teal-900 border-teal-200">
+                            <option value="normal">📍 通常スポット</option>
+                            <option value="special">🌟 特別スポット</option>
+                            <option value="restaurant">🍽️ ご飯屋さん</option>
+                            <option value="hospital">🏥 病院 (ドクター)</option>
+                            <option value="hotel">🏨 ホテル (休憩所)</option>
+                          </select>
                         </div>
+                      </div>
+                      <div>
+                        <label className="block text-sm font-bold mb-1">説明</label>
+                        <input type="text" value={landmarkDesc} onChange={e => setLandmarkDesc(e.target.value)} className="w-full border p-3 rounded-lg focus:ring-2 focus:ring-green-500" />
                       </div>
                       <div className="flex gap-4">
                         <div className="flex-1">
