@@ -2560,6 +2560,41 @@ const handleAddCustomSpot = async () => {
               }} className='w-full bg-purple-600 text-white font-bold py-2 rounded-lg shadow text-sm'>
                 📦 持ち物満タンテスト
               </button>
+              <div className='space-y-2 mt-4'>
+              <h3 className='font-bold text-sm bg-gray-200 p-1 rounded'>🗺️ GPS・マップの検証</h3>
+              <button 
+                onClick={() => {
+                  if (!location) return alert('GPSが取得されていません。画面上で現在地が取得されるまでお待ちください。');
+                  const dummySpot = {
+                    id: 'debug-spot-' + Date.now(),
+                    name: 'テストスポット(目の前)',
+                    // 緯度に+0.0001することで、現在地の約11メートル北に配置されます
+                    latitude: location.lat + 0.0001, 
+                    longitude: location.lng,
+                    radius_meters: 50,
+                    bonus_points: 100,
+                    isCustom: false,
+                    landmark_masters: { facility_type: 'normal' }
+                  };
+                  setLandmarks(prev => [dummySpot, ...prev]);
+                  alert('現在地のすぐ北(約11m)にテストスポットを配置しました！\nマップとARを確認してください。');
+                }} 
+                className='w-full bg-teal-600 text-white font-bold py-2 rounded-lg shadow text-sm'
+              >
+                📍 目の前にテストスポットを生成
+              </button>
+              
+              <button 
+                onClick={() => {
+                  console.log("📍 現在地:", location);
+                  console.log("🗺️ 読み込まれた全スポット:", allMapSpots);
+                  alert(`現在地: ${location?.lat}, ${location?.lng}\n読み込みスポット件数: ${allMapSpots.length}件\n※詳細はコンソールのログを見てください`);
+                }}
+                className='w-full bg-gray-600 text-white font-bold py-2 rounded-lg shadow text-sm'
+              >
+                📋 現在地とスポット件数を確認
+              </button>
+            </div>
               <button onClick={() => triggerRainbowBridge(petId!, generation)} className='w-full bg-black text-white font-bold py-2 rounded-lg shadow text-sm'>
                 🌈 寿命(殿堂入り)テスト
               </button>
