@@ -555,7 +555,7 @@ function HomeAR() {
         el.style.margin = '0';
       });
       const canvases = viewport.querySelectorAll('canvas');
-      canvases.forEach(canvas => {
+      canases.forEach(canvas => {
         const el = canvas as HTMLCanvasElement;
         el.style.position = 'absolute';
         el.style.inset = '0';
@@ -4297,8 +4297,8 @@ function HomeAR() {
               <a-light type='directional' color='#ffffff' intensity='1.5' position='-1 2 1'></a-light>
               
               <a-camera position='0 0 0' look-controls='enabled: false' wasd-controls='enabled: false'>
-                {/* GPSモードではカメラの前に常にペットを表示（卵が未登録の状態・睡眠中を除く） */}
-                {!isEggUnregistered && !isSleeping && (
+                {/* GPSモードではカメラの前に常にペットを表示（卵が未登録の状態・卵の状態・睡眠中を除く） */}
+                {!isEggUnregistered && !isSleeping && !isEgg && (
                   <a-entity position='0 -1.5 -3' rotation='0 0 0'>
                     <a-entity pet-anim-controller={`clip: ${(!isEgg && debugAnimEnabled) ? currentAnim : ''}`}>
                       <a-gltf-model
