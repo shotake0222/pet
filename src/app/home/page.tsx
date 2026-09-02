@@ -572,9 +572,10 @@ function HomeAR() {
         try {
           scene.resize?.();
           const isMindArScene = scene.hasAttribute?.('mindar-image');
+          const isArjsScene = scene.hasAttribute?.('arjs');
           if (!isMindArScene) {
             scene.renderer?.setSize?.(width, height, false);
-            if (scene.camera) {
+            if (scene.camera && !isArjsScene) {
               scene.camera.aspect = width / height;
               scene.camera.updateProjectionMatrix?.();
             }
@@ -4091,9 +4092,7 @@ function HomeAR() {
                   transform: `translate(-50%, -50%) scale(${scale}) rotate(${rotation}deg)`,
                   opacity: `${emphasis}`,
                 }}
-              >
-                <span className='text-3xl drop-shadow-sm'>{itemActionEffect.emoji}</span>
-              </div>
+              />
 
               <div
                 className='absolute flex items-center justify-center rounded-full border border-white/80 bg-white/80 shadow-[0_0_18px_rgba(255,255,255,0.8)] backdrop-blur-sm'
@@ -4105,9 +4104,7 @@ function HomeAR() {
                   transform: `translate(-50%, -50%) scale(${0.9 + progress * 0.7})`,
                   opacity: `${Math.max(0, 1 - progress * 0.2)}`,
                 }}
-              >
-                <span className='text-lg'>{moodBadge}</span>
-              </div>
+              />
 
               {particles.map((_, index) => {
                 const burstProgress = Math.max(0, (progress - 0.58) / 0.42);
@@ -4264,7 +4261,7 @@ function HomeAR() {
               embedded
               style={{ position: 'absolute', inset: 0, height: '100%', width: '100%', pointerEvents: 'none' }}
               vr-mode-ui='enabled: false'
-              arjs={`sourceType: webcam; sourceWidth:1280; sourceHeight:960; displayWidth: 1280; displayHeight: 960; debugUIEnabled: false; trackingMethod: best; sourceFacingMode: ${cameraFacing};`}
+              arjs={`sourceType: webcam; debugUIEnabled: false; trackingMethod: best; sourceFacingMode: ${cameraFacing};`}
               renderer='alpha: true; antialias: true; logarithmicDepthBuffer: true;'
             >
               <a-assets>
@@ -4274,7 +4271,7 @@ function HomeAR() {
               <a-camera gps-camera rotation-reader>
                 {/* GPSモードではカメラの前に常にペットを表示（卵が未登録の状態・睡眠中を除く） */}
                 {!isEggUnregistered && !isSleeping && (
-                  <a-entity position='0 -1.5 -3' rotation='0 0 0'>
+                  <a-entity position='0 -0.5 -3' rotation='0 0 0'>
                     <a-entity pet-anim-controller={`clip: ${(!isEgg && debugAnimEnabled) ? currentAnim : ''}`}>
                       <a-gltf-model
                         src='#pet-asset-gps'
