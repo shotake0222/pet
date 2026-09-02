@@ -2460,6 +2460,11 @@ function HomeAR() {
           min-width: 0 !important;
           min-height: 0 !important;
           pointer-events: none !important;
+          margin: 0 !important;
+          padding: 0 !important;
+          top: 0 !important;
+          left: 0 !important;
+          transform: none !important;
         }
         .ar-camera-viewport video {
           z-index: 0 !important;
@@ -4272,8 +4277,8 @@ function HomeAR() {
               </a-assets>
               
               <a-camera gps-camera rotation-reader>
-                {/* GPSモードではカメラの前に常にペットを表示（卵が未登録の状態・睡眠中を除く） */}
-                {!isEggUnregistered && !isSleeping && (
+                {/* GPSモードではカメラの前に常にペットを表示（卵が未登録・卵の状態・睡眠中を除く） */}
+                {!isEggUnregistered && !isSleeping && !isEgg && (
                   <a-entity position='0 -1.5 -3' rotation='0 0 0'>
                     <a-entity pet-anim-controller={`clip: ${(!isEgg && debugAnimEnabled) ? currentAnim : ''}`}>
                       <a-gltf-model
