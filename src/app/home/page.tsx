@@ -6,6 +6,21 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { createClient } from '@/utils/supabase/client';
 import { isDebugMode } from '@/utils/debugMode';
 
+declare global {
+  namespace JSX {
+    interface IntrinsicElements {
+      'a-scene': any;
+      'a-assets': any;
+      'a-asset-item': any;
+      'a-camera': any;
+      'a-light': any;
+      'a-entity': any;
+      'a-box': any;
+      'a-text': any;
+    }
+  }
+}
+
 const ModelViewer = 'model-viewer' as any;
 
 type ItemActionEffect = {
@@ -74,6 +89,8 @@ function HomeAR() {
   const [visitedCustomSpots, setVisitedCustomSpots] = useState<Set<string>>(new Set());
 
   const [newSpotName, setNewSpotName] = useState('');
+  const [newSpotLat, setNewSpotLat] = useState('');
+  const [newSpotLng, setNewSpotLng] = useState('');
   const [newSpotFile, setNewSpotFile] = useState<File | null>(null);
   const [isUploadingSpot, setIsUploadingSpot] = useState(false);
 
@@ -1110,17 +1127,14 @@ function HomeAR() {
     if (!sessionUserId || !newSpotName || !newSpotFile) return;
     setIsUploadingSpot(true);
     try {
-      const currentPos = await new Promise<{lat: number, lng: number}>((resolve) => {
-        if (!navigator.geolocation) {
-          resolve(location || { lat: 35.6895, lng: 139.6917 });
-          return;
-        }
-        navigator.geolocation.getCurrentPosition(
-          pos => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
-          err => resolve(location || { lat: 35.6895, lng: 139.6917 }),
-          { enableHighAccuracy: true, timeout: 5000 }
-        );
-      });
+      const lat = parseFloat(newSpotLat);
+      const lng = parseFloat(newSpotLng);
+      
+      if (isNaN(lat) || isNaN(lng)) {
+        alert('緯度と経度を正しく入力してください。現在のGPS座標を使いたい場合は「現在地を取得」を押してください。');
+        setIsUploadingSpot(false);
+        return;
+      }
 
       const fileExt = newSpotFile.name.split('.').pop();
       const fileName = `${sessionUserId}_${Date.now()}.${fileExt}`;
@@ -1134,14 +1148,16 @@ function HomeAR() {
         user_id: sessionUserId,
         name: newSpotName,
         image_url: imageUrl,
-        latitude: currentPos.lat,
-        longitude: currentPos.lng
+        latitude: lat,
+        longitude: lng
       }).select('*').single();
 
       if (insertError) throw insertError;
 
       setCustomSpots(prev => [newSpot, ...prev]);
       setNewSpotName('');
+      setNewSpotLat('');
+      setNewSpotLng('');
       setNewSpotFile(null);
       alert('新しいスポットを図鑑に記録しました！');
       playSound('levelup');
@@ -3082,6 +3098,23 @@ function HomeAR() {
                   <div className='bg-teal-50 p-4 rounded-xl border border-teal-100 shadow-sm'>
                     <h4 className='font-bold text-teal-800 mb-2 text-sm'>📸 思い出のスポットを記録</h4>
                     <input type='text' placeholder='スポットの名前 (例: 近所の公園)' value={newSpotName} onChange={e => setNewSpotName(e.target.value)} className='w-full p-2 border border-teal-200 rounded-lg mb-2 text-black text-sm' />
+                    <div className='flex gap-2 mb-2'>
+                      <input type='number' step='0.000001' placeholder='緯度 (Latitude)' value={newSpotLat} onChange={e => setNewSpotLat(e.target.value)} className='w-full p-2 border border-teal-200 rounded-lg text-black text-sm' />
+                      <input type='number' step='0.000001' placeholder='経度 (Longitude)' value={newSpotLng} onChange={e => setNewSpotLng(e.target.value)} className='w-full p-2 border border-teal-200 rounded-lg text-black text-sm' />
+                    </div>
+                    <button 
+                      onClick={() => {
+                        if (location) {
+                          setNewSpotLat(location.lat.toString());
+                          setNewSpotLng(location.lng.toString());
+                        } else {
+                          alert('GPS座標が取得できていません');
+                        }
+                      }} 
+                      className="w-full bg-gray-200 text-gray-700 font-bold py-1 mb-2 rounded text-xs active:scale-95"
+                    >
+                      現在地を取得
+                    </button>
                     <input type='file' accept='image/*' onChange={e => setNewSpotFile(e.target.files?.[0] || null)} className='w-full text-xs text-gray-600 mb-3 file:mr-4 file:py-1.5 file:px-3 file:rounded-full file:border-0 file:text-xs file:font-semibold file:bg-teal-100 file:text-teal-700 hover:file:bg-teal-200' />
                     <button onClick={handleAddCustomSpot} disabled={isUploadingSpot || !newSpotName || !newSpotFile} className='w-full bg-teal-600 text-white font-bold py-2.5 rounded-lg disabled:bg-gray-300 text-sm active:scale-95 transition-transform'>
                       {isUploadingSpot ? '保存中...' : '図鑑に記録する'}
