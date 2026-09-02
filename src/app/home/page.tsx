@@ -103,15 +103,15 @@ function HomeAR() {
   const [aframeLoaded, setAframeLoaded] = useState(false);
   const [extrasLoaded, setExtrasLoaded] = useState(false);
   const [mindarLoaded, setMindarLoaded] = useState(false);
-  const [arjsLoaded, setArjsLoaded] = useState(false);
 
   const scriptsReadyForMindar = aframeLoaded && extrasLoaded && mindarLoaded;
-  const scriptsReadyForGps = aframeLoaded && arjsLoaded;
+  const scriptsReadyForGps = aframeLoaded; // AR.jsの呪縛から解放
 
   const [gpsEverActivated, setGpsEverActivated] = useState(viewMode === 'gps');
   useEffect(() => {
     if (viewMode === 'gps') setGpsEverActivated(true);
   }, [viewMode]);
+  
   const [cameraReady, setCameraReady] = useState(false);
   const [cameraTrulyReady, setCameraTrulyReady] = useState(false);
   const [isSwitchingMode, setIsSwitchingMode] = useState(false);
@@ -572,10 +572,9 @@ function HomeAR() {
         try {
           scene.resize?.();
           const isMindArScene = scene.hasAttribute?.('mindar-image');
-          const isArjsScene = scene.hasAttribute?.('arjs');
           if (!isMindArScene) {
             scene.renderer?.setSize?.(width, height, false);
-            if (scene.camera && !isArjsScene) {
+            if (scene.camera) {
               scene.camera.aspect = width / height;
               scene.camera.updateProjectionMatrix?.();
             }
@@ -634,14 +633,7 @@ function HomeAR() {
   const handleModeChange = (mode: 'mindar' | 'gps' | 'report') => {
     playSound('tap');
     if (mode === viewMode) return;
-    const isCrossingArEngines = (mode === 'gps' && viewMode === 'mindar') || (mode === 'mindar' && viewMode === 'gps');
-    if (isCrossingArEngines && arjsLoaded) {
-      const nextParams = new URLSearchParams(searchParams.toString());
-      nextParams.set('mode', mode);
-      if (tagIdParam) nextParams.set('tag_id', tagIdParam);
-      window.location.href = `${window.location.pathname}?${nextParams.toString()}`;
-      return;
-    }
+    
     closeAllMenus();
     setIsSwitchingMode(true);
     setCameraReady(mode === 'report');
@@ -766,6 +758,46 @@ function HomeAR() {
       setIsSwitchingMode(false);
     }, 600);
   }, [playSound, releaseCameraResources]);
+
+  // GPSモード用の独自のカメラ背景描画フック (AR.jsを使わない)
+  useEffect(() => {
+    if (viewMode !== 'gps') return;
+    
+    let stream: MediaStream | null = null;
+    const videoEl = document.createElement('video');
+    videoEl.autoplay = true;
+    videoEl.playsInline = true;
+    videoEl.muted = true;
+    videoEl.style.position = 'absolute';
+    videoEl.style.inset = '0';
+    videoEl.style.width = '100%';
+    videoEl.style.height = '100%';
+    videoEl.style.objectFit = 'cover';
+    videoEl.style.zIndex = '0';
+    videoEl.style.pointerEvents = 'none';
+
+    const viewport = arViewportRef.current;
+    if (viewport) {
+      viewport.insertBefore(videoEl, viewport.firstChild);
+    }
+
+    navigator.mediaDevices.getUserMedia({
+      video: { facingMode: cameraFacing }
+    }).then(s => {
+      stream = s;
+      videoEl.srcObject = s;
+    }).catch(err => {
+      console.warn('GPSモードでのカメラ起動に失敗:', err);
+    });
+
+    return () => {
+      if (stream) {
+        stream.getTracks().forEach(t => t.stop());
+      }
+      videoEl.srcObject = null;
+      videoEl.remove();
+    };
+  }, [viewMode, cameraFacing, sceneKey]);
 
   useEffect(() => {
     const initAuthAndProfile = async () => {
@@ -2489,9 +2521,6 @@ function HomeAR() {
       {extrasLoaded && (
         <Script src='https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-aframe.prod.js' strategy='afterInteractive' onLoad={() => setMindarLoaded(true)} />
       )}
-      {gpsEverActivated && extrasLoaded && (
-        <Script src='https://raw.githack.com/AR-js-org/AR.js/master/aframe/build/aframe-ar.js' strategy='afterInteractive' onLoad={() => setArjsLoaded(true)} />
-      )}
 
       <Script type="module" src="https://ajax.googleapis.com/ajax/libs/model-viewer/3.1.1/model-viewer.min.js" strategy="lazyOnload" />
 
@@ -3317,7 +3346,7 @@ function HomeAR() {
                     onClick={() => setMapZoomLevel(Math.max(1, mapZoomLevel - 1))}
                     className='bg-blue-500 text-white font-bold px-4 py-2 rounded-lg hover:bg-blue-600 active:scale-95 transition-transform text-sm'
                   >
-                    🔍− ズームアウト
+                    🔍－ ズームアウト
                   </button>
                   <span className='text-sm font-bold text-gray-600 px-3 py-2 bg-gray-100 rounded-lg'>
                     レベル: {mapZoomLevel}
@@ -4092,7 +4121,9 @@ function HomeAR() {
                   transform: `translate(-50%, -50%) scale(${scale}) rotate(${rotation}deg)`,
                   opacity: `${emphasis}`,
                 }}
-              />
+              >
+                <span className='text-3xl drop-shadow-sm'>{itemActionEffect.emoji}</span>
+              </div>
 
               <div
                 className='absolute flex items-center justify-center rounded-full border border-white/80 bg-white/80 shadow-[0_0_18px_rgba(255,255,255,0.8)] backdrop-blur-sm'
@@ -4104,7 +4135,9 @@ function HomeAR() {
                   transform: `translate(-50%, -50%) scale(${0.9 + progress * 0.7})`,
                   opacity: `${Math.max(0, 1 - progress * 0.2)}`,
                 }}
-              />
+              >
+                <span className='text-lg'>{moodBadge}</span>
+              </div>
 
               {particles.map((_, index) => {
                 const burstProgress = Math.max(0, (progress - 0.58) / 0.42);
@@ -4148,9 +4181,6 @@ function HomeAR() {
                 });
               }}
             >
-              <a-assets>
-                <a-asset-item id='pet-asset' src={activeModelUrl}></a-asset-item>
-              </a-assets>
               <a-light type='ambient' color='#ffffff' intensity='0.5'></a-light>
               <a-light type='directional' color='#ffffff' intensity='1.5' position='-1 2 1' castShadow='true'></a-light>
 
@@ -4172,7 +4202,7 @@ function HomeAR() {
                 >
                   <a-gltf-model
                     id='pet-model-0'
-                    src='#pet-asset'
+                    src={activeModelUrl}
                     position='0 0 0'
                     scale={`${debugScaleX} ${debugScaleY} ${debugScaleZ}`}
                     rotation={`${debugRotX} ${debugRotY} ${debugRotZ}`}
@@ -4196,7 +4226,7 @@ function HomeAR() {
                 >
                   <a-gltf-model
                     id='pet-model-1'
-                    src='#pet-asset'
+                    src={activeModelUrl}
                     position='0 0 0'
                     scale={`${debugScaleX} ${debugScaleY} ${debugScaleZ}`}
                     rotation={`${debugRotX} ${debugRotY} ${debugRotZ}`}
@@ -4220,7 +4250,7 @@ function HomeAR() {
                 >
                   <a-gltf-model
                     id='pet-model-2'
-                    src='#pet-asset'
+                    src={activeModelUrl}
                     position='0 0 0'
                     scale={`${debugScaleX} ${debugScaleY} ${debugScaleZ}`}
                     rotation={`${debugRotX} ${debugRotY} ${debugRotZ}`}
@@ -4244,7 +4274,7 @@ function HomeAR() {
                 >
                   <a-gltf-model
                     id='pet-model-3'
-                    src='#pet-asset'
+                    src={activeModelUrl}
                     position='0 0 0'
                     scale={`${debugScaleX} ${debugScaleY} ${debugScaleZ}`}
                     rotation={`${debugRotX} ${debugRotY} ${debugRotZ}`}
@@ -4261,20 +4291,18 @@ function HomeAR() {
               embedded
               style={{ position: 'absolute', inset: 0, height: '100%', width: '100%', pointerEvents: 'none' }}
               vr-mode-ui='enabled: false'
-              arjs={`sourceType: webcam; debugUIEnabled: false; trackingMethod: best; sourceFacingMode: ${cameraFacing};`}
               renderer='alpha: true; antialias: true; logarithmicDepthBuffer: true;'
             >
-              <a-assets>
-                <a-asset-item id='pet-asset-gps' src={activeModelUrl}></a-asset-item>
-              </a-assets>
+              <a-light type='ambient' color='#ffffff' intensity='0.5'></a-light>
+              <a-light type='directional' color='#ffffff' intensity='1.5' position='-1 2 1'></a-light>
               
-              <a-camera gps-camera rotation-reader>
+              <a-camera position='0 0 0' look-controls='enabled: false' wasd-controls='enabled: false'>
                 {/* GPSモードではカメラの前に常にペットを表示（卵が未登録の状態・睡眠中を除く） */}
                 {!isEggUnregistered && !isSleeping && (
-                  <a-entity position='0 -0.5 -3' rotation='0 0 0'>
+                  <a-entity position='0 -1.5 -3' rotation='0 0 0'>
                     <a-entity pet-anim-controller={`clip: ${(!isEgg && debugAnimEnabled) ? currentAnim : ''}`}>
                       <a-gltf-model
-                        src='#pet-asset-gps'
+                        src={activeModelUrl}
                         scale={`${debugScaleX} ${debugScaleY} ${debugScaleZ}`}
                         rotation={`${debugRotX} ${debugRotY} ${debugRotZ}`}
                       ></a-gltf-model>
