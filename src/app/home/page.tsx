@@ -51,7 +51,7 @@ function HomeAR() {
   const [birthday, setBirthday] = useState<string | null>(null);
   const [generation, setGeneration] = useState(1);
 
-  const [petCondition, setPetCondition] = useState<'healthy' | 'starving' | 'sick'>('healthy');
+  const [petCondition, setPetCondition]<'healthy' | 'starving' | 'sick'>('healthy');
   const [showConditionSOS, setShowConditionSOS] = useState(false);
 
   const [eggModelUrl, setEggModelUrl] = useState('/models/eggs/egg.glb');
@@ -422,6 +422,18 @@ function HomeAR() {
   const appRootRef = useRef<HTMLDivElement>(null);
 
   const isSleeping = sleepingUntil ? new Date(sleepingUntil) > new Date() : false;
+
+  const allMapSpots = useMemo(() => {
+    const parsedCustomSpots = customSpots.filter(cs => cs.latitude != null && cs.longitude != null).map(cs => ({
+      ...cs,
+      latitude: Number(cs.latitude),
+      longitude: Number(cs.longitude),
+      isCustom: true,
+      radius_meters: 50,
+      bonus_points: 0
+    }));
+    return [...landmarks, ...parsedCustomSpots];
+  }, [landmarks, customSpots]);
 
   useEffect(() => {
     const setAppHeight = () => {
@@ -908,7 +920,6 @@ function HomeAR() {
         .from('landmarks')
         .select('*, landmark_masters:landmark_master_id(facility_type)');
       if (spots) {
-        // 数値としてパースすることで、getDistance 等での NaN エラーを防ぎ確実にマップ等で表示させる
         const parsedSpots = spots.map((spot: any) => ({
           ...spot,
           latitude: Number(spot.latitude),
@@ -3139,16 +3150,16 @@ function HomeAR() {
                     <div className='w-5 h-5 bg-red-500 rounded-full border-2 border-white shadow-md animate-pulse'></div>
                   </div>
                   <div className='absolute inset-0 z-20 pointer-events-none'>
-                    {landmarks.map(spot => {
+                    {allMapSpots.map((spot, idx) => {
                       const master = spot.landmark_masters;
-                      const facilityType = master?.facility_type && master.facility_type !== 'normal' ? master.facility_type : getFacilityType(spot.name);
-                      const typeIcon = facilityType === 'hospital' ? '🏥' : facilityType === 'restaurant' ? '🍽️' : facilityType === 'hotel' ? '🏨' : '📍';
+                      const facilityType = spot.isCustom ? 'custom' : (master?.facility_type && master.facility_type !== 'normal' ? master.facility_type : getFacilityType(spot.name));
+                      const typeIcon = facilityType === 'hospital' ? '🏥' : facilityType === 'restaurant' ? '🍽️' : facilityType === 'hotel' ? '🏨' : facilityType === 'custom' ? '🌟' : '📍';
                       const zoomFactors: Record<number, number> = { 1: 0.01, 2: 0.007, 3: 0.005, 4: 0.003, 5: 0.001 };
                       const factor = zoomFactors[mapZoomLevel] || 0.005;
                       const topPercent = 50 - ((spot.latitude - location.lat) / (factor * 2)) * 100;
                       const leftPercent = 50 + ((spot.longitude - location.lng) / (factor * 2)) * 100;
                       return (
-                        <div key={`radar-${spot.id}`} className='absolute w-12 h-12 -ml-6 -mt-6 text-2xl flex items-center justify-center filter drop-shadow bg-white/90 rounded-full border-2 border-gray-300 shadow-md' style={{ top: `${topPercent}%`, left: `${leftPercent}%` }} title={spot.name}>
+                        <div key={`radar-${spot.id || idx}`} className='absolute w-12 h-12 -ml-6 -mt-6 text-2xl flex items-center justify-center filter drop-shadow bg-white/90 rounded-full border-2 border-gray-300 shadow-md' style={{ top: `${topPercent}%`, left: `${leftPercent}%` }} title={spot.name}>
                           {typeIcon}
                         </div>
                       );
@@ -3157,7 +3168,7 @@ function HomeAR() {
                 </div>
 
                 {(() => {
-                  const nearbySpots = landmarks.filter(spot => {
+                  const nearbySpots = allMapSpots.filter(spot => {
                     const dist = getDistance(location.lat, location.lng, spot.latitude, spot.longitude);
                     return dist <= 10000;
                   }).sort((a, b) => {
@@ -3168,15 +3179,15 @@ function HomeAR() {
 
                   return (
                     <div className='space-y-3'>
-                      {nearbySpots.map(spot => {
+                      {nearbySpots.map((spot, idx) => {
                         const dist = getDistance(location.lat, location.lng, spot.latitude, spot.longitude);
                         const master = spot.landmark_masters;
-                        const facilityType = master?.facility_type && master.facility_type !== 'normal' ? master.facility_type : getFacilityType(spot.name);
+                        const facilityType = spot.isCustom ? 'custom' : (master?.facility_type && master.facility_type !== 'normal' ? master.facility_type : getFacilityType(spot.name));
                         return (
-                          <div key={`list-${spot.id}`} className='bg-gray-50 border rounded-xl p-3 flex justify-between items-center shadow-sm'>
+                          <div key={`list-${spot.id || idx}`} className='bg-gray-50 border rounded-xl p-3 flex justify-between items-center shadow-sm'>
                             <div>
                               <div className='font-bold text-gray-800 flex items-center gap-1'>
-                                {facilityType === 'hospital' ? '🏥' : facilityType === 'restaurant' ? '🍽️' : facilityType === 'hotel' ? '🏨' : '📍'} {spot.name}
+                                {facilityType === 'hospital' ? '🏥' : facilityType === 'restaurant' ? '🍽️' : facilityType === 'hotel' ? '🏨' : facilityType === 'custom' ? '🌟' : '📍'} {spot.name}
                               </div>
                               <div className='text-xs text-gray-500'>現在地から約 {Math.floor(dist)}m</div>
                             </div>
@@ -4067,24 +4078,35 @@ function HomeAR() {
               {!isEgg && petId && (
                 <>
                   {landmarks.map(spot => (
-                    <a-entity
-                      key={`ar-lm-${spot.id}`}
-                      gps-entity-place={`latitude: ${spot.latitude}; longitude: ${spot.longitude};`}
-                      gltf-model={spot.model_url || '/models/treasure.glb'}
-                      scale='15 15 15'
-                      position='0 2 0'
-                      animation='property: rotation; to: 0 360 0; loop: true; dur: 4000; easing: linear;'
-                    ></a-entity>
+                    spot.model_url ? (
+                      <a-entity
+                        key={`ar-lm-${spot.id}`}
+                        gps-entity-place={`latitude: ${spot.latitude}; longitude: ${spot.longitude};`}
+                        gltf-model={spot.model_url}
+                        scale='15 15 15'
+                        position='0 2 0'
+                        animation='property: rotation; to: 0 360 0; loop: true; dur: 4000; easing: linear;'
+                      ></a-entity>
+                    ) : (
+                      <a-box
+                        key={`ar-lm-${spot.id}`}
+                        gps-entity-place={`latitude: ${spot.latitude}; longitude: ${spot.longitude};`}
+                        color='#FFD700'
+                        scale='5 5 5'
+                        position='0 2 0'
+                        animation='property: rotation; to: 0 360 0; loop: true; dur: 4000; easing: linear;'
+                      ></a-box>
+                    )
                   ))}
                   {customSpots.filter(cs => cs.latitude && cs.longitude).map(spot => (
-                    <a-entity
+                    <a-box
                       key={`ar-cs-${spot.id}`}
                       gps-entity-place={`latitude: ${Number(spot.latitude)}; longitude: ${Number(spot.longitude)};`}
-                      gltf-model='/models/treasure.glb'
-                      scale='15 15 15'
+                      src={spot.image_url}
+                      scale='5 5 5'
                       position='0 2 0'
                       animation='property: rotation; to: 0 360 0; loop: true; dur: 4000; easing: linear;'
-                    ></a-entity>
+                    ></a-box>
                   ))}
                 </>
               )}
