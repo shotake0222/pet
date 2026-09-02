@@ -136,6 +136,7 @@ function HomeAR() {
   const [debugRotY, setDebugRotY] = useState(0);
   const [debugRotZ, setDebugRotZ] = useState(0);
   const [debugAnimEnabled, setDebugAnimEnabled] = useState(true);
+  const [debugBoxScale, setDebugBoxScale] = useState(5);
 
   const [debugSelectedPetId, setDebugSelectedPetId] = useState<string>('');
   const [detectedTargetIndex, setDetectedTargetIndex] = useState<number | null>(null);
@@ -555,7 +556,7 @@ function HomeAR() {
         el.style.margin = '0';
       });
       const canvases = viewport.querySelectorAll('canvas');
-      canvases.forEach(canvas => {
+      canuses.forEach(canvas => {
         const el = canvas as HTMLCanvasElement;
         el.style.position = 'absolute';
         el.style.inset = '0';
@@ -2701,6 +2702,10 @@ function HomeAR() {
                   <label className='block'>Rot Z: {debugRotZ}°</label>
                   <input type="range" min="-180" max="180" step="1" value={debugRotZ} onChange={e => setDebugRotZ(parseFloat(e.target.value))} className="w-full" />
                 </div>
+                <div className='border-t border-gray-300 pt-2 mt-2'>
+                  <label className='block font-bold'>Box Scale (テストスポット用): {debugBoxScale}</label>
+                  <input type="range" min="1" max="100" step="1" value={debugBoxScale} onChange={e => setDebugBoxScale(parseFloat(e.target.value))} className="w-full" />
+                </div>
               </div>
             </div>
           </div>
@@ -4290,6 +4295,21 @@ function HomeAR() {
                   </a-entity>
                 )}
               </a-camera>
+
+              {/* テストスポットのAR表示 (a-box) */}
+              {allMapSpots.map(spot => {
+                if (spot.id.toString().startsWith('debug-spot-')) {
+                  return (
+                    <a-box
+                      key={spot.id}
+                      gps-entity-place={`latitude: ${spot.latitude}; longitude: ${spot.longitude};`}
+                      scale={`${debugBoxScale} ${debugBoxScale} ${debugBoxScale}`}
+                      color="red"
+                    ></a-box>
+                  );
+                }
+                return null;
+              })}
             </a-scene>
           </div>
         )}
