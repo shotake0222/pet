@@ -123,7 +123,6 @@ function HomeAR() {
   const [hallOfFameCount, setHallOfFameCount] = useState(0);
 
   const [hatchOverlay, setHatchOverlay] = useState<{ active: boolean; particles: any[]; rarity: string; petName?: string; showConfirm: boolean; resolve?: () => void } | null>(null);
-
   const [itemRewardOverlay, setItemRewardOverlay] = useState<{ active: boolean; items: any[]; facilityName: string; facilityIcon: string } | null>(null);
 
   const petMarkerUrl = '/markers/targets.mind';
@@ -139,7 +138,6 @@ function HomeAR() {
   const [debugAnimEnabled, setDebugAnimEnabled] = useState(true);
 
   const [debugSelectedPetId, setDebugSelectedPetId] = useState<string>('');
-
   const [detectedTargetIndex, setDetectedTargetIndex] = useState<number | null>(null);
 
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
@@ -438,6 +436,12 @@ function HomeAR() {
   const [landmarks, setLandmarks] = useState<any[]>([]);
   const [activeLandmark, setActiveLandmark] = useState<any | null>(null);
   const [isSpotMapOpen, setIsSpotMapOpen] = useState(false);
+  
+  // モーダル表示用Stateの追加と、本日の訪問履歴管理
+  const [isSpotFoundModalOpen, setIsSpotFoundModalOpen] = useState(false);
+  const [lastDismissedSpotId, setLastDismissedSpotId] = useState<string | null>(null);
+  const [visitedSpotsToday, setVisitedSpotsToday] = useState<Set<string>>(new Set());
+
   const [mapZoomLevel, setMapZoomLevel] = useState(3);
   const [cameraFacing, setCameraFacing] = useState<'environment' | 'user'>('environment');
   const [sceneKey, setSceneKey] = useState(0);
@@ -551,7 +555,7 @@ function HomeAR() {
         el.style.margin = '0';
       });
       const canvases = viewport.querySelectorAll('canvas');
-      canvases.forEach(canvas => {
+      canverses.forEach(canvas => {
         const el = canvas as HTMLCanvasElement;
         el.style.position = 'absolute';
         el.style.inset = '0';
@@ -939,29 +943,54 @@ function HomeAR() {
       const { data: items } = await supabase.from('item_masters').select('*').order('id', { ascending: false });
       if (items) setShopItems(items);
 
-      // ▼▼▼ 追加: Supabaseからデータを取得する処理の直後にエラー確認用ログを追加 ▼▼▼
+      // 本日の訪問履歴を取得
+      const today = new Date().toLocaleDateString('sv-SE');
+      const { data: visitsToday } = await supabase
+        .from('landmark_visits')
+        .select('landmark_id')
+        .eq('user_id', sessionUserId)
+        .eq('visited_date', today);
+      if (visitsToday) {
+        setVisitedSpotsToday(new Set(visitsToday.map((v: any) => String(v.landmark_id))));
+      }
+
+      // マップには管理画面から登録したスポットも表示するため、landmarks と landmark_masters の両方を取得して統合する
       const { data: spots, error: spotsError } = await supabase
         .from('landmarks')
-        .select('*, landmark_masters:landmark_master_id(facility_type)');
+        .select('*, landmark_masters:landmark_master_id(facility_type, name, latitude, longitude, radius_meters, bonus_points)');
+      const { data: masterSpots, error: masterSpotsError } = await supabase
+        .from('landmark_masters')
+        .select('*');
       
-      console.log("Supabase Error (landmarks):", spotsError); // エラーが出ていないか？
-      console.log("Fetched Data (landmarks):", spots);    // データは配列で取得できているか？
+      let combinedLandmarks: any[] = [];
       
-      if (spotsError) {
-        console.error("Landmarks fetch error:", spotsError);
-      }
-      // ▲▲▲ 追加終わり ▲▲▲
-
       if (spots) {
-        const parsedSpots = spots.map((spot: any) => ({
+        combinedLandmarks = [...combinedLandmarks, ...spots.map((spot: any) => ({
           ...spot,
+          id: String(spot.id),
           latitude: Number(spot.latitude),
           longitude: Number(spot.longitude),
           radius_meters: Number(spot.radius_meters) || 50,
           bonus_points: Number(spot.bonus_points) || 10
-        }));
-        setLandmarks(parsedSpots);
+        }))];
       }
+      
+      if (masterSpots) {
+        const parsedMasters = masterSpots.filter((m: any) => m.latitude != null && m.longitude != null).map((m: any) => ({
+          id: `master-${m.id}`,
+          landmark_master_id: m.id,
+          name: m.name,
+          latitude: Number(m.latitude),
+          longitude: Number(m.longitude),
+          radius_meters: Number(m.radius_meters) || 50,
+          bonus_points: Number(m.bonus_points) || 10,
+          landmark_masters: m,
+          isMaster: true
+        }));
+        combinedLandmarks = [...combinedLandmarks, ...parsedMasters];
+      }
+      
+      setLandmarks(combinedLandmarks);
 
       const { data: news } = await supabase.from('announcements').select('*').eq('is_active', true).order('published_at', { ascending: false });
       if (news) setNewsList(news);
@@ -1140,11 +1169,10 @@ function HomeAR() {
     fetchGameData();
   }, [fetchGameData]);
 
-const handleAddCustomSpot = async () => {
+  const handleAddCustomSpot = async () => {
     if (!sessionUserId || !newSpotName || !newSpotFile) return;
     setIsUploadingSpot(true);
     try {
-      // ▼▼▼ 追加: GPS情報の確実な取得 ▼▼▼
       let currentLat = location?.lat;
       let currentLng = location?.lng;
 
@@ -1164,7 +1192,6 @@ const handleAddCustomSpot = async () => {
           );
         });
       }
-      // ▲▲▲ 追加終わり ▲▲▲
 
       const fileExt = newSpotFile.name.split('.').pop();
       const fileName = `${sessionUserId}_${Date.now()}.${fileExt}`;
@@ -1178,8 +1205,8 @@ const handleAddCustomSpot = async () => {
         user_id: sessionUserId,
         name: newSpotName,
         image_url: imageUrl,
-        latitude: currentLat ? Number(currentLat) : null, // ▼ 修正: 数値として格納
-        longitude: currentLng ? Number(currentLng) : null // ▼ 修正: 数値として格納
+        latitude: currentLat ? Number(currentLat) : null, 
+        longitude: currentLng ? Number(currentLng) : null 
       }).select('*').single();
 
       if (insertError) throw insertError;
@@ -1320,7 +1347,7 @@ const handleAddCustomSpot = async () => {
       const hoursPassed = (now - lastFedTime) / (1000 * 60 * 60);
       let calculatedHunger = 100 - (hoursPassed / 24) * 100;
       if (isSleeping) {
-        calculatedHunger = 100; // 修正1: 睡眠中は体力を100に保つ（または減らない設計）
+        calculatedHunger = 100;
       }
       const finalHunger = Math.max(0, Math.min(100, Math.floor(calculatedHunger)));
       setHungerPercent(finalHunger);
@@ -1348,7 +1375,7 @@ const handleAddCustomSpot = async () => {
 
   useEffect(() => {
     if (!petId || isEgg || !lastFedAt || gameOverHandled) return;
-    if (isSleeping) return; // 修正1: 睡眠時は餓死（ゲームオーバー）の進行を止める
+    if (isSleeping) return; 
     const now = Date.now();
     const lastFedTime = new Date(lastFedAt).getTime();
     const hoursPassed = (now - lastFedTime) / (1000 * 60 * 60);
@@ -1574,11 +1601,23 @@ const handleAddCustomSpot = async () => {
   }, [viewMode, petId, supabase]);
 
   useEffect(() => {
-    // landmarks ではなく、カスタムスポットも含む allMapSpots を判定対象にする
     if (viewMode === 'gps' && location && allMapSpots.length > 0) {
-      setActiveLandmark(allMapSpots.find(spot => getDistance(location.lat, location.lng, spot.latitude, spot.longitude) <= spot.radius_meters) || null);
+      const found = allMapSpots.find(spot => getDistance(location.lat, location.lng, spot.latitude, spot.longitude) <= spot.radius_meters);
+      if (found) {
+        if (!activeLandmark || activeLandmark.id !== found.id) {
+          setActiveLandmark(found);
+          if (lastDismissedSpotId !== found.id) {
+            setIsSpotFoundModalOpen(true);
+            playSound('item');
+          }
+        }
+      } else {
+        setActiveLandmark(null);
+        setIsSpotFoundModalOpen(false);
+        setLastDismissedSpotId(null);
+      }
     }
-  }, [location, allMapSpots, viewMode]);
+  }, [location, allMapSpots, viewMode, activeLandmark, lastDismissedSpotId, playSound]);
 
   useEffect(() => {
     if (viewMode !== 'gps') {
@@ -1665,20 +1704,20 @@ const handleAddCustomSpot = async () => {
             if (!clip) return;
 
             if (clip === 'Idle') {
-  this.el.setAttribute('animation', 'property: position; to: 0 0.5 0; dir: alternate; dur: 1000; loop: true; easing: easeInOutSine');
-} else if (clip === 'Happy') {
-  this.el.setAttribute('animation', 'property: rotation; to: 0 1080 0; dur: 1000; loop: true; easing: linear');
-} else if (clip === 'Jump') {
-  this.el.setAttribute('animation', 'property: position; to: 0 2.5 0; dir: alternate; dur: 200; loop: true; easing: easeOutQuad');
-} else if (clip === 'Fly') {
-  this.el.setAttribute('animation', 'property: position; to: 0 4.0 0; dir: alternate; dur: 1000; loop: true; easing: easeInOutSine');
-} else if (clip === 'Sleep') {
-  this.el.setAttribute('animation', 'property: scale; to: 1.4 0.6 1.4; dir: alternate; dur: 1500; loop: true; easing: easeInOutSine');
-} else if (clip === 'Sad') {
-  this.el.setAttribute('animation', 'property: rotation; to: 70 0 0; dir: alternate; dur: 1000; loop: true; easing: easeInOutSine');
-} else if (clip === 'Angry') {
-  this.el.setAttribute('animation', 'property: position; to: 0.4 0 0; dir: alternate; dur: 30; loop: true; easing: linear');
-}
+              this.el.setAttribute('animation', 'property: position; to: 0 0.5 0; dir: alternate; dur: 1000; loop: true; easing: easeInOutSine');
+            } else if (clip === 'Happy') {
+              this.el.setAttribute('animation', 'property: rotation; to: 0 1080 0; dur: 1000; loop: true; easing: linear');
+            } else if (clip === 'Jump') {
+              this.el.setAttribute('animation', 'property: position; to: 0 2.5 0; dir: alternate; dur: 200; loop: true; easing: easeOutQuad');
+            } else if (clip === 'Fly') {
+              this.el.setAttribute('animation', 'property: position; to: 0 4.0 0; dir: alternate; dur: 1000; loop: true; easing: easeInOutSine');
+            } else if (clip === 'Sleep') {
+              this.el.setAttribute('animation', 'property: scale; to: 1.4 0.6 1.4; dir: alternate; dur: 1500; loop: true; easing: easeInOutSine');
+            } else if (clip === 'Sad') {
+              this.el.setAttribute('animation', 'property: rotation; to: 70 0 0; dir: alternate; dur: 1000; loop: true; easing: easeInOutSine');
+            } else if (clip === 'Angry') {
+              this.el.setAttribute('animation', 'property: position; to: 0.4 0 0; dir: alternate; dur: 30; loop: true; easing: linear');
+            }
           }
         }
       });
@@ -1980,7 +2019,6 @@ const handleAddCustomSpot = async () => {
       sleepEnd.setHours(sleepEnd.getHours() + finalEffect);
       setSleepingUntil(sleepEnd.toISOString());
 
-      // 修正1: 睡眠時間分、最後の食事時間(last_fed_at)を進めて、睡眠中は時間が進まないようにする
       const newLastFedAt = new Date(lastFedAt || Date.now());
       newLastFedAt.setHours(newLastFedAt.getHours() + finalEffect);
       setLastFedAt(newLastFedAt.toISOString());
@@ -2119,7 +2157,7 @@ const handleAddCustomSpot = async () => {
     if (!activeLandmark || !petId || !sessionUserId) return;
     const today = new Date().toLocaleDateString('sv-SE');
     const master = activeLandmark.landmark_masters;
-    const facilityType = master?.facility_type && master.facility_type !== 'normal' ? master.facility_type : getFacilityType(activeLandmark.name);
+    const facilityType = activeLandmark.isCustom ? 'custom' : (master?.facility_type && master.facility_type !== 'normal' ? master.facility_type : getFacilityType(activeLandmark.name));
 
     if (petCondition === 'starving' && facilityType !== 'restaurant') {
       return alert('お腹が減りすぎて動けません…まずはマップから【ご飯屋さん】を探してチェックインしましょう！');
@@ -2128,25 +2166,25 @@ const handleAddCustomSpot = async () => {
       return alert('体調が優れないようです…まずはマップから【ドクター (病院)】を探して診てもらいましょう！');
     }
 
-    // 修正2: 事前に取得して本当に訪問済みか確認。エラーで弾かれていた場合は報酬付与へ進める。
-    const { data: existingVisit } = await supabase
-      .from('landmark_visits')
-      .select('id')
-      .eq('user_id', sessionUserId)
-      .eq('landmark_id', activeLandmark.id)
-      .eq('visited_date', today)
-      .maybeSingle();
-
-    if (existingVisit) {
+    if (visitedSpotsToday.has(String(activeLandmark.id))) {
        return alert('今日は既に訪問済みです！');
     }
 
-    const { error: visitError } = await supabase.from('landmark_visits').insert({ user_id: sessionUserId, landmark_id: activeLandmark.id, visited_date: today });
+    const { error: visitError } = await supabase.from('landmark_visits').insert({ 
+      user_id: sessionUserId, 
+      landmark_id: activeLandmark.isMaster ? null : activeLandmark.id, 
+      visited_date: today 
+    });
     
     if (visitError) {
-       console.warn('訪問記録のDB保存に失敗しましたが、初回判定としてアイテムを付与します:', visitError);
-       // 外部キー制約エラー(カスタムスポット等)で失敗しても報酬を返すように処理を継続
+       console.warn('訪問記録のDB保存に失敗しましたが、ローカル記録として処理します:', visitError);
     }
+    
+    setVisitedSpotsToday(prev => {
+      const next = new Set(prev);
+      next.add(String(activeLandmark.id));
+      return next;
+    });
 
     setLandmarkVisitCount(prev => prev + 1);
     playSound('levelup');
@@ -2597,7 +2635,6 @@ const handleAddCustomSpot = async () => {
                   const dummySpot = {
                     id: 'debug-spot-' + Date.now(),
                     name: 'テストスポット(目の前)',
-                    // 緯度に+0.0001することで、現在地の約11メートル北に配置されます
                     latitude: location.lat + 0.0001, 
                     longitude: location.lng,
                     radius_meters: 50,
@@ -2782,6 +2819,50 @@ const handleAddCustomSpot = async () => {
             <button onClick={() => setItemRewardOverlay(null)} className='relative w-full bg-gradient-to-r from-orange-400 to-pink-500 text-white font-bold py-3 rounded-xl shadow-lg active:scale-95 transition-transform'>
               受け取る
             </button>
+          </div>
+        </div>
+      )}
+
+      {isSpotFoundModalOpen && activeLandmark && (
+        <div className='absolute inset-0 z-[250] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 pointer-events-auto'>
+          <div className='bg-white rounded-3xl p-6 w-full max-w-sm shadow-2xl text-center space-y-4 text-black'>
+            <div className='text-5xl mb-2'>
+              {(activeLandmark.landmark_masters?.facility_type || getFacilityType(activeLandmark.name)) === 'hospital' ? '🏥' :
+               (activeLandmark.landmark_masters?.facility_type || getFacilityType(activeLandmark.name)) === 'restaurant' ? '🍽️' :
+               (activeLandmark.landmark_masters?.facility_type || getFacilityType(activeLandmark.name)) === 'hotel' ? '🏨' : 
+               activeLandmark.isCustom ? '🌟' : '📍'}
+            </div>
+            <h2 className='text-xl font-bold text-gray-800'>
+              【{activeLandmark.name}】を発見！
+            </h2>
+            {visitedSpotsToday.has(String(activeLandmark.id)) ? (
+              <p className='text-sm text-gray-500'>本日は既にチェックイン済みです。<br />また明日訪れてみましょう！</p>
+            ) : (
+              <p className='text-sm text-gray-600'>チェックインしてアイテムや経験値をゲットしますか？</p>
+            )}
+            
+            <div className='space-y-3 mt-4'>
+              {!visitedSpotsToday.has(String(activeLandmark.id)) && (
+                <button
+                  onClick={() => {
+                    handleCheckIn();
+                    setIsSpotFoundModalOpen(false);
+                  }}
+                  className='w-full bg-gradient-to-r from-teal-400 to-teal-600 text-white font-bold py-3 rounded-xl shadow-lg active:scale-95'
+                >
+                  ✨ チェックインする
+                </button>
+              )}
+              <button
+                onClick={() => {
+                  setLastDismissedSpotId(activeLandmark.id);
+                  setIsSpotFoundModalOpen(false);
+                }}
+                className='w-full bg-gray-200 text-gray-700 font-bold py-3 rounded-xl active:scale-95'
+              >
+                あとで
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -3839,9 +3920,9 @@ const handleAddCustomSpot = async () => {
             <div className='bg-green-600/90 text-white p-3 rounded-xl font-bold shadow-lg w-full text-center text-sm backdrop-blur-sm'>
               {location ? `🚶‍♂️ 現在地周辺を散歩中... ${petId ? `(歩行: ${Math.floor(walkDistance)}m / 約${stepCount}歩)` : ''}` : '📡 GPSを探索中...'}
             </div>
-            {activeLandmark && !isEgg && petId && (
+            {activeLandmark && !isSpotFoundModalOpen && !isEgg && petId && (
               <button
-                onClick={handleCheckIn}
+                onClick={() => setIsSpotFoundModalOpen(true)}
                 className={`p-4 rounded-2xl font-bold shadow-2xl w-full border-4 animate-bounce text-lg text-white 
                   ${(activeLandmark.landmark_masters?.facility_type || getFacilityType(activeLandmark.name)) === 'hospital'
                     ? 'bg-gradient-to-br from-purple-400 to-purple-600 border-purple-200'
@@ -3851,9 +3932,9 @@ const handleAddCustomSpot = async () => {
                     ? 'bg-gradient-to-br from-blue-400 to-blue-600 border-blue-200'
                     : 'bg-gradient-to-br from-yellow-400 to-yellow-600 border-yellow-200 text-yellow-900'}`}
               >
-                ✨ 【{activeLandmark.name}】を発見！
+                ✨ 【{activeLandmark.name}】が近くにあります！
                 <br />
-                タップしてチェックイン！
+                タップして確認する
               </button>
             )}
           </>
@@ -4094,16 +4175,15 @@ const handleAddCustomSpot = async () => {
                 >
                   <a-gltf-model
                     id='pet-model-0'
-                    rotation={`${debugRotX} ${debugRotY} ${debugRotZ}`}
+　　　　　　　　　　　　src='#pet-asset'
                     position='0 0 0'
-                    scale={hatchAnimating ? `${debugScaleX * 0.2} ${debugScaleY * 0.2} ${debugScaleZ * 0.2}` : `${debugScaleX} ${debugScaleY} ${debugScaleZ}`}
-                    src='#pet-asset'
-                    shadow='cast: true; receive: true'
-                    animation={hatchAnimating ? `property: scale; to: ${debugScaleX} ${debugScaleY} ${debugScaleZ}; dur: 800; easing: easeOutElastic` : undefined}
+                    scale={`${debugScaleX} ${debugScaleY} ${debugScaleZ}`}
+                    rotation={`${debugRotX} ${debugRotY} ${debugRotZ}`}
                   ></a-gltf-model>
                 </a-entity>
               </a-entity>
 
+              {/* マーカー 2 */}
               <a-entity mindar-image-target='targetIndex: 1' id='marker-target-1' mindar-event-listener="">
                 <a-entity
                   id='pet-hitbox-1'
@@ -4119,16 +4199,15 @@ const handleAddCustomSpot = async () => {
                 >
                   <a-gltf-model
                     id='pet-model-1'
-                    rotation={`${debugRotX} ${debugRotY} ${debugRotZ}`}
-                    position='0 0 0'
-                    scale={hatchAnimating ? `${debugScaleX * 0.2} ${debugScaleY * 0.2} ${debugScaleZ * 0.2}` : `${debugScaleX} ${debugScaleY} ${debugScaleZ}`}
                     src='#pet-asset'
-                    shadow='cast: true; receive: true'
-                    animation={hatchAnimating ? `property: scale; to: ${debugScaleX} ${debugScaleY} ${debugScaleZ}; dur: 800; easing: easeOutElastic` : undefined}
+                    position='0 0 0'
+                    scale={`${debugScaleX} ${debugScaleY} ${debugScaleZ}`}
+                    rotation={`${debugRotX} ${debugRotY} ${debugRotZ}`}
                   ></a-gltf-model>
                 </a-entity>
               </a-entity>
 
+              {/* マーカー 3 */}
               <a-entity mindar-image-target='targetIndex: 2' id='marker-target-2' mindar-event-listener="">
                 <a-entity
                   id='pet-hitbox-2'
@@ -4144,16 +4223,15 @@ const handleAddCustomSpot = async () => {
                 >
                   <a-gltf-model
                     id='pet-model-2'
-                    rotation={`${debugRotX} ${debugRotY} ${debugRotZ}`}
-                    position='0 0 0'
-                    scale={hatchAnimating ? `${debugScaleX * 0.2} ${debugScaleY * 0.2} ${debugScaleZ * 0.2}` : `${debugScaleX} ${debugScaleY} ${debugScaleZ}`}
                     src='#pet-asset'
-                    shadow='cast: true; receive: true'
-                    animation={hatchAnimating ? `property: scale; to: ${debugScaleX} ${debugScaleY} ${debugScaleZ}; dur: 800; easing: easeOutElastic` : undefined}
+                    position='0 0 0'
+                    scale={`${debugScaleX} ${debugScaleY} ${debugScaleZ}`}
+                    rotation={`${debugRotX} ${debugRotY} ${debugRotZ}`}
                   ></a-gltf-model>
                 </a-entity>
               </a-entity>
 
+              {/* マーカー 4 */}
               <a-entity mindar-image-target='targetIndex: 3' id='marker-target-3' mindar-event-listener="">
                 <a-entity
                   id='pet-hitbox-3'
@@ -4169,67 +4247,44 @@ const handleAddCustomSpot = async () => {
                 >
                   <a-gltf-model
                     id='pet-model-3'
-                    rotation={`${debugRotX} ${debugRotY} ${debugRotZ}`}
-                    position='0 0 0'
-                    scale={hatchAnimating ? `${debugScaleX * 0.2} ${debugScaleY * 0.2} ${debugScaleZ * 0.2}` : `${debugScaleX} ${debugScaleY} ${debugScaleZ}`}
                     src='#pet-asset'
-                    shadow='cast: true; receive: true'
-                    animation={hatchAnimating ? `property: scale; to: ${debugScaleX} ${debugScaleY} ${debugScaleZ}; dur: 800; easing: easeOutElastic` : undefined}
+                    position='0 0 0'
+                    scale={`${debugScaleX} ${debugScaleY} ${debugScaleZ}`}
+                    rotation={`${debugRotX} ${debugRotY} ${debugRotZ}`}
                   ></a-gltf-model>
                 </a-entity>
               </a-entity>
             </a-scene>
           </div>
         )}
-        {viewMode === 'gps' && isDataLoaded && scriptsReadyForGps && !isSwitchingMode && (
-          <div key={`gps-container-${sceneKey}-${cameraFacing}`} className='absolute inset-0 pointer-events-none'>
+
+        {viewMode === 'gps' && sessionUserId && isDataLoaded && scriptsReadyForGps && !isSwitchingMode && (
+          <div key={`gps-container-${sceneKey}`} className='absolute inset-0 pointer-events-none'>
             <a-scene
               embedded
               style={{ position: 'absolute', inset: 0, height: '100%', width: '100%', pointerEvents: 'none' }}
               vr-mode-ui='enabled: false'
-              renderer='alpha: true; preserveDrawingBuffer: true; colorManagement: true;'
-              arjs={`sourceType: webcam; videoTexture: true; debugUIEnabled: false; facingMode: ${cameraFacing};`}
+              arjs={`sourceType: webcam; sourceWidth:1280; sourceHeight:960; displayWidth: 1280; displayHeight: 960; debugUIEnabled: false; trackingMethod: best; sourceFacingMode: ${cameraFacing};`}
+              renderer='alpha: true; antialias: true; logarithmicDepthBuffer: true;'
             >
-              <a-light type='ambient' color='#ffffff' intensity='0.7'></a-light>
-              <a-light type='directional' color='#ffffff' intensity='1.5' position='0 5 0'></a-light>
-
-              <a-camera gps-camera rotation-reader></a-camera>
-
-              {!isEgg && petId && (
-                <>
-                  {landmarks.map(spot => (
-                    spot.model_url ? (
-                      <a-entity
-                        key={`ar-lm-${spot.id}`}
-                        gps-entity-place={`latitude: ${spot.latitude}; longitude: ${spot.longitude};`}
-                        gltf-model={spot.model_url}
-                        scale='10 10 10'
-                        position='0 2 0'
-                        animation='property: rotation; to: 0 360 0; loop: true; dur: 4000; easing: linear;'
-                      ></a-entity>
-                    ) : (
-                      <a-box
-                        key={`ar-lm-${spot.id}`}
-                        gps-entity-place={`latitude: ${spot.latitude}; longitude: ${spot.longitude};`}
-                        color='#FFD700'
-                        scale='5 5 5'
-                        position='0 2 0'
-                        animation='property: rotation; to: 0 360 0; loop: true; dur: 4000; easing: linear;'
-                      ></a-box>
-                    )
-                  ))}
-                  {customSpots.filter(cs => cs.latitude && cs.longitude).map(spot => (
-                    <a-box
-                      key={`ar-cs-${spot.id}`}
-                      gps-entity-place={`latitude: ${Number(spot.latitude)}; longitude: ${Number(spot.longitude)};`}
-                      src={spot.image_url}
-                      scale='5 5 5'
-                      position='0 2 0'
-                      animation='property: rotation; to: 0 360 0; loop: true; dur: 4000; easing: linear;'
-                    ></a-box>
-                  ))}
-                </>
-              )}
+              <a-assets>
+                <a-asset-item id='pet-asset-gps' src={activeModelUrl}></a-asset-item>
+              </a-assets>
+              
+              <a-camera gps-camera rotation-reader>
+                {/* GPSモードではカメラの前に常にペットを表示（卵が未登録の状態・睡眠中を除く） */}
+                {!isEggUnregistered && !isSleeping && (
+                  <a-entity position='0 -1.5 -3' rotation='0 0 0'>
+                    <a-entity pet-anim-controller={`clip: ${(!isEgg && debugAnimEnabled) ? currentAnim : ''}`}>
+                      <a-gltf-model
+                        src='#pet-asset-gps'
+                        scale={`${debugScaleX} ${debugScaleY} ${debugScaleZ}`}
+                        rotation={`${debugRotX} ${debugRotY} ${debugRotZ}`}
+                      ></a-gltf-model>
+                    </a-entity>
+                  </a-entity>
+                )}
+              </a-camera>
             </a-scene>
           </div>
         )}
@@ -4238,10 +4293,4 @@ const handleAddCustomSpot = async () => {
   );
 }
 
-export default function HomeARPage() {
-  return (
-    <Suspense fallback={<div className='bg-black w-full h-full text-white flex items-center justify-center'>エンジンを起動中...</div>}>
-      <HomeAR />
-    </Suspense>
-  );
-}
+export default HomeAR;
