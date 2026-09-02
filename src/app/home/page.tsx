@@ -4174,7 +4174,7 @@ const handleAddCustomSpot = async () => {
                         key={`ar-lm-${spot.id}`}
                         gps-entity-place={`latitude: ${spot.latitude}; longitude: ${spot.longitude};`}
                         gltf-model={spot.model_url}
-                        scale='15 15 15'
+                        scale='50 50 50'
                         position='0 2 0'
                         animation='property: rotation; to: 0 360 0; loop: true; dur: 4000; easing: linear;'
                       ></a-entity>
