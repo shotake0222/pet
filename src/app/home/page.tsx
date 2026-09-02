@@ -3,8 +3,9 @@
 import { useState, useEffect, useMemo, Suspense, useRef, useCallback, type FormEvent } from 'react';
 import Script from 'next/script';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { createClient } from '@/utils/supabase/client';
-import { isDebugMode } from '@/utils/debugMode';
+import { supabase as sharedSupabase } from '@/lib/supabase';
+
+const isDebugMode = () => process.env.NODE_ENV !== 'production';
 
 declare global {
   namespace React {
@@ -48,7 +49,7 @@ type ItemActionEffect = {
 function HomeAR() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const supabase = useMemo(() => createClient(), []);
+  const supabase = sharedSupabase;
 
   const rawModeParam = searchParams.get('mode');
   const modeParam = rawModeParam === 'minder' ? 'mindar' : rawModeParam;
@@ -1848,7 +1849,7 @@ function HomeAR() {
 
       let selectedMaster = petMasters[Math.floor(Math.random() * petMasters.length)];
       if (forceMasterId) {
-        const found = petMasters.find(p => String(p.id) === String(forceMasterId));
+        const found = petMasters.find((p: any) => String(p.id) === String(forceMasterId));
         if (found) selectedMaster = found;
       }
 
