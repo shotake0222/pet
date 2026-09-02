@@ -51,7 +51,7 @@ function HomeAR() {
   const [birthday, setBirthday] = useState<string | null>(null);
   const [generation, setGeneration] = useState(1);
 
-  const [petCondition, setPetCondition]<'healthy' | 'starving' | 'sick'>('healthy');
+  const [petCondition, setPetCondition] = useState<'healthy' | 'starving' | 'sick'>('healthy');
   const [showConditionSOS, setShowConditionSOS] = useState(false);
 
   const [eggModelUrl, setEggModelUrl] = useState('/models/eggs/egg.glb');
