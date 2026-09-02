@@ -516,7 +516,7 @@ function HomeAR() {
         el.style.margin = '0';
       });
       const canvases = viewport.querySelectorAll('canvas');
-      canvases.forEach(canvas => {
+      canases.forEach(canvas => {
         const el = canvas as HTMLCanvasElement;
         el.style.position = 'absolute';
         el.style.inset = '0';
@@ -4059,25 +4059,34 @@ function HomeAR() {
               renderer='alpha: true; preserveDrawingBuffer: true; colorManagement: true;'
               arjs={`sourceType: webcam; videoTexture: true; debugUIEnabled: false; facingMode: ${cameraFacing};`}
             >
-              <a-assets>
-                {activeLandmark && activeLandmark.model_url && (
-                  <a-asset-item id='landmark-asset-dynamic' src={activeLandmark.model_url}></a-asset-item>
-                )}
-              </a-assets>
-
               <a-light type='ambient' color='#ffffff' intensity='0.7'></a-light>
               <a-light type='directional' color='#ffffff' intensity='1.5' position='0 5 0'></a-light>
 
               <a-camera gps-camera rotation-reader></a-camera>
 
-              {activeLandmark && !isEgg && petId && (
-                <a-entity
-                  gps-entity-place={`latitude: ${activeLandmark.latitude}; longitude: ${activeLandmark.longitude};`}
-                  gltf-model={activeLandmark.model_url ? '#landmark-asset-dynamic' : '/models/treasure.glb'}
-                  scale='5 5 5'
-                  position='0 2 0'
-                  animation='property: rotation; to: 0 360 0; loop: true; dur: 4000; easing: linear;'
-                ></a-entity>
+              {!isEgg && petId && (
+                <>
+                  {landmarks.map(spot => (
+                    <a-entity
+                      key={`ar-lm-${spot.id}`}
+                      gps-entity-place={`latitude: ${spot.latitude}; longitude: ${spot.longitude};`}
+                      gltf-model={spot.model_url || '/models/treasure.glb'}
+                      scale='15 15 15'
+                      position='0 2 0'
+                      animation='property: rotation; to: 0 360 0; loop: true; dur: 4000; easing: linear;'
+                    ></a-entity>
+                  ))}
+                  {customSpots.filter(cs => cs.latitude && cs.longitude).map(spot => (
+                    <a-entity
+                      key={`ar-cs-${spot.id}`}
+                      gps-entity-place={`latitude: ${Number(spot.latitude)}; longitude: ${Number(spot.longitude)};`}
+                      gltf-model='/models/treasure.glb'
+                      scale='15 15 15'
+                      position='0 2 0'
+                      animation='property: rotation; to: 0 360 0; loop: true; dur: 4000; easing: linear;'
+                    ></a-entity>
+                  ))}
+                </>
               )}
             </a-scene>
           </div>
