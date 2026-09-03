@@ -955,43 +955,93 @@ function HomeAR() {
         setVisitedSpotsToday(new Set(visitsToday.map((v: any) => String(v.landmark_id))));
       }
 
-      // マップには管理画面から登録したスポットも表示するため、landmarks と landmark_masters の両方を取得して統合する
-      const { data: spots, error: spotsError } = await supabase
-        .from('landmarks')
-        .select('*, landmark_masters:landmark_master_id(facility_type, name, latitude, longitude, radius_meters, bonus_points)');
-      const { data: masterSpots, error: masterSpotsError } = await supabase
-        .from('landmark_masters')
-        .select('*');
-      
-      let combinedLandmarks: any[] = [];
-      
-      if (spots) {
-        combinedLandmarks = [...combinedLandmarks, ...spots.map((spot: any) => ({
+// マップには管理画面から登録したスポットも表示するため、landmarks と landmark_masters の両方を取得して統合する
+const { data: spots, error: spotsError } = await supabase
+  .from('landmarks')
+  .select('*, landmark_masters:landmark_master_id(facility_type, name, latitude, longitude, radius_meters, bonus_points)');
+if (spotsError) {
+  console.error('🔴 landmarks 取得エラー:', spotsError);
+}
+
+const { data: masterSpots, error: masterSpotsError } = await supabase
+  .from('landmark_masters')
+  .select('*');
+if (masterSpotsError) {
+  console.error('🔴 landmark_masters 取得エラー:', masterSpotsError);
+}
+
+let combinedLandmarks: any[] = [];
+
+// landmarks 側：自テーブルに緯度経度が無ければ、join した landmark_masters 側の値にフォールバックする
+if (spots) {
+  combinedLandmarks = [
+    ...combinedLandmarks,
+    ...spots
+      .map((spot: any) => {
+        const master = spot.landmark_masters;
+        const lat = Number(spot.latitude ?? master?.latitude);
+        const lng = Number(spot.longitude ?? master?.longitude);
+        const radius = Number(spot.radius_meters ?? master?.radius_meters);
+        const bonus = Number(spot.bonus_points ?? master?.bonus_points);
+        return {
           ...spot,
           id: String(spot.id),
-          latitude: Number(spot.latitude),
-          longitude: Number(spot.longitude),
-          radius_meters: Number(spot.radius_meters) || 50,
-          bonus_points: Number(spot.bonus_points) || 10
-        }))];
-      }
-      
-      if (masterSpots) {
-        const parsedMasters = masterSpots.filter((m: any) => m.latitude != null && m.longitude != null).map((m: any) => ({
-          id: `master-${m.id}`,
-          landmark_master_id: m.id,
-          name: m.name,
-          latitude: Number(m.latitude),
-          longitude: Number(m.longitude),
-          radius_meters: Number(m.radius_meters) || 50,
-          bonus_points: Number(m.bonus_points) || 10,
-          landmark_masters: m,
-          isMaster: true
-        }));
-        combinedLandmarks = [...combinedLandmarks, ...parsedMasters];
-      }
-      
-      setLandmarks(combinedLandmarks);
+          name: spot.name ?? master?.name ?? '名称未設定スポット',
+          latitude: lat,
+          longitude: lng,
+          radius_meters: Number.isFinite(radius) ? radius : 50,
+          bonus_points: Number.isFinite(bonus) ? bonus : 10,
+        };
+      })
+      // 緯度経度が数値として不正なものは地図に置けないので除外する
+      .filter((spot: any) => Number.isFinite(spot.latitude) && Number.isFinite(spot.longitude)),
+  ];
+}
+
+// landmarks 側ですでに使われている landmark_master_id は重複表示になるので除外する
+const usedMasterIds = new Set(
+  (spots || [])
+    .map((s: any) => s.landmark_master_id)
+    .filter((id: any) => id != null)
+    .map((id: any) => String(id))
+);
+
+// landmark_masters 側（管理画面から直接登録されたスポット）
+if (masterSpots) {
+  const parsedMasters = masterSpots
+    .filter((m: any) => !usedMasterIds.has(String(m.id)))
+    .map((m: any) => {
+      const lat = Number(m.latitude);
+      const lng = Number(m.longitude);
+      const radius = Number(m.radius_meters);
+      const bonus = Number(m.bonus_points);
+      return {
+        id: `master-${m.id}`,
+        landmark_master_id: m.id,
+        name: m.name,
+        latitude: lat,
+        longitude: lng,
+        radius_meters: Number.isFinite(radius) ? radius : 50,
+        bonus_points: Number.isFinite(bonus) ? bonus : 10,
+        landmark_masters: m,
+        isMaster: true,
+      };
+    })
+    .filter((m: any) => Number.isFinite(m.latitude) && Number.isFinite(m.longitude));
+  combinedLandmarks = [...combinedLandmarks, ...parsedMasters];
+}
+
+if (isDebugMode()) {
+  console.log('[スポット取得結果]', {
+    landmarksRaw: spots?.length ?? 0,
+    landmarkMastersRaw: masterSpots?.length ?? 0,
+    combined: combinedLandmarks.length,
+    spotsError,
+    masterSpotsError,
+  });
+}
+
+setLandmarks(combinedLandmarks);
 
       const { data: news } = await supabase.from('announcements').select('*').eq('is_active', true).order('published_at', { ascending: false });
       if (news) setNewsList(news);
