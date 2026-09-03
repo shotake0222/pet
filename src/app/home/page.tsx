@@ -556,7 +556,7 @@ function HomeAR() {
         el.style.margin = '0';
       });
       const canvases = viewport.querySelectorAll('canvas');
-      canvases.forEach(canvas => {
+      canases.forEach(canvas => {
         const el = canvas as HTMLCanvasElement;
         el.style.position = 'absolute';
         el.style.inset = '0';
@@ -4296,7 +4296,7 @@ function HomeAR() {
                 )}
               </a-camera>
 
-              {/* テストスポットのAR表示 (a-box) */}
+              {/* テストスポットのAR表示 */}
               {allMapSpots.map(spot => {
                 if (spot.id.toString().startsWith('debug-spot-')) {
                   return (
@@ -4308,7 +4308,16 @@ function HomeAR() {
                     ></a-box>
                   );
                 }
-                return null;
+                
+                // 通常のスポットの場合（仮で黄色の箱を表示）
+                return (
+                  <a-entity
+                    key={spot.id}
+                    gps-entity-place={`latitude: ${spot.latitude}; longitude: ${spot.longitude};`}
+                  >
+                    <a-box scale="5 5 5" color="yellow"></a-box>
+                  </a-entity>
+                );
               })}
             </a-scene>
           </div>
