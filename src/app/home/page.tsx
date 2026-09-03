@@ -373,6 +373,45 @@ function HomeAR() {
     return 2 * R * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   };
 
+  const lastFetchedLandmarkLocationRef = useRef<{ lat: number; lng: number } | null>(null);
+
+  const fetchNearbyLandmarks = useCallback(async (lat: number, lng: number) => {
+    const rangeDeg = 0.5; // 約55km四方をカバー
+    const { data: spots, error: spotsError } = await supabase
+      .from('landmarks')
+      .select('*')
+      .gte('latitude', lat - rangeDeg)
+      .lte('latitude', lat + rangeDeg)
+      .gte('longitude', lng - rangeDeg)
+      .lte('longitude', lng + rangeDeg)
+      .limit(2000);
+
+    if (spotsError) {
+      console.error('🔴 landmarks(近隣) 取得エラー:', spotsError);
+      return;
+    }
+
+    const parsed = (spots || [])
+      .map((spot: any) => {
+        const latN = Number(spot.latitude);
+        const lngN = Number(spot.longitude);
+        const radius = Number(spot.radius_meters);
+        const bonus = Number(spot.bonus_points);
+        return {
+          ...spot,
+          id: String(spot.id),
+          latitude: latN,
+          longitude: lngN,
+          radius_meters: Number.isFinite(radius) ? radius : 50,
+          bonus_points: Number.isFinite(bonus) ? bonus : 10,
+        };
+      })
+      .filter((spot: any) => Number.isFinite(spot.latitude) && Number.isFinite(spot.longitude));
+
+    console.log('[近隣スポット取得結果]', { lat, lng, count: parsed.length });
+    setLandmarks(parsed);
+  }, [supabase]);
+
   const [hatchAnimating, setHatchAnimating] = useState(false);
   const [levelUpOverlay, setLevelUpOverlay] = useState<{ active: boolean; particles: any[]; level: number; isMilestone: boolean } | null>(null);
 
@@ -462,6 +501,16 @@ function HomeAR() {
     }));
     return [...landmarks, ...parsedCustomSpots];
   }, [landmarks, customSpots]);
+
+  // 🌟 現在地が取得・更新されたら、必要に応じて近隣スポットを再取得する
+  useEffect(() => {
+    if (!location) return;
+    const last = lastFetchedLandmarkLocationRef.current;
+    if (!last || getDistance(last.lat, last.lng, location.lat, location.lng) > 1000) {
+      lastFetchedLandmarkLocationRef.current = location;
+      fetchNearbyLandmarks(location.lat, location.lng);
+    }
+  }, [location, fetchNearbyLandmarks]);
 
   useEffect(() => {
     const setAppHeight = () => {
@@ -778,23 +827,23 @@ function HomeAR() {
           router.push(`/login${queryString}`);
           return;
         }
-const userId = session.user.id;
-setSessionUserId(userId);
+        const userId = session.user.id;
+        setSessionUserId(userId);
 
-const todayStr = new Date().toLocaleDateString('sv-SE');
-const { error: loginLogError } = await supabase.from('user_login_logs').upsert(
-  {
-    user_id: userId,
-    login_date: todayStr,
-    login_timestamp: new Date().toISOString(),
-  },
-  { onConflict: 'user_id, login_date' }
-);
-if (loginLogError) {
-  console.error('🔴 user_login_logs 記録エラー:', loginLogError);
-}
+        const todayStr = new Date().toLocaleDateString('sv-SE');
+        const { error: loginLogError } = await supabase.from('user_login_logs').upsert(
+          {
+            user_id: userId,
+            login_date: todayStr,
+            login_timestamp: new Date().toISOString(),
+          },
+          { onConflict: 'user_id, login_date' }
+        );
+        if (loginLogError) {
+          console.error('🔴 user_login_logs 記録エラー:', loginLogError);
+        }
 
-const { data: profile } = await supabase.from('user_profiles').select('*').eq('id', userId).maybeSingle();
+        const { data: profile } = await supabase.from('user_profiles').select('*').eq('id', userId).maybeSingle();
         if (!profile || !profile.birth_year) {
           setShowProfileSetup(true);
         } else {
@@ -958,48 +1007,9 @@ const { data: profile } = await supabase.from('user_profiles').select('*').eq('i
         setVisitedSpotsToday(new Set(visitsToday.map((v: any) => String(v.landmark_id))));
       }
 
-// マップには管理画面から登録したスポットも表示するため、landmarks と landmark_masters の両方を取得して統合する
-// ※ landmark_masters は施設タイプのマスター定義のみを持ち、緯度経度は landmarks 側にのみ存在する
-// マップ表示用のスポットは全て landmarks テーブルの実体行から取得する
-// （landmark_masters は施設タイプ等のテンプレート定義のみで座標は持たない）
-const { data: spots, error: spotsError } = await supabase
-  .from('landmarks')
-  .select('*');
-if (spotsError) {
-  console.error('🔴 landmarks 取得エラー:', spotsError);
-}
-
-let combinedLandmarks: any[] = [];
-
-if (spots) {
-  combinedLandmarks = spots
-    .map((spot: any) => {
-      const lat = Number(spot.latitude);
-      const lng = Number(spot.longitude);
-      const radius = Number(spot.radius_meters);
-      const bonus = Number(spot.bonus_points);
-      return {
-        ...spot,
-        id: String(spot.id),
-        latitude: lat,
-        longitude: lng,
-        radius_meters: Number.isFinite(radius) ? radius : 50,
-        bonus_points: Number.isFinite(bonus) ? bonus : 10,
-      };
-    })
-    // 緯度経度が不正なものだけ除外（is_public や日時での絞り込みは今回は入れない）
-    .filter((spot: any) => Number.isFinite(spot.latitude) && Number.isFinite(spot.longitude));
-}
-
-if (isDebugMode()) {
-console.log('[スポット取得結果]', {
-  rawCount: spots?.length ?? 0,
-  visibleCount: combinedLandmarks.length,
-  spotsError,
-});
-}
-
-setLandmarks(combinedLandmarks);
+      // 🌟 landmarks の全件取得はここでは行わない。
+      // 13万件規模のデータがあるため、現在地が取得できたタイミングで
+      // fetchNearbyLandmarks（現在地周辺のみを絞り込んで取得）を使う。
 
       const { data: news } = await supabase.from('announcements').select('*').eq('is_active', true).order('published_at', { ascending: false });
       if (news) setNewsList(news);
@@ -2665,21 +2675,21 @@ setLandmarks(combinedLandmarks);
               </button>
               
               <button 
-  onClick={() => {
-    if (!location) return alert('GPSが取得されていません。');
-    const distances = allMapSpots
-      .map(spot => ({
-        name: spot.name,
-        dist: Math.round(getDistance(location.lat, location.lng, spot.latitude, spot.longitude))
-      }))
-      .sort((a, b) => a.dist - b.dist);
-    console.log('[スポットまでの距離一覧]', distances);
-    alert(distances.map(d => `${d.name}: ${d.dist}m`).join('\n'));
-  }}
-  className='w-full bg-cyan-600 text-white font-bold py-2 rounded-lg shadow text-sm'
->
-  📏 各スポットまでの距離を確認
-</button>
+                onClick={() => {
+                  if (!location) return alert('GPSが取得されていません。');
+                  const distances = allMapSpots
+                    .map(spot => ({
+                      name: spot.name,
+                      dist: Math.round(getDistance(location.lat, location.lng, spot.latitude, spot.longitude))
+                    }))
+                    .sort((a, b) => a.dist - b.dist);
+                  console.log('[スポットまでの距離一覧]', distances);
+                  alert(distances.map(d => `${d.name}: ${d.dist}m`).join('\n'));
+                }}
+                className='w-full bg-cyan-600 text-white font-bold py-2 rounded-lg shadow text-sm'
+              >
+                📏 各スポットまでの距離を確認
+              </button>
 
               <button 
                 onClick={() => {
@@ -3386,73 +3396,73 @@ setLandmarks(combinedLandmarks);
                     <div className='w-5 h-5 bg-red-500 rounded-full border-2 border-white shadow-md animate-pulse'></div>
                   </div>
                   <div className='absolute inset-0 z-20 pointer-events-none'>
-{allMapSpots.map((spot, idx) => {
-  const master = spot.landmark_masters;
-  const facilityType = spot.isCustom ? 'custom' : (master?.facility_type && master.facility_type !== 'normal' ? master.facility_type : getFacilityType(spot.name));
-  const typeIcon = facilityType === 'hospital' ? '🏥' : facilityType === 'restaurant' ? '🍽️' : facilityType === 'hotel' ? '🏨' : facilityType === 'custom' ? '🌟' : '📍';
-  const zoomFactors: Record<number, number> = { 1: 0.01, 2: 0.007, 3: 0.005, 4: 0.003, 5: 0.001 };
-  const factor = zoomFactors[mapZoomLevel] || 0.005;
-  const topPercent = 50 - ((spot.latitude - location.lat) / (factor * 2)) * 100;
-  const leftPercent = 50 + ((spot.longitude - location.lng) / (factor * 2)) * 100;
-  return (
-    <div key={`radar-${spot.id || idx}`} className='absolute w-12 h-12 -ml-6 -mt-6 text-2xl flex items-center justify-center filter drop-shadow bg-white/90 rounded-full border-2 border-gray-300 shadow-md' style={{ top: `${topPercent}%`, left: `${leftPercent}%` }} title={spot.name}>
-      {typeIcon}
-    </div>
-  );
-})}
+                    {allMapSpots.map((spot, idx) => {
+                      const master = spot.landmark_masters;
+                      const facilityType = spot.isCustom ? 'custom' : (master?.facility_type && master.facility_type !== 'normal' ? master.facility_type : getFacilityType(spot.name));
+                      const typeIcon = facilityType === 'hospital' ? '🏥' : facilityType === 'restaurant' ? '🍽️' : facilityType === 'hotel' ? '🏨' : facilityType === 'custom' ? '🌟' : '📍';
+                      const zoomFactors: Record<number, number> = { 1: 0.01, 2: 0.007, 3: 0.005, 4: 0.003, 5: 0.001 };
+                      const factor = zoomFactors[mapZoomLevel] || 0.005;
+                      const topPercent = 50 - ((spot.latitude - location.lat) / (factor * 2)) * 100;
+                      const leftPercent = 50 + ((spot.longitude - location.lng) / (factor * 2)) * 100;
+                      return (
+                        <div key={`radar-${spot.id || idx}`} className='absolute w-12 h-12 -ml-6 -mt-6 text-2xl flex items-center justify-center filter drop-shadow bg-white/90 rounded-full border-2 border-gray-300 shadow-md' style={{ top: `${topPercent}%`, left: `${leftPercent}%` }} title={spot.name}>
+                          {typeIcon}
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
 
-{(() => {
-const nearbySpots = allMapSpots.filter(spot => {
-  const dist = getDistance(location.lat, location.lng, spot.latitude, spot.longitude);
-  return dist <= 60000;
-}).sort((a, b) => {
-  const masterA = a.landmark_masters;
-  const masterB = b.landmark_masters;
-  const facilityTypeA = a.isCustom ? 'custom' : (masterA?.facility_type && masterA.facility_type !== 'normal' ? masterA.facility_type : getFacilityType(a.name));
-  const facilityTypeB = b.isCustom ? 'custom' : (masterB?.facility_type && masterB.facility_type !== 'normal' ? masterB.facility_type : getFacilityType(b.name));
+                {(() => {
+                  const nearbySpots = allMapSpots.filter(spot => {
+                    const dist = getDistance(location.lat, location.lng, spot.latitude, spot.longitude);
+                    return dist <= 60000;
+                  }).sort((a, b) => {
+                    const masterA = a.landmark_masters;
+                    const masterB = b.landmark_masters;
+                    const facilityTypeA = a.isCustom ? 'custom' : (masterA?.facility_type && masterA.facility_type !== 'normal' ? masterA.facility_type : getFacilityType(a.name));
+                    const facilityTypeB = b.isCustom ? 'custom' : (masterB?.facility_type && masterB.facility_type !== 'normal' ? masterB.facility_type : getFacilityType(b.name));
 
-  const isSpecialA = facilityTypeA === 'special' ? 0 : 1;
-  const isSpecialB = facilityTypeB === 'special' ? 0 : 1;
-  if (isSpecialA !== isSpecialB) return isSpecialA - isSpecialB; // 特別スポットを先頭に
+                    const isSpecialA = facilityTypeA === 'special' ? 0 : 1;
+                    const isSpecialB = facilityTypeB === 'special' ? 0 : 1;
+                    if (isSpecialA !== isSpecialB) return isSpecialA - isSpecialB; // 特別スポットを先頭に
 
-  const distA = getDistance(location.lat, location.lng, a.latitude, a.longitude);
-  const distB = getDistance(location.lat, location.lng, b.latitude, b.longitude);
-  return distA - distB; // 同じ優先度内は距離順
-});
+                    const distA = getDistance(location.lat, location.lng, a.latitude, a.longitude);
+                    const distB = getDistance(location.lat, location.lng, b.latitude, b.longitude);
+                    return distA - distB; // 同じ優先度内は距離順
+                  });
 
-  return (
-    <div className='space-y-3'>
-      {nearbySpots.map((spot, idx) => {
-        const dist = getDistance(location.lat, location.lng, spot.latitude, spot.longitude);
-        const master = spot.landmark_masters;
-        const facilityType = spot.isCustom ? 'custom' : (master?.facility_type && master.facility_type !== 'normal' ? master.facility_type : getFacilityType(spot.name));
-        return (
-          <div key={`list-${spot.id || idx}`} className='bg-gray-50 border rounded-xl p-3 flex justify-between items-center shadow-sm'>
-            <div>
-              <div className='font-bold text-gray-800 flex items-center gap-1'>
-                {facilityType === 'hospital' ? '🏥' : facilityType === 'restaurant' ? '🍽️' : facilityType === 'hotel' ? '🏨' : facilityType === 'custom' ? '🌟' : '📍'} {spot.name}
-              </div>
-              <div className='text-xs text-gray-500'>現在地から約 {Math.floor(dist)}m</div>
-            </div>
-            <button
-              onClick={() => {
-                handleModeChange('gps');
-                setIsSpotMapOpen(false);
-                setCameraFacing('environment');
-              }}
-              className='bg-teal-600 text-white text-xs font-bold px-3 py-2 rounded-lg active:scale-95 transition-transform'
-            >
-              ARで見る
-            </button>
-          </div>
-        );
-      })}
-      {nearbySpots.length === 0 && <p className='text-xs text-gray-500 text-center py-4'>周辺60km圏内にスポットが見つかりません</p>}
-    </div>
-  );
-})()}
+                  return (
+                    <div className='space-y-3'>
+                      {nearbySpots.map((spot, idx) => {
+                        const dist = getDistance(location.lat, location.lng, spot.latitude, spot.longitude);
+                        const master = spot.landmark_masters;
+                        const facilityType = spot.isCustom ? 'custom' : (master?.facility_type && master.facility_type !== 'normal' ? master.facility_type : getFacilityType(spot.name));
+                        return (
+                          <div key={`list-${spot.id || idx}`} className='bg-gray-50 border rounded-xl p-3 flex justify-between items-center shadow-sm'>
+                            <div>
+                              <div className='font-bold text-gray-800 flex items-center gap-1'>
+                                {facilityType === 'hospital' ? '🏥' : facilityType === 'restaurant' ? '🍽️' : facilityType === 'hotel' ? '🏨' : facilityType === 'custom' ? '🌟' : '📍'} {spot.name}
+                              </div>
+                              <div className='text-xs text-gray-500'>現在地から約 {Math.floor(dist)}m</div>
+                            </div>
+                            <button
+                              onClick={() => {
+                                handleModeChange('gps');
+                                setIsSpotMapOpen(false);
+                                setCameraFacing('environment');
+                              }}
+                              className='bg-teal-600 text-white text-xs font-bold px-3 py-2 rounded-lg active:scale-95 transition-transform'
+                            >
+                              ARで見る
+                            </button>
+                          </div>
+                        );
+                      })}
+                      {nearbySpots.length === 0 && <p className='text-xs text-gray-500 text-center py-4'>周辺60km圏内にスポットが見つかりません</p>}
+                    </div>
+                  );
+                })()}
               </div>
             )}
 
