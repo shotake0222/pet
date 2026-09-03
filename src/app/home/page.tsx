@@ -992,11 +992,11 @@ if (spots) {
 }
 
 if (isDebugMode()) {
-  console.log('[スポット取得結果]', {
-    rawCount: spots?.length ?? 0,
-    visibleCount: combinedLandmarks.length,
-    spotsError,
-  });
+console.log('[スポット取得結果]', {
+  rawCount: spots?.length ?? 0,
+  visibleCount: combinedLandmarks.length,
+  spotsError,
+});
 }
 
 setLandmarks(combinedLandmarks);
