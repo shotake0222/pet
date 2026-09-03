@@ -956,9 +956,10 @@ function HomeAR() {
       }
 
 // マップには管理画面から登録したスポットも表示するため、landmarks と landmark_masters の両方を取得して統合する
+// ※ landmark_masters は施設タイプのマスター定義のみを持ち、緯度経度は landmarks 側にのみ存在する
 const { data: spots, error: spotsError } = await supabase
   .from('landmarks')
-  .select('*, landmark_masters:landmark_master_id(facility_type, name, latitude, longitude, radius_meters, bonus_points)');
+  .select('*, landmark_masters:landmark_master_id(facility_type, name)');
 if (spotsError) {
   console.error('🔴 landmarks 取得エラー:', spotsError);
 }
@@ -972,17 +973,17 @@ if (masterSpotsError) {
 
 let combinedLandmarks: any[] = [];
 
-// landmarks 側：自テーブルに緯度経度が無ければ、join した landmark_masters 側の値にフォールバックする
+// landmarks 側：緯度経度・半径・ボーナスは landmarks テーブル自身の列を使う
 if (spots) {
   combinedLandmarks = [
     ...combinedLandmarks,
     ...spots
       .map((spot: any) => {
         const master = spot.landmark_masters;
-        const lat = Number(spot.latitude ?? master?.latitude);
-        const lng = Number(spot.longitude ?? master?.longitude);
-        const radius = Number(spot.radius_meters ?? master?.radius_meters);
-        const bonus = Number(spot.bonus_points ?? master?.bonus_points);
+        const lat = Number(spot.latitude);
+        const lng = Number(spot.longitude);
+        const radius = Number(spot.radius_meters);
+        const bonus = Number(spot.bonus_points);
         return {
           ...spot,
           id: String(spot.id),
@@ -998,7 +999,8 @@ if (spots) {
   ];
 }
 
-// landmarks 側ですでに使われている landmark_master_id は重複表示になるので除外する
+// landmark_masters 側は現状「位置情報を持たないタイプ定義」なので、
+// 緯度経度が入っている行があれば拾う（将来カラムが追加された場合の保険。現状は基本ヒットしない）
 const usedMasterIds = new Set(
   (spots || [])
     .map((s: any) => s.landmark_master_id)
@@ -1006,7 +1008,6 @@ const usedMasterIds = new Set(
     .map((id: any) => String(id))
 );
 
-// landmark_masters 側（管理画面から直接登録されたスポット）
 if (masterSpots) {
   const parsedMasters = masterSpots
     .filter((m: any) => !usedMasterIds.has(String(m.id)))
