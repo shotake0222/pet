@@ -1438,9 +1438,13 @@ export default function AdminDashboard() {
 
                       <div className="flex items-center gap-3 bg-white p-3 border rounded-lg">
                         <label className="text-sm font-bold whitespace-nowrap">公開ステータス:</label>
-                        <button type="button" onClick={() => toggleLandmarkMasterPublic(0, false)} className={`text-xs font-bold px-3 py-1 rounded-full ${lmMasterIsPublic ? 'bg-green-100 text-green-800' : 'bg-gray-300 text-gray-700'}`}>
-                          {lmMasterIsPublic ? '公開 (本番表示)' : '非公開 (準備中)'}
-                        </button>
+                       <button
+  type="button"
+  onClick={() => setLmMasterIsPublic(prev => !prev)}
+  className={`text-xs font-bold px-3 py-1 rounded-full ${lmMasterIsPublic ? 'bg-green-100 text-green-800' : 'bg-gray-300 text-gray-700'}`}
+>
+  {lmMasterIsPublic ? '公開 (本番表示)' : '非公開 (準備中)'}
+</button>
                       </div>
 
                       <div className="bg-yellow-50 p-4 rounded-xl border border-yellow-200">
