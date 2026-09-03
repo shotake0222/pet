@@ -3404,14 +3404,23 @@ setLandmarks(combinedLandmarks);
                 </div>
 
 {(() => {
-  const nearbySpots = allMapSpots.filter(spot => {
-    const dist = getDistance(location.lat, location.lng, spot.latitude, spot.longitude);
-    return dist <= 60000; // 🌟 10000 → 60000 (fetchNearbyLandmarksの取得範囲55km四方に合わせて拡大)
-  }).sort((a, b) => {
-    const distA = getDistance(location.lat, location.lng, a.latitude, a.longitude);
-    const distB = getDistance(location.lat, location.lng, b.latitude, b.longitude);
-    return distA - distB;
-  });
+const nearbySpots = allMapSpots.filter(spot => {
+  const dist = getDistance(location.lat, location.lng, spot.latitude, spot.longitude);
+  return dist <= 60000;
+}).sort((a, b) => {
+  const masterA = a.landmark_masters;
+  const masterB = b.landmark_masters;
+  const facilityTypeA = a.isCustom ? 'custom' : (masterA?.facility_type && masterA.facility_type !== 'normal' ? masterA.facility_type : getFacilityType(a.name));
+  const facilityTypeB = b.isCustom ? 'custom' : (masterB?.facility_type && masterB.facility_type !== 'normal' ? masterB.facility_type : getFacilityType(b.name));
+
+  const isSpecialA = facilityTypeA === 'special' ? 0 : 1;
+  const isSpecialB = facilityTypeB === 'special' ? 0 : 1;
+  if (isSpecialA !== isSpecialB) return isSpecialA - isSpecialB; // 特別スポットを先頭に
+
+  const distA = getDistance(location.lat, location.lng, a.latitude, a.longitude);
+  const distB = getDistance(location.lat, location.lng, b.latitude, b.longitude);
+  return distA - distB; // 同じ優先度内は距離順
+});
 
   return (
     <div className='space-y-3'>
