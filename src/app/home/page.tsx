@@ -611,6 +611,38 @@ function HomeAR() {
   // 🌟 いちばん近いスポット（ナビ表示用）
   const nearestSpot = spotsWithNav.length > 0 ? spotsWithNav[0] : null;
 
+  // 🌟 ARに実際に描画するスポット（近い順に絞る。遠すぎるものは描画しても見えず負荷になるだけ）
+  const arSpots = useMemo(() => {
+    const source = spotsWithNav.length > 0 ? spotsWithNav : allMapSpots.map(s => ({ ...s, distance: 0 }));
+    return source
+      .filter((spot: any) => spot.distance <= 2000 || String(spot.id).startsWith('debug-spot-'))
+      .slice(0, 20)
+      .map((spot: any) => ({
+        ...spot,
+        // landmarks.model_url を最優先。無ければマスター側の model_url にフォールバック
+        modelUrl: spot.model_url || spot.landmark_masters?.model_url || null,
+      }));
+  }, [spotsWithNav, allMapSpots]);
+
+  // 🌟 スポットの3Dモデルを重複なくアセット登録するためのリスト
+  const arSpotModels = useMemo(() => {
+    const urls = new Set<string>();
+    arSpots.forEach((spot: any) => {
+      if (spot.modelUrl && !String(spot.id).startsWith('debug-spot-')) urls.add(spot.modelUrl);
+    });
+    return Array.from(urls).map((url, idx) => ({ url, assetId: `spot-asset-${idx}` }));
+  }, [arSpots]);
+
+  // 🌟 モデルURL → アセットID の対応表
+  const spotModelAssetIdMap = useMemo(() => {
+    const map = new Map<string, string>();
+    arSpotModels.forEach(m => map.set(m.url, m.assetId));
+    return map;
+  }, [arSpotModels]);
+
+  // 🌟 スポットモデルの表示スケール（デバッグメニューから調整可能）
+  const [spotModelScale, setSpotModelScale] = useState(5);
+
   useEffect(() => {
     const setAppHeight = () => {
       const h = window.visualViewport?.height ?? window.innerHeight;
@@ -1944,6 +1976,25 @@ function HomeAR() {
     return () => cleanups.forEach(fn => fn());
   }, [viewMode, aframeLoaded, extrasLoaded, mindarLoaded, isSwitchingMode, sceneKey, activeModelUrl]);
 
+  // 🌟 GPSモードのスポットモデルの読み込み結果を監視（GLBのURL不正・CORS等の切り分け用）
+  useEffect(() => {
+    if (viewMode !== 'gps' || !scriptsReadyForGps || isSwitchingMode) return;
+    const cleanups: Array<() => void> = [];
+    arSpotModels.forEach(model => {
+      const el = document.querySelector(`#${model.assetId}`);
+      if (!el) return;
+      const onError = (e: any) => console.error(`🔴 スポットモデルの読み込みに失敗 (${model.assetId}):`, model.url, e?.detail || e);
+      const onLoaded = () => console.log(`✅ スポットモデル読み込み成功 (${model.assetId}):`, model.url);
+      el.addEventListener('error', onError);
+      el.addEventListener('loaded', onLoaded);
+      cleanups.push(() => {
+        el.removeEventListener('error', onError);
+        el.removeEventListener('loaded', onLoaded);
+      });
+    });
+    return () => cleanups.forEach(fn => fn());
+  }, [viewMode, scriptsReadyForGps, isSwitchingMode, sceneKey, arSpotModels]);
+
   const handleCreateEgg = async () => {
     if (!sessionUserId) return;
     try {
@@ -2846,6 +2897,30 @@ function HomeAR() {
               >
                 📋 現在地とスポット件数を確認
               </button>
+
+              <button 
+                onClick={() => {
+                  const rows = arSpots.map((s: any) => ({
+                    name: s.name,
+                    距離m: Math.round(s.distance || 0),
+                    modelUrl: s.modelUrl || '(未設定)',
+                    assetId: s.modelUrl ? spotModelAssetIdMap.get(s.modelUrl) : '(なし)',
+                  }));
+                  console.log('[AR描画対象スポットとモデル]', rows);
+                  console.log('[登録アセット一覧]', arSpotModels);
+                  const missing = rows.filter(r => r.modelUrl === '(未設定)');
+                  alert(
+                    `AR描画対象: ${rows.length}件\n` +
+                    `GLB設定済み: ${rows.length - missing.length}件\n` +
+                    `GLB未設定(黄色ボックス表示): ${missing.length}件\n\n` +
+                    (missing.length > 0 ? `未設定: ${missing.map(m => m.name).join(', ')}\n\n` : '') +
+                    `※詳細はコンソールのログを見てください`
+                  );
+                }}
+                className='w-full bg-amber-600 text-white font-bold py-2 rounded-lg shadow text-sm'
+              >
+                🧊 スポットのGLB設定を確認
+              </button>
             </div>
               <button onClick={() => triggerRainbowBridge(petId!, generation)} className='w-full bg-black text-white font-bold py-2 rounded-lg shadow text-sm'>
                 🌈 寿命(殿堂入り)テスト
@@ -2885,6 +2960,11 @@ function HomeAR() {
                 <div className='border-t border-gray-300 pt-2 mt-2'>
                   <label className='block font-bold'>Box Scale (テストスポット用): {debugBoxScale}</label>
                   <input type="range" min="1" max="100" step="1" value={debugBoxScale} onChange={e => setDebugBoxScale(parseFloat(e.target.value))} className="w-full" />
+                </div>
+                <div className='border-t border-gray-300 pt-2 mt-2'>
+                  <label className='block font-bold'>スポットモデルのスケール: {spotModelScale}</label>
+                  <input type="range" min="0.1" max="50" step="0.1" value={spotModelScale} onChange={e => setSpotModelScale(parseFloat(e.target.value))} className="w-full" />
+                  <p className='text-[10px] text-gray-500 mt-1'>※スポットのGLBが大きすぎる／小さすぎる場合に調整してください。</p>
                 </div>
               </div>
             </div>
@@ -4630,6 +4710,10 @@ function HomeAR() {
             >
               <a-assets>
                 <a-asset-item id='pet-asset-gps' src={activeModelUrl}></a-asset-item>
+                {/* 🌟 スポットごとの3Dモデルを事前登録（同一URLは1つにまとめる） */}
+                {arSpotModels.map(model => (
+                  <a-asset-item key={model.assetId} id={model.assetId} src={model.url}></a-asset-item>
+                ))}
               </a-assets>
               
               <a-camera gps-camera rotation-reader>
@@ -4647,26 +4731,38 @@ function HomeAR() {
                 )}
               </a-camera>
 
-              {/* テストスポットのAR表示 */}
-              {allMapSpots.map(spot => {
-                if (spot.id.toString().startsWith('debug-spot-')) {
+              {/* 🌟 スポットのAR表示 */}
+              {arSpots.map(spot => {
+                // デバッグ用に生成したテストスポットは、位置確認しやすいよう赤いボックスのまま
+                if (String(spot.id).startsWith('debug-spot-')) {
                   return (
                     <a-box
                       key={spot.id}
                       gps-entity-place={`latitude: ${spot.latitude}; longitude: ${spot.longitude};`}
                       scale={`${debugBoxScale} ${debugBoxScale} ${debugBoxScale}`}
-                      color="red"
+                      color='red'
                     ></a-box>
                   );
                 }
-                
-                // 通常のスポットの場合（仮で黄色の箱を表示）
+
+                const assetId = spot.modelUrl ? spotModelAssetIdMap.get(spot.modelUrl) : null;
+
                 return (
                   <a-entity
                     key={spot.id}
                     gps-entity-place={`latitude: ${spot.latitude}; longitude: ${spot.longitude};`}
                   >
-                    <a-box scale="5 5 5" color="yellow"></a-box>
+                    {assetId ? (
+                      <a-gltf-model
+                        src={`#${assetId}`}
+                        scale={`${spotModelScale} ${spotModelScale} ${spotModelScale}`}
+                        rotation='0 0 0'
+                        animation='property: rotation; to: 0 360 0; dur: 12000; loop: true; easing: linear'
+                      ></a-gltf-model>
+                    ) : (
+                      // GLBが未設定のスポットのみ、目印としてボックスを表示する
+                      <a-box scale='5 5 5' color='yellow'></a-box>
+                    )}
                   </a-entity>
                 );
               })}
