@@ -123,6 +123,7 @@ const generateRandomSpots = (master: any, count: number, startTime: string, endT
       landmark_master_id: master.id,
       name: master.name,
       description: master.description,
+      facility_type: master.facility_type, // 🌟 修正：施設タイプを付与
       radius_meters: master.radius_meters,
       bonus_points: master.bonus_points,
       model_url: master.model_url,
@@ -922,6 +923,7 @@ export default function AdminDashboard() {
         landmark_master_id: master.id,
         name: landmarkName,
         description: landmarkDesc,
+        facility_type: landmarkFacilityType, // 🌟 修正：施設タイプを付与
         latitude: parseFloat(landmarkLat),
         longitude: parseFloat(landmarkLng),
         radius_meters: parseInt(landmarkRadius, 10),
@@ -987,6 +989,7 @@ export default function AdminDashboard() {
         landmark_master_id: activeManualPlaceMaster.id,
         name: manualPlaceSpotName || activeManualPlaceMaster.name,
         description: activeManualPlaceMaster.description,
+        facility_type: activeManualPlaceMaster.facility_type, // 🌟 修正：施設タイプを付与
         latitude: parseFloat(manualPlaceLat),
         longitude: parseFloat(manualPlaceLng),
         radius_meters: activeManualPlaceMaster.radius_meters,
