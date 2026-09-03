@@ -964,7 +964,7 @@ const { data: profile } = await supabase.from('user_profiles').select('*').eq('i
 // （landmark_masters は施設タイプ等のテンプレート定義のみで座標は持たない）
 const { data: spots, error: spotsError } = await supabase
   .from('landmarks')
-  .select('*, landmark_masters:landmark_master_id(facility_type)');
+  .select('*');
 if (spotsError) {
   console.error('🔴 landmarks 取得エラー:', spotsError);
 }
