@@ -461,6 +461,10 @@ function HomeAR() {
   const [gameOverNotice, setGameOverNotice] = useState<string | null>(null);
   const [gameOverHandled, setGameOverHandled] = useState(false);
 
+  // 🌟 ペットが力尽きた際の演出（確認するまで次の卵に進めない）
+  const [petDeathOverlay, setPetDeathOverlay] = useState<{ active: boolean; phase: 'dying' | 'confirm'; reason: string; particles: any[] } | null>(null);
+  const isDyingRef = useRef(false);
+
   const [showMindfulness, setShowMindfulness] = useState(false);
   const [mindPhase, setMindPhase] = useState<'intro' | 'inhale' | 'hold' | 'exhale' | 'done'>('intro');
   const [mindTime, setMindTime] = useState(5);
@@ -1351,11 +1355,61 @@ function HomeAR() {
       setGameOverHandled(true);
       setPetCondition('healthy');
       setShowConditionSOS(false);
-      setGameOverNotice(`💀 ${reason}\n卵に戻ってしまった…もう一度育て直そう！`);
-      playSound('error');
     } catch (error) {
       console.error('ゲームオーバー処理に失敗しました', error);
     }
+  };
+
+  // 🌟 力尽きた演出を開始する（実際のDBリセットはユーザーが確認するまで行わない）
+  const triggerPetDeath = useCallback((reason: string) => {
+    if (isDyingRef.current || !petId || isEgg) return;
+    isDyingRef.current = true;
+    playSound('error');
+
+    // 灰のように舞い落ちるパーティクル（既存のhatchOverlay等と同じ仕組みを流用）
+    const particles = Array.from({ length: 36 }).map((_, i) => {
+      const dx = (Math.random() - 0.5) * 120;
+      const dy = 80 + Math.random() * 220;
+      return {
+        id: `death_${Date.now()}_${i}`,
+        dx,
+        dy,
+        color: ['#374151', '#4B5563', '#6B7280', '#1F2937'][Math.floor(Math.random() * 4)],
+        size: 4 + Math.random() * 9,
+        duration: 2200 + Math.random() * 1600,
+      };
+    });
+
+    setPetDeathOverlay({ active: true, phase: 'dying', reason, particles });
+
+    setTimeout(() => {
+      setPetDeathOverlay(prev => (prev ? { ...prev, particles: prev.particles.map(p => ({ ...p, launched: true })) } : prev));
+    }, 80);
+
+    // 既存アニメーション（Sad/Sleep）を交互に使い、弱って動かなくなっていく様子を演出
+    const sadSequence = ['Sad', 'Sleep', 'Sad', 'Sleep', 'Sad'];
+    let stepIdx = 0;
+    const runSadStep = () => {
+      if (stepIdx >= sadSequence.length) return;
+      setActionAnim(sadSequence[stepIdx]);
+      stepIdx += 1;
+      setTimeout(runSadStep, 850);
+    };
+    runSadStep();
+
+    // 少し間を置いてから「確認」フェーズへ（画面がさらに暗転する）
+    setTimeout(() => {
+      setPetDeathOverlay(prev => (prev ? { ...prev, phase: 'confirm' } : prev));
+    }, 4300);
+  }, [petId, isEgg, playSound]);
+
+  // 🌟 ユーザーが「受け入れる」を押した時点で初めて実際のリセット処理を行う
+  const handleConfirmPetDeath = async () => {
+    const reason = petDeathOverlay?.reason || '体力が尽きたため';
+    setPetDeathOverlay(null);
+    isDyingRef.current = false;
+    setActionAnim(null);
+    await resetPetToEgg(reason);
   };
 
   useEffect(() => {
@@ -1399,9 +1453,9 @@ function HomeAR() {
     const lastFedTime = new Date(lastFedAt).getTime();
     const hoursPassed = (now - lastFedTime) / (1000 * 60 * 60);
     if (hoursPassed >= 24) {
-      void resetPetToEgg('体力が尽きて24時間が経過したため');
+      triggerPetDeath('体力が尽きて24時間が経過したため');
     }
-  }, [petId, lastFedAt, isEgg, gameOverHandled, isSleeping]);
+  }, [petId, lastFedAt, isEgg, gameOverHandled, isSleeping, triggerPetDeath]);
 
   const getCurrentMood = () => {
     if (isEgg || isEggUnregistered) return { text: '🥚 卵', color: 'bg-gray-500', clip: 'Idle' };
@@ -2814,6 +2868,60 @@ function HomeAR() {
               確認
             </button>
           )}
+        </div>
+      )}
+
+      {petDeathOverlay?.active && (
+        <div
+          className='pointer-events-auto absolute inset-0 z-[136] overflow-hidden flex flex-col items-center justify-center transition-colors duration-700'
+          style={{ backgroundColor: petDeathOverlay.phase === 'confirm' ? 'rgba(0,0,0,0.94)' : 'rgba(0,0,0,0.55)' }}
+        >
+          {petDeathOverlay.particles.map((p: any) => (
+            <div
+              key={p.id}
+              style={{
+                position: 'absolute',
+                left: '50%',
+                top: '38%',
+                width: p.size,
+                height: p.size,
+                background: p.color,
+                borderRadius: '50%',
+                transform: p.launched ? `translate(calc(-50% + ${p.dx}px), calc(-38% + ${p.dy}px)) scale(0.5)` : 'translate(-50%,-38%) scale(1)',
+                opacity: p.launched ? 0 : 0.85,
+                transition: `transform ${p.duration}ms ease-in, opacity ${p.duration}ms ease-in`,
+                pointerEvents: 'none',
+              }}
+            />
+          ))}
+
+          <div className='relative text-center px-8'>
+            <div className='text-7xl mb-4 opacity-90 animate-pulse'>💔</div>
+            <div className='text-2xl font-black text-gray-200 tracking-widest mb-2 drop-shadow-lg'>
+              {displayName || 'ペット'}は　動かなくなってしまった...
+            </div>
+
+            {petDeathOverlay.phase === 'dying' && (
+              <div className='text-sm text-gray-400 mt-6 animate-pulse'>・・・</div>
+            )}
+
+            {petDeathOverlay.phase === 'confirm' && (
+              <div className='mt-8 space-y-4 animate-fade-in-up'>
+                <p className='text-xs text-gray-400 whitespace-pre-wrap'>{petDeathOverlay.reason}</p>
+                <p className='text-sm text-gray-300 leading-relaxed'>
+                  {displayName || 'ペット'}との思い出を胸に、
+                  <br />
+                  また新しい命を迎えましょう。
+                </p>
+                <button
+                  onClick={handleConfirmPetDeath}
+                  className='mt-4 bg-gray-700 hover:bg-gray-600 text-white font-bold py-3 px-10 rounded-full shadow-2xl active:scale-95 transition-transform border border-gray-500'
+                >
+                  受け入れる
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       )}
 
