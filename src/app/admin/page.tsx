@@ -209,7 +209,7 @@ function MultiSelectDropdown({
 
 export default function AdminDashboard() {
   const supabase = createClient();
-  const [activeTab, setActiveTab] = useState<'pets' | 'landmarks' | 'items' | 'coupons' | 'drops' | 'news' | 'users' | 'settings' | 'rewards' | 'reports'>('pets');
+  const [activeTab, setActiveTab] = useState<'pets' | 'landmarks' | 'items' | 'coupons' | 'drops' | 'games' | 'news' | 'users' | 'settings' | 'rewards' | 'reports'>('pets');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // --- 登録済みデータ一覧用のState ---
@@ -222,6 +222,38 @@ export default function AdminDashboard() {
   const [usersList, setUsersList] = useState<any[]>([]);
   const [userPetsList, setUserPetsList] = useState<any[]>([]);
   const [facilityDropsList, setFacilityDropsList] = useState<any[]>([]);
+
+  // --- ゲーム管理用のState ---
+  const FACILITY_TYPES = [
+    { value: 'normal', label: '📍 通常スポット' },
+    { value: 'special', label: '🌟 特別スポット' },
+    { value: 'restaurant', label: '🍽️ ご飯屋さん' },
+    { value: 'hospital', label: '🏥 病院 (ドクター)' },
+    { value: 'hotel', label: '🏨 ホテル (休憩所)' },
+  ];
+  const [gamesList, setGamesList] = useState<any[]>([]);
+  const [gameRatesList, setGameRatesList] = useState<any[]>([]);
+  const [gameRewardsList, setGameRewardsList] = useState<any[]>([]);
+  const [gameTableMissing, setGameTableMissing] = useState(false);
+
+  const [gameType, setGameType] = useState('');
+  const [gameTitle, setGameTitle] = useState('');
+  const [gameDesc, setGameDesc] = useState('');
+  const [gameDifficulty, setGameDifficulty] = useState('1');
+  const [gameUnlockCount, setGameUnlockCount] = useState('0');
+  const [gamePoints, setGamePoints] = useState('100');
+  const [gameOrder, setGameOrder] = useState('0');
+  const [editingGameId, setEditingGameId] = useState<number | null>(null);
+
+  const [selectedGameId, setSelectedGameId] = useState<number | null>(null);
+
+  const [gwRewardType, setGwRewardType] = useState<'item' | 'coupon'>('item');
+  const [gwItemId, setGwItemId] = useState('');
+  const [gwCouponId, setGwCouponId] = useState('');
+  const [gwFacilityType, setGwFacilityType] = useState('');
+  const [gwAmount, setGwAmount] = useState('1');
+  const [gwRate, setGwRate] = useState('100');
+  const [gwMinScore, setGwMinScore] = useState('0');
   const [raritiesList, setRaritiesList] = useState<any[]>([]);
   const [attributesList, setAttributesList] = useState<any[]>([]);
   const [affinitiesList, setAffinitiesList] = useState<any[]>([]);
@@ -420,6 +452,35 @@ export default function AdminDashboard() {
       supabase.from('attribute_weaknesses').select('*').order('id', { ascending: true }), 
       supabase.from('initial_items').select('*, item_masters(name)').order('id', { ascending: true }) 
     ]);
+
+    // 🎮 ゲーム関連テーブルは未作成の可能性があるため、別途エラー耐性を持たせて取得する
+    // （Promise.all に含めると、テーブル未作成時に管理画面全体のデータ取得が失敗してしまう）
+    try {
+      const [gamesRes, ratesRes, gameRewardsRes] = await Promise.all([
+        supabase.from('games').select('*').order('display_order', { ascending: true }),
+        supabase.from('game_encounter_rates').select('*'),
+        supabase.from('game_reward_masters').select('*, item_masters:item_id(name, image_url, item_type), coupon_masters:coupon_id(name, qr_image_url)').order('id', { ascending: false }),
+      ]);
+
+      if (gamesRes.error) throw gamesRes.error;
+
+      setGamesList(gamesRes.data || []);
+      setGameRatesList(ratesRes.data || []);
+      setGameRewardsList(gameRewardsRes.data || []);
+      setGameTableMissing(false);
+
+      if (gamesRes.data && gamesRes.data.length > 0) {
+        setSelectedGameId(prev => (prev && gamesRes.data.some((g: any) => g.id === prev) ? prev : gamesRes.data[0].id));
+      } else {
+        setSelectedGameId(null);
+      }
+    } catch (gameErr: any) {
+      console.warn('ゲーム関連テーブルの取得に失敗しました（未作成の可能性があります）:', gameErr?.message);
+      setGamesList([]);
+      setGameRatesList([]);
+      setGameRewardsList([]);
+      setGameTableMissing(true);
+    }
     
     if (petsRes.data) {
       const petAttrs = (petAttrsRes && petAttrsRes.data) ? petAttrsRes.data : [];
@@ -1124,6 +1185,154 @@ export default function AdminDashboard() {
     }
   };
 
+  // =====================================================================
+  // 🎮 ゲーム管理
+  // =====================================================================
+
+  const handleSaveGame = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!gameType || !gameTitle) return alert('ゲーム種別(game_type)とタイトルを入力してください');
+    setIsSubmitting(true);
+    try {
+      const payload = {
+        game_type: gameType.trim(),
+        title: gameTitle,
+        description: gameDesc,
+        difficulty: parseInt(gameDifficulty, 10),
+        unlocked_by_clear_count: parseInt(gameUnlockCount, 10),
+        points_on_clear: parseInt(gamePoints, 10),
+        display_order: parseInt(gameOrder, 10),
+      };
+
+      if (editingGameId) {
+        const { error } = await supabase.from('games').update(payload).eq('id', editingGameId);
+        if (error) throw error;
+        alert(`ゲーム「${gameTitle}」を更新しました`);
+      } else {
+        const { data: newGame, error } = await supabase.from('games').insert({ ...payload, is_active: true }).select('id').single();
+        if (error) throw error;
+
+        // 新規ゲームには、全施設タイプの発生確率を初期値0%で作成しておく
+        if (newGame?.id) {
+          const rows = FACILITY_TYPES.map(ft => ({
+            game_id: newGame.id,
+            facility_type: ft.value,
+            encounter_rate_percent: 0,
+          }));
+          await supabase.from('game_encounter_rates').insert(rows);
+        }
+        alert(`ゲーム「${gameTitle}」を追加しました。\n発生確率は全施設0%で作成されているので、下の設定から調整してください。`);
+      }
+
+      setGameType(''); setGameTitle(''); setGameDesc('');
+      setGameDifficulty('1'); setGameUnlockCount('0'); setGamePoints('100'); setGameOrder('0');
+      setEditingGameId(null);
+      await fetchData();
+    } catch (err: any) {
+      alert(`エラー: ${err.message}`);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const toggleGameActive = async (id: number, current: boolean) => {
+    try {
+      const { error } = await supabase.from('games').update({ is_active: !current }).eq('id', id);
+      if (error) throw error;
+      await fetchData();
+    } catch (err: any) {
+      alert(`エラー: ${err.message}`);
+    }
+  };
+
+  const handleDeleteGame = async (id: number, title: string) => {
+    if (!window.confirm(`ゲーム「${title}」を削除しますか？\n※発生確率・報酬設定・ユーザーの進捗も一緒に削除されます。`)) return;
+    try {
+      const { error } = await supabase.from('games').delete().eq('id', id);
+      if (error) throw error;
+      alert('削除しました');
+      await fetchData();
+    } catch (err: any) {
+      alert(`削除に失敗しました: ${err.message}`);
+    }
+  };
+
+  // 施設タイプごとの発生確率を保存（無ければ作成、あれば更新）
+  const handleSaveEncounterRate = async (gameId: number, facilityType: string, rate: number) => {
+    if (!Number.isFinite(rate) || rate < 0 || rate > 100) return alert('確率は0〜100の数値で入力してください');
+    try {
+      const existing = gameRatesList.find(r => r.game_id === gameId && r.facility_type === facilityType);
+      if (existing) {
+        const { error } = await supabase
+          .from('game_encounter_rates')
+          .update({ encounter_rate_percent: rate })
+          .eq('id', existing.id);
+        if (error) throw error;
+      } else {
+        const { error } = await supabase
+          .from('game_encounter_rates')
+          .insert({ game_id: gameId, facility_type: facilityType, encounter_rate_percent: rate });
+        if (error) throw error;
+      }
+      await fetchData();
+    } catch (err: any) {
+      alert(`エラー: ${err.message}`);
+    }
+  };
+
+  const handleAddGameReward = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedGameId) return alert('ゲームを選択してください');
+    if (gwRewardType === 'item' && !gwItemId) return alert('アイテムを選択してください');
+    if (gwRewardType === 'coupon' && !gwCouponId) return alert('クーポンを選択してください');
+
+    setIsSubmitting(true);
+    try {
+      const { error } = await supabase.from('game_reward_masters').insert({
+        game_id: selectedGameId,
+        facility_type: gwFacilityType || null,
+        reward_type: gwRewardType,
+        item_id: gwRewardType === 'item' ? parseInt(gwItemId, 10) : null,
+        coupon_id: gwRewardType === 'coupon' ? parseInt(gwCouponId, 10) : null,
+        drop_amount: parseInt(gwAmount, 10),
+        drop_rate_percent: parseInt(gwRate, 10),
+        min_score: parseInt(gwMinScore, 10),
+        is_active: true,
+      });
+      if (error) throw error;
+
+      alert('報酬を追加しました');
+      setGwItemId(''); setGwCouponId(''); setGwFacilityType('');
+      setGwAmount('1'); setGwRate('100'); setGwMinScore('0');
+      await fetchData();
+    } catch (err: any) {
+      alert(`エラー: ${err.message}`);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleDeleteGameReward = async (id: number) => {
+    if (!window.confirm('この報酬設定を削除しますか？')) return;
+    try {
+      const { error } = await supabase.from('game_reward_masters').delete().eq('id', id);
+      if (error) throw error;
+      await fetchData();
+    } catch (err: any) {
+      alert(`削除に失敗しました: ${err.message}`);
+    }
+  };
+
+  const toggleGameRewardActive = async (id: number, current: boolean) => {
+    try {
+      const { error } = await supabase.from('game_reward_masters').update({ is_active: !current }).eq('id', id);
+      if (error) throw error;
+      await fetchData();
+    } catch (err: any) {
+      alert(`エラー: ${err.message}`);
+    }
+  };
+
   const handleAddNews = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newsTitle || !newsContent) return alert('タイトルと本文が必要です');
@@ -1285,7 +1494,7 @@ export default function AdminDashboard() {
       <h1 className="text-2xl font-bold mb-6 text-gray-800">⚙️ Straid AR 全体管理ダッシュボード</h1>
       
       <div className="flex gap-2 mb-8 overflow-x-auto pb-2">
-        {(['pets', 'landmarks', 'items', 'coupons', 'rewards', 'drops', 'news', 'users', 'reports', 'settings'] as const).map(tab => (
+        {(['pets', 'landmarks', 'items', 'coupons', 'rewards', 'drops', 'games', 'news', 'users', 'reports', 'settings'] as const).map(tab => (
           <button 
             key={tab} 
             onClick={() => setActiveTab(tab)} 
@@ -1297,6 +1506,7 @@ export default function AdminDashboard() {
             {tab === 'coupons' && '🎫 クーポン'}
             {tab === 'rewards' && '🎁 報酬管理'}
             {tab === 'drops' && '🎁 報酬設定'}
+            {tab === 'games' && '🎮 ゲーム管理'}
             {tab === 'news' && '📢 お知らせ'}
             {tab === 'users' && '👥 ユーザー'}
             {tab === 'reports' && '📊 レポート'}
@@ -1313,7 +1523,7 @@ export default function AdminDashboard() {
           </div>
         )}
 
-        {activeTab !== 'settings' && activeTab !== 'rewards' && activeTab !== 'reports' && (
+        {activeTab !== 'settings' && activeTab !== 'rewards' && activeTab !== 'reports' && activeTab !== 'games' && (
           <>
             <div>
               {activeTab === 'pets' && (
@@ -1868,7 +2078,7 @@ export default function AdminDashboard() {
                             </div>
                             <div className="flex flex-wrap gap-2 text-xs font-bold">
                               {Object.entries(weightsByRarity).map(([r, w]) => {
-                                const percentage = ((w / totalWeight) * 100).toFixed(1);
+                                const percentage = ((Number(w) / totalWeight) * 100).toFixed(1);
                                 return (
                                   <div key={r} className="flex items-center bg-white px-2 py-1 rounded border shadow-sm">
                                     <span className="text-gray-500 mr-1 w-5 text-center">{r}</span>
@@ -2378,6 +2588,334 @@ export default function AdminDashboard() {
               )}
             </div>
           </>
+        )}
+
+        {activeTab === 'games' && (
+          <div className="col-span-1 lg:col-span-2 space-y-6">
+            {gameTableMissing && (
+              <div className="bg-red-50 border-2 border-red-200 rounded-2xl p-5">
+                <h3 className="font-bold text-red-800 mb-2">⚠️ ゲーム用テーブルが見つかりません</h3>
+                <p className="text-sm text-red-700">
+                  Supabase の SQL Editor で <code className="bg-white px-1 rounded border">game_schema.sql</code> を実行してください。
+                  <br />
+                  実行後、このページを再読み込みすると設定できるようになります。
+                </p>
+              </div>
+            )}
+
+            {/* ゲームの登録・編集 */}
+            <div className="bg-violet-50 p-6 rounded-2xl border border-violet-100">
+              <h2 className="text-xl font-bold text-violet-900 mb-1">🎮 ゲームの登録</h2>
+              <p className="text-xs text-violet-700 mb-4">
+                ゲーム種別(game_type)は、フロント側のコンポーネントを振り分けるための識別子です。
+                新しいゲームを追加する場合は、ここに登録した上で対応するコンポーネントを実装してください。
+              </p>
+
+              <form onSubmit={handleSaveGame} className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-white p-5 rounded-xl border shadow-sm">
+                {editingGameId && (
+                  <div className="md:col-span-2 text-sm text-yellow-700 bg-yellow-50 border border-yellow-200 rounded p-2">
+                    編集中: ID {editingGameId}
+                  </div>
+                )}
+                <div>
+                  <label className="block text-sm font-bold mb-1">ゲーム種別 (game_type) <span className="text-red-500">*</span></label>
+                  <input type="text" value={gameType} onChange={e => setGameType(e.target.value)} placeholder="例: clicker" className="w-full border p-3 rounded-lg focus:ring-2 focus:ring-violet-500" required />
+                  <p className="text-[10px] text-gray-500 mt-1">半角英数。コンポーネントの振り分けに使います。</p>
+                </div>
+                <div>
+                  <label className="block text-sm font-bold mb-1">タイトル <span className="text-red-500">*</span></label>
+                  <input type="text" value={gameTitle} onChange={e => setGameTitle(e.target.value)} placeholder="例: タップチャレンジ" className="w-full border p-3 rounded-lg focus:ring-2 focus:ring-violet-500" required />
+                </div>
+                <div className="md:col-span-2">
+                  <label className="block text-sm font-bold mb-1">説明</label>
+                  <textarea value={gameDesc} onChange={e => setGameDesc(e.target.value)} className="w-full border p-3 rounded-lg focus:ring-2 focus:ring-violet-500" rows={2} />
+                </div>
+                <div className="grid grid-cols-2 gap-3 md:col-span-2">
+                  <div>
+                    <label className="block text-sm font-bold mb-1">難易度 (⭐1〜5)</label>
+                    <select value={gameDifficulty} onChange={e => setGameDifficulty(e.target.value)} className="w-full border p-3 rounded-lg">
+                      {[1, 2, 3, 4, 5].map(n => <option key={n} value={n}>{'⭐'.repeat(n)}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-bold mb-1">解放に必要な累計クリア数</label>
+                    <input type="number" min="0" value={gameUnlockCount} onChange={e => setGameUnlockCount(e.target.value)} className="w-full border p-3 rounded-lg" required />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-bold mb-1">クリア時の獲得経験値</label>
+                    <input type="number" min="0" value={gamePoints} onChange={e => setGamePoints(e.target.value)} className="w-full border p-3 rounded-lg" required />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-bold mb-1">表示順</label>
+                    <input type="number" value={gameOrder} onChange={e => setGameOrder(e.target.value)} className="w-full border p-3 rounded-lg" required />
+                  </div>
+                </div>
+                <div className="md:col-span-2 flex gap-3">
+                  <button disabled={isSubmitting || gameTableMissing} className="flex-1 bg-violet-600 text-white font-bold py-3 rounded-xl shadow hover:bg-violet-700 disabled:bg-gray-400">
+                    {isSubmitting ? '処理中...' : (editingGameId ? '変更を保存' : 'ゲームを追加')}
+                  </button>
+                  {editingGameId && (
+                    <button type="button" onClick={() => {
+                      setEditingGameId(null);
+                      setGameType(''); setGameTitle(''); setGameDesc('');
+                      setGameDifficulty('1'); setGameUnlockCount('0'); setGamePoints('100'); setGameOrder('0');
+                    }} className="bg-gray-200 text-gray-700 font-bold py-3 px-5 rounded-xl">キャンセル</button>
+                  )}
+                </div>
+              </form>
+            </div>
+
+            {/* 登録済みゲーム一覧 + 発生確率 */}
+            <div className="bg-white p-6 rounded-2xl border border-gray-100">
+              <h2 className="text-xl font-bold mb-4 border-b pb-2">📋 登録済みゲームと発生確率</h2>
+              <p className="text-xs text-gray-500 mb-4">
+                スポットに到達した時、施設タイプごとに設定した確率でゲームが発生します。0%にすると、その施設タイプでは発生しません。
+              </p>
+
+              {gamesList.length === 0 && (
+                <p className="text-center text-gray-400 py-8 bg-gray-50 rounded-xl">ゲームがまだ登録されていません</p>
+              )}
+
+              <div className="space-y-5">
+                {gamesList.map(game => {
+                  const rates = gameRatesList.filter(r => r.game_id === game.id);
+                  return (
+                    <div key={game.id} className={`border rounded-2xl p-4 shadow-sm ${game.is_active ? 'bg-white' : 'bg-gray-100 opacity-80'}`}>
+                      <div className="flex justify-between items-start mb-3 border-b pb-3">
+                        <div>
+                          <div className="font-bold text-lg flex items-center gap-2 flex-wrap">
+                            {game.title}
+                            <span className="text-[10px] font-mono bg-violet-100 text-violet-800 px-2 py-0.5 rounded border border-violet-200">
+                              {game.game_type}
+                            </span>
+                            <span className="text-xs text-yellow-600">{'⭐'.repeat(game.difficulty || 1)}</span>
+                          </div>
+                          <div className="text-sm text-gray-600 mt-1">{game.description}</div>
+                          <div className="text-xs text-gray-500 mt-1 flex gap-3 flex-wrap">
+                            <span>解放条件: 累計{game.unlocked_by_clear_count}クリア</span>
+                            <span>獲得EXP: {game.points_on_clear}</span>
+                            <span>表示順: {game.display_order}</span>
+                          </div>
+                        </div>
+                        <div className="flex gap-2 shrink-0">
+                          <button
+                            onClick={() => toggleGameActive(game.id, game.is_active)}
+                            className={`text-xs font-bold px-3 py-1.5 rounded-full border ${game.is_active ? 'bg-green-100 text-green-800 border-green-300' : 'bg-gray-300 text-gray-700 border-gray-400'}`}
+                          >
+                            {game.is_active ? '有効' : '無効'}
+                          </button>
+                          <button
+                            onClick={() => {
+                              setEditingGameId(game.id);
+                              setGameType(game.game_type || '');
+                              setGameTitle(game.title || '');
+                              setGameDesc(game.description || '');
+                              setGameDifficulty(String(game.difficulty || 1));
+                              setGameUnlockCount(String(game.unlocked_by_clear_count || 0));
+                              setGamePoints(String(game.points_on_clear || 100));
+                              setGameOrder(String(game.display_order || 0));
+                              window.scrollTo({ top: 0, behavior: 'smooth' });
+                            }}
+                            className="text-xs font-bold text-blue-600 bg-blue-50 border border-blue-200 px-3 py-1.5 rounded hover:bg-blue-100"
+                          >
+                            編集
+                          </button>
+                          <button
+                            onClick={() => handleDeleteGame(game.id, game.title)}
+                            className="text-xs font-bold text-red-600 bg-red-50 border border-red-200 px-3 py-1.5 rounded hover:bg-red-100"
+                          >
+                            削除
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="bg-violet-50 rounded-xl p-3 border border-violet-100">
+                        <div className="text-xs font-bold text-violet-900 mb-2">🎲 施設タイプごとの発生確率</div>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                          {FACILITY_TYPES.map(ft => {
+                            const rate = rates.find(r => r.facility_type === ft.value);
+                            const value = rate?.encounter_rate_percent ?? 0;
+                            return (
+                              <div key={ft.value} className="bg-white rounded-lg border p-2 flex items-center gap-2">
+                                <span className="text-xs font-bold text-gray-700 flex-1 truncate">{ft.label}</span>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  max="100"
+                                  defaultValue={value}
+                                  onBlur={e => {
+                                    const next = parseInt(e.target.value, 10);
+                                    if (next !== value) handleSaveEncounterRate(game.id, ft.value, next);
+                                  }}
+                                  className="w-16 border p-1 rounded text-sm text-right font-bold"
+                                />
+                                <span className="text-xs text-gray-500">%</span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                        <p className="text-[10px] text-violet-700 mt-2">※数値を変更して入力欄からフォーカスを外すと自動保存されます。</p>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* クリア報酬の設定 */}
+            <div className="bg-pink-50 p-6 rounded-2xl border border-pink-100">
+              <h2 className="text-xl font-bold text-pink-900 mb-1">🎁 ゲームクリア報酬の設定</h2>
+              <p className="text-xs text-pink-700 mb-4">
+                ゲームに勝利した時に配布されるアイテム / クーポンを設定します。
+                各報酬はそれぞれ独立して抽選されるため、複数当たることもあります。
+              </p>
+
+              <div className="mb-4">
+                <label className="block text-sm font-bold mb-1 text-pink-900">対象のゲーム</label>
+                <select
+                  value={selectedGameId ?? ''}
+                  onChange={e => setSelectedGameId(e.target.value ? parseInt(e.target.value, 10) : null)}
+                  className="w-full border p-3 rounded-lg bg-white font-bold focus:ring-2 focus:ring-pink-500"
+                >
+                  <option value="">-- ゲームを選択 --</option>
+                  {gamesList.map(g => (
+                    <option key={g.id} value={g.id}>{g.title} ({g.game_type})</option>
+                  ))}
+                </select>
+              </div>
+
+              {selectedGameId && (
+                <>
+                  <form onSubmit={handleAddGameReward} className="bg-white p-5 rounded-xl border shadow-sm space-y-4 mb-6">
+                    <div>
+                      <label className="block text-sm font-bold mb-1 text-pink-900">報酬タイプ</label>
+                      <div className="flex gap-2 p-1 bg-pink-100 rounded-xl">
+                        <button type="button" onClick={() => setGwRewardType('item')} className={`flex-1 font-bold text-sm py-2 rounded-lg transition-colors ${gwRewardType === 'item' ? 'bg-white shadow text-pink-700' : 'text-pink-600 hover:bg-pink-200'}`}>📦 アイテム</button>
+                        <button type="button" onClick={() => setGwRewardType('coupon')} className={`flex-1 font-bold text-sm py-2 rounded-lg transition-colors ${gwRewardType === 'coupon' ? 'bg-white shadow text-pink-700' : 'text-pink-600 hover:bg-pink-200'}`}>🎫 クーポン</button>
+                      </div>
+                    </div>
+
+                    {gwRewardType === 'item' ? (
+                      <div>
+                        <label className="block text-sm font-bold mb-1 text-pink-900">配布するアイテム</label>
+                        <select value={gwItemId} onChange={e => setGwItemId(e.target.value)} className="w-full border p-3 rounded-lg" required>
+                          <option value="">アイテムを選択してください</option>
+                          {itemsList.map(item => (
+                            <option key={item.id} value={item.id}>{item.name} ({item.item_type})</option>
+                          ))}
+                        </select>
+                      </div>
+                    ) : (
+                      <div>
+                        <label className="block text-sm font-bold mb-1 text-pink-900">配布するクーポン</label>
+                        <select value={gwCouponId} onChange={e => setGwCouponId(e.target.value)} className="w-full border p-3 rounded-lg" required>
+                          <option value="">クーポンを選択してください</option>
+                          {couponsList.map(c => (
+                            <option key={c.id} value={c.id}>{c.name}</option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
+
+                    <div>
+                      <label className="block text-sm font-bold mb-1 text-pink-900">対象の施設タイプ</label>
+                      <select value={gwFacilityType} onChange={e => setGwFacilityType(e.target.value)} className="w-full border p-3 rounded-lg">
+                        <option value="">全ての施設で配布</option>
+                        {FACILITY_TYPES.map(ft => (
+                          <option key={ft.value} value={ft.value}>{ft.label} でのみ配布</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-3">
+                      <div>
+                        <label className="block text-sm font-bold mb-1 text-pink-900">配布個数</label>
+                        <input type="number" min="1" value={gwAmount} onChange={e => setGwAmount(e.target.value)} className="w-full border p-3 rounded-lg" required />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-bold mb-1 text-pink-900">排出確率 (%)</label>
+                        <input type="number" min="0" max="100" value={gwRate} onChange={e => setGwRate(e.target.value)} className="w-full border p-3 rounded-lg" required />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-bold mb-1 text-pink-900">必要スコア</label>
+                        <input type="number" min="0" value={gwMinScore} onChange={e => setGwMinScore(e.target.value)} className="w-full border p-3 rounded-lg" required />
+                      </div>
+                    </div>
+                    <p className="text-[10px] text-gray-500">
+                      ※必要スコア: この値以上のスコアでクリアした時だけ抽選対象になります。0なら常に対象です。
+                    </p>
+
+                    <button disabled={isSubmitting} className="w-full bg-pink-600 text-white font-bold py-3 rounded-xl shadow hover:bg-pink-700 disabled:bg-gray-400">
+                      {isSubmitting ? '処理中...' : '報酬を追加'}
+                    </button>
+                  </form>
+
+                  <div className="space-y-3">
+                    <h3 className="font-bold text-pink-900 text-sm">設定済みの報酬</h3>
+                    {gameRewardsList.filter(r => r.game_id === selectedGameId).length === 0 && (
+                      <p className="text-center text-gray-400 py-6 bg-white rounded-xl border text-sm">
+                        このゲームにはまだ報酬が設定されていません
+                      </p>
+                    )}
+                    {gameRewardsList.filter(r => r.game_id === selectedGameId).map(reward => {
+                      const facility = FACILITY_TYPES.find(f => f.value === reward.facility_type);
+                      return (
+                        <div key={reward.id} className={`bg-white border rounded-xl p-4 flex items-center gap-4 shadow-sm group ${reward.is_active ? '' : 'opacity-60'}`}>
+                          {reward.reward_type === 'item' ? (
+                            reward.item_masters?.image_url ? (
+                              <img src={reward.item_masters.image_url} className="w-14 h-14 object-cover rounded-lg border" />
+                            ) : (
+                              <div className="w-14 h-14 bg-orange-50 rounded-lg flex items-center justify-center text-2xl border">📦</div>
+                            )
+                          ) : (
+                            reward.coupon_masters?.qr_image_url ? (
+                              <img src={reward.coupon_masters.qr_image_url} className="w-14 h-14 object-cover rounded-lg border" />
+                            ) : (
+                              <div className="w-14 h-14 bg-teal-50 rounded-lg flex items-center justify-center text-2xl border">🎫</div>
+                            )
+                          )}
+
+                          <div className="flex-1 min-w-0">
+                            <div className="font-bold text-gray-800 flex items-center gap-2 flex-wrap">
+                              {reward.reward_type === 'item' ? '📦' : '🎫'}
+                              {reward.reward_type === 'item'
+                                ? (reward.item_masters?.name || '不明なアイテム')
+                                : (reward.coupon_masters?.name || '不明なクーポン')}
+                              <span className="text-[10px] font-bold bg-gray-100 text-gray-700 px-2 py-0.5 rounded-full border">
+                                {facility ? facility.label : '全施設共通'}
+                              </span>
+                            </div>
+                            <div className="text-sm text-gray-600 mt-1 flex gap-2 flex-wrap">
+                              <span className="bg-gray-100 px-2 py-0.5 rounded text-xs">個数: <b>{reward.drop_amount}</b></span>
+                              <span className="bg-gray-100 px-2 py-0.5 rounded text-xs">確率: <b>{reward.drop_rate_percent}%</b></span>
+                              {reward.min_score > 0 && (
+                                <span className="bg-yellow-50 border border-yellow-200 px-2 py-0.5 rounded text-xs">スコア <b>{reward.min_score}</b> 以上</span>
+                              )}
+                            </div>
+                          </div>
+
+                          <div className="flex gap-2 shrink-0">
+                            <button
+                              onClick={() => toggleGameRewardActive(reward.id, reward.is_active)}
+                              className={`text-xs font-bold px-3 py-1.5 rounded-full border ${reward.is_active ? 'bg-green-100 text-green-800 border-green-300' : 'bg-gray-300 text-gray-700 border-gray-400'}`}
+                            >
+                              {reward.is_active ? '有効' : '無効'}
+                            </button>
+                            <button
+                              onClick={() => handleDeleteGameReward(reward.id)}
+                              className="text-xs font-bold text-red-600 bg-red-50 border border-red-200 px-3 py-1.5 rounded hover:bg-red-100"
+                            >
+                              削除
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
         )}
 
         {activeTab === 'settings' && (
