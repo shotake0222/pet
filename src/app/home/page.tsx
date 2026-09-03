@@ -778,20 +778,23 @@ function HomeAR() {
           router.push(`/login${queryString}`);
           return;
         }
-        const userId = session.user.id;
-        setSessionUserId(userId);
+const userId = session.user.id;
+setSessionUserId(userId);
 
-        const todayStr = new Date().toLocaleDateString('sv-SE');
-        await supabase.from('user_login_histories').upsert(
-          {
-            user_id: userId,
-            login_date: todayStr,
-            last_login_at: new Date().toISOString()
-          },
-          { onConflict: 'user_id, login_date' }
-        );
+const todayStr = new Date().toLocaleDateString('sv-SE');
+const { error: loginLogError } = await supabase.from('user_login_logs').upsert(
+  {
+    user_id: userId,
+    login_date: todayStr,
+    login_timestamp: new Date().toISOString(),
+  },
+  { onConflict: 'user_id, login_date' }
+);
+if (loginLogError) {
+  console.error('🔴 user_login_logs 記録エラー:', loginLogError);
+}
 
-        const { data: profile } = await supabase.from('user_profiles').select('*').eq('id', userId).maybeSingle();
+const { data: profile } = await supabase.from('user_profiles').select('*').eq('id', userId).maybeSingle();
         if (!profile || !profile.birth_year) {
           setShowProfileSetup(true);
         } else {
