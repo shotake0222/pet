@@ -3403,47 +3403,47 @@ setLandmarks(combinedLandmarks);
                   </div>
                 </div>
 
-                {(() => {
-                  const nearbySpots = allMapSpots.filter(spot => {
-                    const dist = getDistance(location.lat, location.lng, spot.latitude, spot.longitude);
-                    return dist <= 10000;
-                  }).sort((a, b) => {
-                    const distA = getDistance(location.lat, location.lng, a.latitude, a.longitude);
-                    const distB = getDistance(location.lat, location.lng, b.latitude, b.longitude);
-                    return distA - distB;
-                  });
+{(() => {
+  const nearbySpots = allMapSpots.filter(spot => {
+    const dist = getDistance(location.lat, location.lng, spot.latitude, spot.longitude);
+    return dist <= 60000; // 🌟 10000 → 60000 (fetchNearbyLandmarksの取得範囲55km四方に合わせて拡大)
+  }).sort((a, b) => {
+    const distA = getDistance(location.lat, location.lng, a.latitude, a.longitude);
+    const distB = getDistance(location.lat, location.lng, b.latitude, b.longitude);
+    return distA - distB;
+  });
 
-                  return (
-                    <div className='space-y-3'>
-                      {nearbySpots.map((spot, idx) => {
-                        const dist = getDistance(location.lat, location.lng, spot.latitude, spot.longitude);
-                        const master = spot.landmark_masters;
-                        const facilityType = spot.isCustom ? 'custom' : (master?.facility_type && master.facility_type !== 'normal' ? master.facility_type : getFacilityType(spot.name));
-                        return (
-                          <div key={`list-${spot.id || idx}`} className='bg-gray-50 border rounded-xl p-3 flex justify-between items-center shadow-sm'>
-                            <div>
-                              <div className='font-bold text-gray-800 flex items-center gap-1'>
-                                {facilityType === 'hospital' ? '🏥' : facilityType === 'restaurant' ? '🍽️' : facilityType === 'hotel' ? '🏨' : facilityType === 'custom' ? '🌟' : '📍'} {spot.name}
-                              </div>
-                              <div className='text-xs text-gray-500'>現在地から約 {Math.floor(dist)}m</div>
-                            </div>
-                            <button
-                              onClick={() => {
-                                handleModeChange('gps');
-                                setIsSpotMapOpen(false);
-                                setCameraFacing('environment');
-                              }}
-                              className='bg-teal-600 text-white text-xs font-bold px-3 py-2 rounded-lg active:scale-95 transition-transform'
-                            >
-                              ARで見る
-                            </button>
-                          </div>
-                        );
-                      })}
-                      {nearbySpots.length === 0 && <p className='text-xs text-gray-500 text-center py-4'>周辺10km圏内にスポットが見つかりません</p>}
-                    </div>
-                  );
-                })()}
+  return (
+    <div className='space-y-3'>
+      {nearbySpots.map((spot, idx) => {
+        const dist = getDistance(location.lat, location.lng, spot.latitude, spot.longitude);
+        const master = spot.landmark_masters;
+        const facilityType = spot.isCustom ? 'custom' : (master?.facility_type && master.facility_type !== 'normal' ? master.facility_type : getFacilityType(spot.name));
+        return (
+          <div key={`list-${spot.id || idx}`} className='bg-gray-50 border rounded-xl p-3 flex justify-between items-center shadow-sm'>
+            <div>
+              <div className='font-bold text-gray-800 flex items-center gap-1'>
+                {facilityType === 'hospital' ? '🏥' : facilityType === 'restaurant' ? '🍽️' : facilityType === 'hotel' ? '🏨' : facilityType === 'custom' ? '🌟' : '📍'} {spot.name}
+              </div>
+              <div className='text-xs text-gray-500'>現在地から約 {Math.floor(dist)}m</div>
+            </div>
+            <button
+              onClick={() => {
+                handleModeChange('gps');
+                setIsSpotMapOpen(false);
+                setCameraFacing('environment');
+              }}
+              className='bg-teal-600 text-white text-xs font-bold px-3 py-2 rounded-lg active:scale-95 transition-transform'
+            >
+              ARで見る
+            </button>
+          </div>
+        );
+      })}
+      {nearbySpots.length === 0 && <p className='text-xs text-gray-500 text-center py-4'>周辺60km圏内にスポットが見つかりません</p>}
+    </div>
+  );
+})()}
               </div>
             )}
 
