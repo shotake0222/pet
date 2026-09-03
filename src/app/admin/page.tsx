@@ -790,6 +790,10 @@ export default function AdminDashboard() {
     }
   };
 
+  // 🌟 修正済み: 「大量発生」チェックが入っていない場合は、
+  // スポットリスト（マスター）の登録のみを行い、マップへの実体配置は一切行わない。
+  // 以前は未チェック時にも全国20,000箇所へ自動でランダム配置してしまうバグがあり、
+  // 意図しない大量データ（10万件超）や、個別に配置したいスポットが埋もれる原因になっていた。
   const handleAddLandmarkMaster = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!lmMasterModelFile || !lmMasterName) return alert('スポット名とモデルが必要です');
@@ -809,26 +813,24 @@ export default function AdminDashboard() {
 
       if (lmAutoGenerate) {
         const count = parseInt(lmGenCount, 10);
-        const spots = generateRandomSpots(master, count, lmGenStartTime, lmGenEndTime);
-        
-        const chunkSize = 1000;
-        for (let i = 0; i < spots.length; i += chunkSize) {
-          const chunk = spots.slice(i, i + chunkSize);
-          const { error: genErr } = await supabase.from('landmarks').insert(chunk);
-          if (genErr) throw genErr;
+        if (!Number.isFinite(count) || count <= 0) {
+          alert(`スポットリスト「${master.name}」は登録しましたが、発生数が不正なため配置は行いませんでした。\n一覧から「📍 手動配置」または「🚀 大量発生タイム設定」で改めて配置してください。`);
+        } else {
+          const spots = generateRandomSpots(master, count, lmGenStartTime, lmGenEndTime);
+
+          const chunkSize = 1000;
+          for (let i = 0; i < spots.length; i += chunkSize) {
+            const chunk = spots.slice(i, i + chunkSize);
+            const { error: genErr } = await supabase.from('landmarks').insert(chunk);
+            if (genErr) throw genErr;
+          }
+
+          alert(`スポット「${master.name}」をリストに登録し、全国に ${count} 箇所ランダム配置しました！`);
         }
-        
-        alert(`スポット「${master.name}」をリストに登録し、全国に ${count} 箇所ランダム配置しました！`);
       } else {
-        const autoGenSpots = generateRandomSpots(master, 20000, '', '');
-        const chunkSize = 1000;
-        for (let i = 0; i < autoGenSpots.length; i += chunkSize) {
-          const chunk = autoGenSpots.slice(i, i + chunkSize);
-          const { error: genErr } = await supabase.from('landmarks').insert(chunk);
-          if (genErr) throw genErr;
-        }
-        
-        alert(`スポット「${master.name}」をリストに登録しました（全国に自動で 20000 箇所ランダム配置）！`);
+        // 🌟 修正: ここで無条件に20,000件生成していたのを削除。
+        // マスター（スポットの「種類」）だけを登録し、実際の配置は行わない。
+        alert(`スポット「${master.name}」をリストに登録しました。\nこの時点ではまだマップ上に配置されていません。\n一覧の「📍 手動配置」（狙った場所に1件だけ配置）または「🚀 大量発生タイム設定」（全国にランダム配置）から配置してください。`);
       }
 
       setLmMasterName(''); setLmMasterDesc(''); setLmMasterFacilityType('normal'); setLmMasterModelFile(null); setLmAutoGenerate(false);
@@ -845,6 +847,13 @@ export default function AdminDashboard() {
   const handleAddLandmarkManual = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!landmarkModelFile || !landmarkName || !landmarkLat || !landmarkLng) return alert('必須項目が不足しています');
+
+    const latNum = parseFloat(landmarkLat);
+    const lngNum = parseFloat(landmarkLng);
+    if (!Number.isFinite(latNum) || !Number.isFinite(lngNum)) {
+      return alert('緯度・経度には正しい数値を入力してください');
+    }
+
     setIsSubmitting(true);
     try {
       const modelUrl = await uploadFile(landmarkModelFile, 'models');
@@ -866,8 +875,8 @@ export default function AdminDashboard() {
         name: landmarkName,
         description: landmarkDesc,
         // facility_type は landmarks スキーマに存在しないため削除しました
-        latitude: parseFloat(landmarkLat),
-        longitude: parseFloat(landmarkLng),
+        latitude: latNum,
+        longitude: lngNum,
         radius_meters: parseInt(landmarkRadius, 10),
         bonus_points: parseInt(landmarkPoints, 10),
         model_url: modelUrl,
@@ -877,7 +886,7 @@ export default function AdminDashboard() {
 
       if (landmarkError) throw landmarkError;
 
-      alert(`スポット「${landmarkName}」を地図上に設置しました！\n（ドロップ報酬設定にもマスターとして紐付け可能になりました）`);
+      alert(`スポット「${landmarkName}」を地図上に設置しました！\n緯度: ${latNum} / 経度: ${lngNum}\n（ドロップ報酬設定にもマスターとして紐付け可能になりました）`);
       setLandmarkName(''); setLandmarkDesc(''); setLandmarkLat(''); setLandmarkLng(''); setLandmarkModelFile(null);
       setLandmarkStartTime(''); setLandmarkEndTime(''); 
       setLandmarkFacilityType('special'); 
@@ -892,9 +901,15 @@ export default function AdminDashboard() {
   const handleExecuteMassGen = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!activeMassGenMaster) return;
+
+    const count = parseInt(lmGenCount, 10);
+    if (!Number.isFinite(count) || count <= 0) {
+      alert('発生数には1以上の数値を入力してください');
+      return;
+    }
+
     setIsSubmitting(true);
     try {
-      const count = parseInt(lmGenCount, 10);
       const spots = generateRandomSpots(activeMassGenMaster, count, lmGenStartTime, lmGenEndTime);
       
       const chunkSize = 1000;
@@ -924,6 +939,13 @@ export default function AdminDashboard() {
       return;
     }
 
+    const latNum = parseFloat(manualPlaceLat);
+    const lngNum = parseFloat(manualPlaceLng);
+    if (!Number.isFinite(latNum) || !Number.isFinite(lngNum)) {
+      alert('緯度・経度には正しい数値を入力してください');
+      return;
+    }
+
     setIsSubmitting(true);
     try {
       const { error } = await supabase.from('landmarks').insert({
@@ -931,8 +953,8 @@ export default function AdminDashboard() {
         name: manualPlaceSpotName || activeManualPlaceMaster.name,
         description: activeManualPlaceMaster.description,
         // facility_type は landmarks スキーマに存在しないため削除しました
-        latitude: parseFloat(manualPlaceLat),
-        longitude: parseFloat(manualPlaceLng),
+        latitude: latNum,
+        longitude: lngNum,
         radius_meters: activeManualPlaceMaster.radius_meters,
         bonus_points: activeManualPlaceMaster.bonus_points,
         model_url: activeManualPlaceMaster.model_url,
@@ -941,7 +963,7 @@ export default function AdminDashboard() {
       });
 
       if (error) throw error;
-      alert('スポットを配置しました！');
+      alert(`スポットを配置しました！\n緯度: ${latNum} / 経度: ${lngNum}`);
       setActiveManualPlaceMaster(null);
       setManualPlaceSpotName('');
       setManualPlaceLat('');
@@ -1400,6 +1422,11 @@ export default function AdminDashboard() {
                   {landmarkInputMode === 'master' && (
                     <form onSubmit={handleAddLandmarkMaster} className="space-y-5 bg-gray-50 p-6 rounded-2xl border border-gray-100">
                       <h2 className="text-xl font-bold">スポットリストの作成</h2>
+                      <p className="text-xs text-gray-500 -mt-3 bg-gray-100 border border-gray-200 rounded-lg p-3">
+                        ⚠️ ここで登録するのは「スポットの種類（マスター）」のみです。狙った1箇所だけに置きたい場合は、
+                        下の「登録と同時に全国ランダム配置を行う」はOFFのままにし、登録後に一覧の「📍 手動配置」から配置してください。
+                        今すぐ特定の場所に1件だけ置きたい場合は、上のタブの「手動での個別配置」の利用をおすすめします。
+                      </p>
                       <div className="flex gap-4">
                         <div className="flex-[2]">
                           <label className="block text-sm font-bold mb-1">スポット名 (例: お菓子屋さん)</label>
@@ -1438,13 +1465,13 @@ export default function AdminDashboard() {
 
                       <div className="flex items-center gap-3 bg-white p-3 border rounded-lg">
                         <label className="text-sm font-bold whitespace-nowrap">公開ステータス:</label>
-                       <button
-  type="button"
-  onClick={() => setLmMasterIsPublic(prev => !prev)}
-  className={`text-xs font-bold px-3 py-1 rounded-full ${lmMasterIsPublic ? 'bg-green-100 text-green-800' : 'bg-gray-300 text-gray-700'}`}
->
-  {lmMasterIsPublic ? '公開 (本番表示)' : '非公開 (準備中)'}
-</button>
+                        <button
+                          type="button"
+                          onClick={() => setLmMasterIsPublic(prev => !prev)}
+                          className={`text-xs font-bold px-3 py-1 rounded-full ${lmMasterIsPublic ? 'bg-green-100 text-green-800' : 'bg-gray-300 text-gray-700'}`}
+                        >
+                          {lmMasterIsPublic ? '公開 (本番表示)' : '非公開 (準備中)'}
+                        </button>
                       </div>
 
                       <div className="bg-yellow-50 p-4 rounded-xl border border-yellow-200">
@@ -1479,6 +1506,9 @@ export default function AdminDashboard() {
                   {landmarkInputMode === 'manual' && (
                     <form onSubmit={handleAddLandmarkManual} className="space-y-5 bg-gray-50 p-6 rounded-2xl border border-gray-100">
                       <h2 className="text-xl font-bold">スポット個別配置</h2>
+                      <p className="text-xs text-gray-500 -mt-3 bg-gray-100 border border-gray-200 rounded-lg p-3">
+                        ✅ ここで登録すると、指定した緯度・経度の1箇所だけにスポットを配置します（マスターと実体を同時に作成）。
+                      </p>
                       <div className="flex gap-4">
                         <div className="flex-[2]">
                           <label className="block text-sm font-bold mb-1">スポット名</label>
