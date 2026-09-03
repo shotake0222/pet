@@ -960,88 +960,42 @@ const { data: profile } = await supabase.from('user_profiles').select('*').eq('i
 
 // マップには管理画面から登録したスポットも表示するため、landmarks と landmark_masters の両方を取得して統合する
 // ※ landmark_masters は施設タイプのマスター定義のみを持ち、緯度経度は landmarks 側にのみ存在する
+// マップ表示用のスポットは全て landmarks テーブルの実体行から取得する
+// （landmark_masters は施設タイプ等のテンプレート定義のみで座標は持たない）
 const { data: spots, error: spotsError } = await supabase
   .from('landmarks')
-  .select('*, landmark_masters:landmark_master_id(facility_type, name)');
+  .select('*, landmark_masters:landmark_master_id(facility_type)');
 if (spotsError) {
   console.error('🔴 landmarks 取得エラー:', spotsError);
 }
 
-const { data: masterSpots, error: masterSpotsError } = await supabase
-  .from('landmark_masters')
-  .select('*');
-if (masterSpotsError) {
-  console.error('🔴 landmark_masters 取得エラー:', masterSpotsError);
-}
-
 let combinedLandmarks: any[] = [];
 
-// landmarks 側：緯度経度・半径・ボーナスは landmarks テーブル自身の列を使う
 if (spots) {
-  combinedLandmarks = [
-    ...combinedLandmarks,
-    ...spots
-      .map((spot: any) => {
-        const master = spot.landmark_masters;
-        const lat = Number(spot.latitude);
-        const lng = Number(spot.longitude);
-        const radius = Number(spot.radius_meters);
-        const bonus = Number(spot.bonus_points);
-        return {
-          ...spot,
-          id: String(spot.id),
-          name: spot.name ?? master?.name ?? '名称未設定スポット',
-          latitude: lat,
-          longitude: lng,
-          radius_meters: Number.isFinite(radius) ? radius : 50,
-          bonus_points: Number.isFinite(bonus) ? bonus : 10,
-        };
-      })
-      // 緯度経度が数値として不正なものは地図に置けないので除外する
-      .filter((spot: any) => Number.isFinite(spot.latitude) && Number.isFinite(spot.longitude)),
-  ];
-}
-
-// landmark_masters 側は現状「位置情報を持たないタイプ定義」なので、
-// 緯度経度が入っている行があれば拾う（将来カラムが追加された場合の保険。現状は基本ヒットしない）
-const usedMasterIds = new Set(
-  (spots || [])
-    .map((s: any) => s.landmark_master_id)
-    .filter((id: any) => id != null)
-    .map((id: any) => String(id))
-);
-
-if (masterSpots) {
-  const parsedMasters = masterSpots
-    .filter((m: any) => !usedMasterIds.has(String(m.id)))
-    .map((m: any) => {
-      const lat = Number(m.latitude);
-      const lng = Number(m.longitude);
-      const radius = Number(m.radius_meters);
-      const bonus = Number(m.bonus_points);
+  combinedLandmarks = spots
+    .map((spot: any) => {
+      const lat = Number(spot.latitude);
+      const lng = Number(spot.longitude);
+      const radius = Number(spot.radius_meters);
+      const bonus = Number(spot.bonus_points);
       return {
-        id: `master-${m.id}`,
-        landmark_master_id: m.id,
-        name: m.name,
+        ...spot,
+        id: String(spot.id),
         latitude: lat,
         longitude: lng,
         radius_meters: Number.isFinite(radius) ? radius : 50,
         bonus_points: Number.isFinite(bonus) ? bonus : 10,
-        landmark_masters: m,
-        isMaster: true,
       };
     })
-    .filter((m: any) => Number.isFinite(m.latitude) && Number.isFinite(m.longitude));
-  combinedLandmarks = [...combinedLandmarks, ...parsedMasters];
+    // 緯度経度が不正なものだけ除外（is_public や日時での絞り込みは今回は入れない）
+    .filter((spot: any) => Number.isFinite(spot.latitude) && Number.isFinite(spot.longitude));
 }
 
 if (isDebugMode()) {
   console.log('[スポット取得結果]', {
-    landmarksRaw: spots?.length ?? 0,
-    landmarkMastersRaw: masterSpots?.length ?? 0,
-    combined: combinedLandmarks.length,
+    rawCount: spots?.length ?? 0,
+    visibleCount: combinedLandmarks.length,
     spotsError,
-    masterSpotsError,
   });
 }
 
