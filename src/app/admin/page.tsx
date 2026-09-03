@@ -15,38 +15,12 @@
     created_at timestamp with time zone default timezone('utc'::text, now()) not null,
     UNIQUE(item_id)
   );
-
-  =============================================================================
-  🚨 【重要】「期間が過ぎたら自動で非表示となる」対応について 🚨
-  本管理者画面では、スポット（手動配置・大量発生ともに）に開始日時と終了日時を設定できるよう修正しました。
-  しかし、過去のデータを管理者画面の「実施履歴」に残すため、期限切れのデータもDB(landmarksテーブル)には保持されます。
-
-  ユーザー画面（アプリ側）で「期間外のスポットを非表示にする」には、ユーザー画面のデータ取得時に
-  現在時刻を用いてフィルタリングを行う必要があります。ユーザー画面側の該当コードを以下のように修正してください。
-
-  【ユーザー画面側のクエリ修正例】
-  const now = new Date().toISOString();
-  const { data: spots } = await supabase
-    .from('landmarks')
-    .select('*')
-    .or(`start_time.is.null,start_time.lte.${now}`)
-    .or(`end_time.is.null,end_time.gte.${now}`);
-
-  ※ または、SupabaseのSQLエディタで以下のView（ビュー）を作成し、
-  ユーザー画面からは `landmarks` の代わりに `view_active_landmarks` を参照するようにすると非常にスマートかつ確実です。
-
-  CREATE OR REPLACE VIEW view_active_landmarks AS
-  SELECT * FROM landmarks
-  WHERE (start_time IS NULL OR start_time <= now())
-    AND (end_time IS NULL OR end_time >= now());
-  =============================================================================
 */
 
 import { useState, useEffect, useRef } from 'react';
 import { createClient } from '@/utils/supabase/client';
 import { CouponAdminPanel } from '@/components/admin/CouponAdminPanel';
 
-// Supabaseの公開URLから、Storageのファイルパス（バケット名以降）を抽出するヘルパー関数
 const extractFilePath = (url: string | null) => {
   if (!url) return null;
   const parts = url.split('/ar_assets/');
@@ -54,7 +28,7 @@ const extractFilePath = (url: string | null) => {
 };
 
 // =====================================================================
-// 🌟 全国ランダム配置用の座標ジェネレーター（都市中心ベースの分散配置に改良）
+// 🌟 全国ランダム配置用の座標ジェネレーター
 // =====================================================================
 const PREFECTURE_CENTERS = [
   { lat: 43.0621, lng: 141.3544 }, // 北海道
@@ -108,11 +82,7 @@ const PREFECTURE_CENTERS = [
 const generateRandomSpots = (master: any, count: number, startTime: string, endTime: string) => {
   const spots = [];
   for (let i = 0; i < count; i++) {
-    // 47都道府県の中心からランダムに1つ選択
     const center = PREFECTURE_CENTERS[Math.floor(Math.random() * PREFECTURE_CENTERS.length)];
-    
-    // 都市の中心から半径約0〜50km圏内（緯度経度で約0.45度）に散らす
-    // sqrtを使うことで中心に固まりすぎず、円内全体に均等に散らばるように調整
     const r = Math.sqrt(Math.random()) * 0.45;
     const theta = Math.random() * 2 * Math.PI;
     
@@ -123,7 +93,6 @@ const generateRandomSpots = (master: any, count: number, startTime: string, endT
       landmark_master_id: master.id,
       name: master.name,
       description: master.description,
-      facility_type: master.facility_type, // 🌟 修正：施設タイプを付与
       radius_meters: master.radius_meters,
       bonus_points: master.bonus_points,
       model_url: master.model_url,
@@ -137,7 +106,7 @@ const generateRandomSpots = (master: any, count: number, startTime: string, endT
 };
 
 // =====================================================================
-// 🌟 共通コンポーネント: プルダウン形式の複数選択（チェックボックス内蔵）
+// 🌟 共通コンポーネント: プルダウン形式の複数選択
 // =====================================================================
 type MultiSelectOption = { id: number; label: string };
 
@@ -245,20 +214,20 @@ export default function AdminDashboard() {
 
   // --- 登録済みデータ一覧用のState ---
   const [petsList, setPetsList] = useState<any[]>([]);
-  const [landmarkMastersList, setLandmarkMastersList] = useState<any[]>([]); // スポットリスト用
-  const [landmarksList, setLandmarksList] = useState<any[]>([]);             // 実体のスポット用
+  const [landmarkMastersList, setLandmarkMastersList] = useState<any[]>([]);
+  const [landmarksList, setLandmarksList] = useState<any[]>([]);
   const [itemsList, setItemsList] = useState<any[]>([]);
-  const [couponsList, setCouponsList] = useState<any[]>([]);                 // クーポン用
+  const [couponsList, setCouponsList] = useState<any[]>([]);
   const [newsList, setNewsList] = useState<any[]>([]);
   const [usersList, setUsersList] = useState<any[]>([]);
-  const [userPetsList, setUserPetsList] = useState<any[]>([]);               // ユーザーが保有するペット(状態異常管理用)
-  const [facilityDropsList, setFacilityDropsList] = useState<any[]>([]);     // 施設別ドロップ報酬リスト
+  const [userPetsList, setUserPetsList] = useState<any[]>([]);
+  const [facilityDropsList, setFacilityDropsList] = useState<any[]>([]);
   const [raritiesList, setRaritiesList] = useState<any[]>([]);
   const [attributesList, setAttributesList] = useState<any[]>([]);
-  const [affinitiesList, setAffinitiesList] = useState<any[]>([]);           // 🌟 属性とアイテムの相性リスト
-  const [attributeWeaknessesList, setAttributeWeaknessesList] = useState<any[]>([]); // 🌟 属性同士の弱点リスト
-  const [eggsList, setEggsList] = useState<any[]>([]);                       // 🌟 卵リスト
-  const [initialItemsList, setInitialItemsList] = useState<any[]>([]);       // 🌟 初期持ち物リスト
+  const [affinitiesList, setAffinitiesList] = useState<any[]>([]);
+  const [attributeWeaknessesList, setAttributeWeaknessesList] = useState<any[]>([]);
+  const [eggsList, setEggsList] = useState<any[]>([]);
+  const [initialItemsList, setInitialItemsList] = useState<any[]>([]);
 
   const now = Date.now();
   const activeLandmarks = landmarksList.filter(spot => {
@@ -294,7 +263,7 @@ export default function AdminDashboard() {
   const [selectedAttributeIds, setSelectedAttributeIds] = useState<number[]>([]);
   const [editingPetId, setEditingPetId] = useState<number | null>(null);
   
-  // --- 設定用State: 卵 / レアリティ / 属性 ---
+  // --- 設定用State ---
   const [newEggName, setNewEggName] = useState('');
   const [newEggWeight, setNewEggWeight] = useState('100'); 
   const [newEggModelFile, setNewEggModelFile] = useState<File | null>(null); 
@@ -305,7 +274,6 @@ export default function AdminDashboard() {
   const [newAttributeName, setNewAttributeName] = useState('');
   const [newAttributeDesc, setNewAttributeDesc] = useState('');
 
-  // 🌟 設定タブ「登録済み属性と設定」: プルダウンで編集対象の属性を選択する方式に変更
   const [selectedSettingsAttributeId, setSelectedSettingsAttributeId] = useState<number | null>(null);
   const [pendingWeakAttrIds, setPendingWeakAttrIds] = useState<number[]>([]);        
   const [pendingEnhanceItemIds, setPendingEnhanceItemIds] = useState<number[]>([]);  
@@ -320,7 +288,6 @@ export default function AdminDashboard() {
   // --- ランドマーク用State ---
   const [landmarkInputMode, setLandmarkInputMode] = useState<'master' | 'manual'>('master');
   
-  // 1. スポットマスター（リスト）作成用
   const [lmMasterName, setLmMasterName] = useState('');
   const [lmMasterDesc, setLmMasterDesc] = useState('');
   const [lmMasterFacilityType, setLmMasterFacilityType] = useState('normal');
@@ -329,14 +296,12 @@ export default function AdminDashboard() {
   const [lmMasterIsPublic, setLmMasterIsPublic] = useState(false);
   const [lmMasterModelFile, setLmMasterModelFile] = useState<File | null>(null);
   
-  // 大量発生設定用
   const [lmAutoGenerate, setLmAutoGenerate] = useState(false);
   const [lmGenCount, setLmGenCount] = useState('100');
   const [lmGenStartTime, setLmGenStartTime] = useState('');
   const [lmGenEndTime, setLmGenEndTime] = useState('');
   const [activeMassGenMaster, setActiveMassGenMaster] = useState<any | null>(null);
   
-  // 🌟 マスターから手動個別配置用
   const [activeManualPlaceMaster, setActiveManualPlaceMaster] = useState<any | null>(null);
   const [manualPlaceSpotName, setManualPlaceSpotName] = useState('');
   const [manualPlaceLat, setManualPlaceLat] = useState('');
@@ -344,7 +309,6 @@ export default function AdminDashboard() {
   const [manualPlaceStartTime, setManualPlaceStartTime] = useState('');
   const [manualPlaceEndTime, setManualPlaceEndTime] = useState('');
 
-  // 2. 個別配置用
   const [landmarkName, setLandmarkName] = useState('');
   const [landmarkDesc, setLandmarkDesc] = useState('');
   const [landmarkLat, setLandmarkLat] = useState('');
@@ -352,7 +316,6 @@ export default function AdminDashboard() {
   const [landmarkRadius, setLandmarkRadius] = useState('50');
   const [landmarkPoints, setLandmarkPoints] = useState('100');
   const [landmarkModelFile, setLandmarkModelFile] = useState<File | null>(null);
-  // 🌟 手動配置用の期間・施設タイプ設定を追加
   const [landmarkStartTime, setLandmarkStartTime] = useState('');
   const [landmarkEndTime, setLandmarkEndTime] = useState('');
   const [landmarkFacilityType, setLandmarkFacilityType] = useState('special');
@@ -380,12 +343,12 @@ export default function AdminDashboard() {
 
   // --- 施設別ドロップ報酬用State ---
   const [dropFacilityType, setDropFacilityType] = useState('restaurant');
-  const [dropRewardType, setDropRewardType] = useState('item'); // 'item' or 'coupon'
+  const [dropRewardType, setDropRewardType] = useState('item'); 
   const [dropItemId, setDropItemId] = useState('');
   const [dropCouponId, setDropCouponId] = useState('');
   const [dropAmount, setDropAmount] = useState('1');
   const [dropRate, setDropRate] = useState('100');
-  const [dropLandmarkId, setDropLandmarkId] = useState<number | null>(null); // 🌟 タスク8対応：特別スポット個別選択
+  const [dropLandmarkId, setDropLandmarkId] = useState<number | null>(null);
 
   // --- お知らせ用State ---
   const [newsTitle, setNewsTitle] = useState('');
@@ -401,7 +364,6 @@ export default function AdminDashboard() {
     return publicUrl;
   };
 
-  // --- レポート機能: CSV出力関数 ---
   const handleDownloadCSV = (type: 'users' | 'spots') => {
     let csv = '';
     let filename = '';
@@ -422,7 +384,6 @@ export default function AdminDashboard() {
     document.body.removeChild(link);
   };
 
-  // --- データの取得（一覧表示用） ---
   const fetchData = async () => {
     const [
       petsRes, 
@@ -444,7 +405,7 @@ export default function AdminDashboard() {
     ] = await Promise.all([
       supabase.from('pet_masters').select('*').order('id', { ascending: false }),
       supabase.from('landmark_masters').select('*').order('id', { ascending: false }),
-      supabase.from('landmarks').select('*').order('id', { ascending: false }).limit(50000), // 🌟 タスク9対応：行数制限を増加
+      supabase.from('landmarks').select('*').order('id', { ascending: false }).limit(50000),
       supabase.from('item_masters').select('*').order('id', { ascending: false }),
       supabase.from('coupon_masters').select('*').order('id', { ascending: false }),
       supabase.from('announcements').select('*').order('published_at', { ascending: false }),
@@ -509,9 +470,8 @@ export default function AdminDashboard() {
 
   useEffect(() => {
     fetchData();
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, []);
 
-  // --- 初期持ち物: CRUD ハンドラ ---
   const handleAddInitialItem = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!initItemId) return alert('アイテムを選択してください');
@@ -549,7 +509,6 @@ export default function AdminDashboard() {
     }
   };
 
-  // --- 卵: CRUD ハンドラ ---
   const handleAddEgg = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newEggName) return alert('卵の名前を入力してください');
@@ -557,7 +516,6 @@ export default function AdminDashboard() {
     setIsSubmitting(true);
     try {
       const modelUrl = await uploadFile(newEggModelFile, 'models');
-
       const { error } = await supabase.from('egg_masters').insert({ 
         name: newEggName, 
         drop_weight: parseInt(newEggWeight, 10),
@@ -575,7 +533,7 @@ export default function AdminDashboard() {
   };
 
   const handleUpdateEggWeight = async (id: number, currentWeight: number) => {
-    const newWeightStr = window.prompt('新しい排出ウェイトを入力してください（整数）\n※数値が大きいほど出やすくなります。', String(currentWeight));
+    const newWeightStr = window.prompt('新しい排出ウェイトを入力してください（整数）', String(currentWeight));
     if (newWeightStr === null) return;
     const newWeight = parseInt(newWeightStr, 10);
     if (isNaN(newWeight) || newWeight < 0) return alert('正しい数値を入力してください');
@@ -597,7 +555,6 @@ export default function AdminDashboard() {
       if (modelPath) {
         await supabase.storage.from('ar_assets').remove([modelPath]);
       }
-
       const { error } = await supabase.from('egg_masters').delete().eq('id', id);
       if (error) throw error;
       await fetchData();
@@ -608,7 +565,6 @@ export default function AdminDashboard() {
   };
 
 
-  // --- レアリティ / 属性: CRUD ハンドラ ---
   const handleAddRarity = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newRarityCode || !newRarityLabel) return alert('コードとラベルを入力してください');
@@ -632,7 +588,7 @@ export default function AdminDashboard() {
   };
 
   const handleUpdateRarityWeight = async (id: number, currentWeight: number) => {
-    const newWeightStr = window.prompt('新しい排出ウェイトを入力してください（整数）\n※数値が大きいほど出やすくなります。', String(currentWeight));
+    const newWeightStr = window.prompt('新しい排出ウェイトを入力してください（整数）', String(currentWeight));
     if (newWeightStr === null) return; 
     const newWeight = parseInt(newWeightStr, 10);
     if (isNaN(newWeight) || newWeight < 0) return alert('正しい数値を入力してください');
@@ -688,7 +644,6 @@ export default function AdminDashboard() {
     }
   };
 
-  // 🌟 属性のアイテム相性（強化/弱点）をまとめて追加
   const handleAddAffinityBulk = async (attributeId: number, itemIds: number[], affinityType: string) => {
     if (!itemIds || itemIds.length === 0) return alert('アイテムを選択してください');
     setIsSubmitting(true);
@@ -711,7 +666,6 @@ export default function AdminDashboard() {
     }
   };
 
-  // 🌟 属性のアイテム相性を削除
   const handleDeleteAffinity = async (affinityId: number) => {
     if (!window.confirm('アイテム設定を削除しますか？')) return;
     try {
@@ -723,7 +677,6 @@ export default function AdminDashboard() {
     }
   };
 
-  // 🌟 弱点属性をまとめて追加
   const handleAddAttributeWeaknessBulk = async (attributeId: number, weakIds: number[]) => {
     if (!weakIds || weakIds.length === 0) return alert('弱点属性を選択してください');
     setIsSubmitting(true);
@@ -745,7 +698,6 @@ export default function AdminDashboard() {
     }
   };
 
-  // 🌟 弱点属性を削除
   const handleDeleteAttributeWeakness = async (weaknessId: number) => {
     if (!window.confirm('弱点属性の設定を削除しますか？')) return;
     try {
@@ -757,10 +709,6 @@ export default function AdminDashboard() {
     }
   };
 
-
-  // ==========================================
-  //  追加 (Create) アクション
-  // ==========================================
 
   const handleSavePet = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -863,7 +811,6 @@ export default function AdminDashboard() {
         const count = parseInt(lmGenCount, 10);
         const spots = generateRandomSpots(master, count, lmGenStartTime, lmGenEndTime);
         
-        // 大量のデータをチャンクに分割してインサート
         const chunkSize = 1000;
         for (let i = 0; i < spots.length; i += chunkSize) {
           const chunk = spots.slice(i, i + chunkSize);
@@ -873,10 +820,7 @@ export default function AdminDashboard() {
         
         alert(`スポット「${master.name}」をリストに登録し、全国に ${count} 箇所ランダム配置しました！`);
       } else {
-        // 🌟 タスク2対応：自動生成チェック不要で常に20000個ランダム配置（期間なし）
         const autoGenSpots = generateRandomSpots(master, 20000, '', '');
-        
-        // 大量のデータをチャンクに分割してインサート
         const chunkSize = 1000;
         for (let i = 0; i < autoGenSpots.length; i += chunkSize) {
           const chunk = autoGenSpots.slice(i, i + chunkSize);
@@ -905,7 +849,6 @@ export default function AdminDashboard() {
     try {
       const modelUrl = await uploadFile(landmarkModelFile, 'models');
       
-      // 🌟 1. マスターを作成する（報酬設定の紐付けとアプリ側のエラー防止のため）
       const { data: master, error: masterError } = await supabase.from('landmark_masters').insert({
         name: landmarkName,
         description: landmarkDesc,
@@ -913,17 +856,16 @@ export default function AdminDashboard() {
         radius_meters: parseInt(landmarkRadius, 10),
         bonus_points: parseInt(landmarkPoints, 10),
         model_url: modelUrl,
-        is_public: true // 個別に配置する＝利用可能な状態としてマスターも公開する
+        is_public: true
       }).select('id').single();
 
       if (masterError) throw masterError;
 
-      // 🌟 2. 作成したマスターのIDを使用して実体を配置する
       const { error: landmarkError } = await supabase.from('landmarks').insert({
         landmark_master_id: master.id,
         name: landmarkName,
         description: landmarkDesc,
-        facility_type: landmarkFacilityType, // 🌟 修正：施設タイプを付与
+        // facility_type は landmarks スキーマに存在しないため削除しました
         latitude: parseFloat(landmarkLat),
         longitude: parseFloat(landmarkLng),
         radius_meters: parseInt(landmarkRadius, 10),
@@ -938,7 +880,7 @@ export default function AdminDashboard() {
       alert(`スポット「${landmarkName}」を地図上に設置しました！\n（ドロップ報酬設定にもマスターとして紐付け可能になりました）`);
       setLandmarkName(''); setLandmarkDesc(''); setLandmarkLat(''); setLandmarkLng(''); setLandmarkModelFile(null);
       setLandmarkStartTime(''); setLandmarkEndTime(''); 
-      setLandmarkFacilityType('special'); // デフォルトに戻す
+      setLandmarkFacilityType('special'); 
       await fetchData(); 
     } catch (e: any) {
       alert(`エラー: ${e.message}`);
@@ -955,7 +897,6 @@ export default function AdminDashboard() {
       const count = parseInt(lmGenCount, 10);
       const spots = generateRandomSpots(activeMassGenMaster, count, lmGenStartTime, lmGenEndTime);
       
-      // 大量のデータをチャンクに分割してインサート
       const chunkSize = 1000;
       for (let i = 0; i < spots.length; i += chunkSize) {
         const chunk = spots.slice(i, i + chunkSize);
@@ -989,7 +930,7 @@ export default function AdminDashboard() {
         landmark_master_id: activeManualPlaceMaster.id,
         name: manualPlaceSpotName || activeManualPlaceMaster.name,
         description: activeManualPlaceMaster.description,
-        facility_type: activeManualPlaceMaster.facility_type, // 🌟 修正：施設タイプを付与
+        // facility_type は landmarks スキーマに存在しないため削除しました
         latitude: parseFloat(manualPlaceLat),
         longitude: parseFloat(manualPlaceLng),
         radius_meters: activeManualPlaceMaster.radius_meters,
@@ -1026,7 +967,6 @@ export default function AdminDashboard() {
       }
 
       if (editingItemId) {
-        // 🌟 タスク14対応：編集モード
         const updateData: any = {
           name: itemName,
           description: itemDesc,
@@ -1044,7 +984,6 @@ export default function AdminDashboard() {
         alert(`アイテム「${itemName}」を更新しました！`);
         setEditingItemId(null);
       } else {
-        // 新規追加モード
         const { error } = await supabase.from('item_masters').insert({
           name: itemName,
           description: itemDesc,
@@ -1070,9 +1009,8 @@ export default function AdminDashboard() {
     }
   };
 
-  // 🌟 アイテムの出現確率ウェイトを更新
   const handleUpdateItemWeight = async (id: number, currentWeight: number) => {
-    const newWeightStr = window.prompt('新しい出現確率ウェイトを入力してください（整数）\n※数値が大きいほど、抽選や排出演出で選ばれやすくなります。', String(currentWeight || 0));
+    const newWeightStr = window.prompt('新しい出現確率ウェイトを入力してください（整数）', String(currentWeight || 0));
     if (newWeightStr === null) return;
     const newWeight = parseInt(newWeightStr, 10);
     if (isNaN(newWeight) || newWeight < 0) return alert('正しい数値を入力してください');
@@ -1086,7 +1024,6 @@ export default function AdminDashboard() {
     }
   };
 
-  // 🌟 アイテムの有料/無料区分けを切り替え
   const handleToggleItemPriceType = async (id: number, current: string) => {
     const next = current === 'free' ? 'paid' : 'free';
     const confirmMsg = next === 'free'
@@ -1136,7 +1073,6 @@ export default function AdminDashboard() {
     e.preventDefault();
     if (dropRewardType === 'item' && !dropItemId) return alert('アイテムを選択してください');
     if (dropRewardType === 'coupon' && !dropCouponId) return alert('クーポンを選択してください');
-    // 🌟 タスク8対応：特別スポット選択時は landmark_id を要求
     if (dropFacilityType === 'special' && !dropLandmarkId) return alert('特別スポットを選択してください');
     
     setIsSubmitting(true);
@@ -1150,7 +1086,6 @@ export default function AdminDashboard() {
         drop_rate_percent: parseInt(dropRate, 10)
       };
       
-      // 🌟 タスク8対応：特別スポット選択時は landmark_id を保存
       if (dropFacilityType === 'special' && dropLandmarkId) {
         insertData.landmark_id = dropLandmarkId;
       }
@@ -1199,10 +1134,6 @@ export default function AdminDashboard() {
       alert(`エラー: ${e.message}`);
     }
   };
-
-  // ==========================================
-  //  削除・更新 (Delete / Update) アクション
-  // ==========================================
 
   const handleDeletePet = async (id: number, modelUrl: string, modelV2Url?: string, modelV3Url?: string) => {
     if (!window.confirm('本当に削除しますか？')) return;
@@ -1315,7 +1246,6 @@ export default function AdminDashboard() {
     }
   };
 
-  // ペットリストを卵タイプごとにグループ化
   const groupedPets = petsList.reduce((acc, pet) => {
     const type = pet.egg_type || 'A';
     if (!acc[type]) acc[type] = [];
@@ -1324,20 +1254,14 @@ export default function AdminDashboard() {
   }, {} as Record<string, any[]>);
   const groupedEggTypes = Object.keys(groupedPets).sort();
 
-  // 卵の全体のウェイト合計（表示用）
   const totalEggWeight = eggsList.reduce((sum, e) => sum + (e.drop_weight || 0), 0);
-  
-  // レアリティの全体のウェイト合計（表示用）
   const totalRarityWeight = raritiesList.reduce((sum, r) => sum + (r.drop_weight || 0), 0);
-
-  // 🌟 アイテムの全体のウェイト合計（出現確率の表示用）
   const totalItemWeight = itemsList.reduce((sum, i) => sum + (Number(i.drop_weight) || 0), 0);
 
   return (
     <div className="max-w-7xl mx-auto p-6 bg-white shadow-xl rounded-3xl mt-8 mb-20">
       <h1 className="text-2xl font-bold mb-6 text-gray-800">⚙️ Straid AR 全体管理ダッシュボード</h1>
       
-      {/* タブ切り替え */}
       <div className="flex gap-2 mb-8 overflow-x-auto pb-2">
         {(['pets', 'landmarks', 'items', 'coupons', 'rewards', 'drops', 'news', 'users', 'reports', 'settings'] as const).map(tab => (
           <button 
@@ -1359,22 +1283,17 @@ export default function AdminDashboard() {
         ))}
       </div>
 
-      {/* コンテンツエリア */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
         
-        {/* === 報酬管理は単独で表示 === */}
         {activeTab === 'rewards' && (
           <div className="lg:col-span-2">
             <CouponAdminPanel onRefresh={() => {}} />
           </div>
         )}
 
-        {/* === 左・右カラムは「設定」および新しいタブ以外の時だけ描画する === */}
         {activeTab !== 'settings' && activeTab !== 'rewards' && activeTab !== 'reports' && (
           <>
-            {/* --- 左カラム: 登録・サマリー --- */}
             <div>
-              {/* 1. ペット追加フォーム */}
               {activeTab === 'pets' && (
                 <form onSubmit={handleSavePet} className="space-y-5 bg-gray-50 p-6 rounded-2xl border border-gray-100">
                   <h2 className="text-xl font-bold">新規ペット登録</h2>
@@ -1423,7 +1342,6 @@ export default function AdminDashboard() {
                       </select>
                     </div>
                     <div className="flex-1">
-                      {/* 🌟 属性選択をプルダウン形式（複数選択可）に変更 */}
                       <label className="block text-sm font-bold mb-1">属性 (複数選択可)</label>
                       {attributesList && attributesList.length > 0 ? (
                         <MultiSelectDropdown
@@ -1472,7 +1390,6 @@ export default function AdminDashboard() {
                 </form>
               )}
 
-              {/* 2. ランドマーク (スポット) 追加フォーム */}
               {activeTab === 'landmarks' && (
                 <div className="space-y-4">
                   <div className="flex gap-2 p-1 bg-gray-200 rounded-xl">
@@ -1480,7 +1397,6 @@ export default function AdminDashboard() {
                     <button onClick={() => setLandmarkInputMode('manual')} className={`flex-1 font-bold text-sm py-2 rounded-lg transition-colors ${landmarkInputMode === 'manual' ? 'bg-white shadow' : 'text-gray-500 hover:bg-gray-300'}`}>手動での個別配置</button>
                   </div>
 
-                  {/* モード1: マスター(リスト)作成 */}
                   {landmarkInputMode === 'master' && (
                     <form onSubmit={handleAddLandmarkMaster} className="space-y-5 bg-gray-50 p-6 rounded-2xl border border-gray-100">
                       <h2 className="text-xl font-bold">スポットリストの作成</h2>
@@ -1490,7 +1406,7 @@ export default function AdminDashboard() {
                           <input type="text" value={lmMasterName} onChange={e => setLmMasterName(e.target.value)} className="w-full border p-3 rounded-lg focus:ring-2 focus:ring-green-500" required />
                         </div>
                         <div className="flex-[1]">
-                          <label className="block text-sm font-bold mb-1 text-teal-700">施設タイプ 🌟</label>
+                          <label className="block text-sm font-bold mb-1 text-teal-700">施設タイプ</label>
                           <select value={lmMasterFacilityType} onChange={e => setLmMasterFacilityType(e.target.value)} className="w-full border p-3 rounded-lg focus:ring-2 focus:ring-teal-500 font-bold bg-teal-50 text-teal-900 border-teal-200">
                             <option value="normal">📍 通常スポット</option>
                             <option value="special">🌟 特別スポット</option>
@@ -1522,7 +1438,7 @@ export default function AdminDashboard() {
 
                       <div className="flex items-center gap-3 bg-white p-3 border rounded-lg">
                         <label className="text-sm font-bold whitespace-nowrap">公開ステータス:</label>
-                        <button type="button" onClick={() => toggleLandmarkMasterPublic(0, false)} /* プレビュー用ダミー */ className={`text-xs font-bold px-3 py-1 rounded-full ${lmMasterIsPublic ? 'bg-green-100 text-green-800' : 'bg-gray-300 text-gray-700'}`}>
+                        <button type="button" onClick={() => toggleLandmarkMasterPublic(0, false)} className={`text-xs font-bold px-3 py-1 rounded-full ${lmMasterIsPublic ? 'bg-green-100 text-green-800' : 'bg-gray-300 text-gray-700'}`}>
                           {lmMasterIsPublic ? '公開 (本番表示)' : '非公開 (準備中)'}
                         </button>
                       </div>
@@ -1556,7 +1472,6 @@ export default function AdminDashboard() {
                     </form>
                   )}
 
-                  {/* モード2: 手動個別配置 */}
                   {landmarkInputMode === 'manual' && (
                     <form onSubmit={handleAddLandmarkManual} className="space-y-5 bg-gray-50 p-6 rounded-2xl border border-gray-100">
                       <h2 className="text-xl font-bold">スポット個別配置</h2>
@@ -1565,9 +1480,8 @@ export default function AdminDashboard() {
                           <label className="block text-sm font-bold mb-1">スポット名</label>
                           <input type="text" value={landmarkName} onChange={e => setLandmarkName(e.target.value)} className="w-full border p-3 rounded-lg focus:ring-2 focus:ring-green-500" required />
                         </div>
-                        {/* 🌟 施設タイプをプルダウンで指定可能にする（報酬設定との紐付け用） */}
                         <div className="flex-[1]">
-                          <label className="block text-sm font-bold mb-1 text-teal-700">施設タイプ 🌟</label>
+                          <label className="block text-sm font-bold mb-1 text-teal-700">施設タイプ</label>
                           <select value={landmarkFacilityType} onChange={e => setLandmarkFacilityType(e.target.value)} className="w-full border p-3 rounded-lg focus:ring-2 focus:ring-teal-500 font-bold bg-teal-50 text-teal-900 border-teal-200">
                             <option value="normal">📍 通常スポット</option>
                             <option value="special">🌟 特別スポット</option>
@@ -1602,7 +1516,6 @@ export default function AdminDashboard() {
                         </div>
                       </div>
 
-                      {/* 🌟 手動配置時の期間指定フィールド */}
                       <div className="flex gap-4">
                         <div className="flex-1">
                           <label className="block text-sm font-bold mb-1 text-gray-700">開始日時 (任意)</label>
@@ -1626,7 +1539,6 @@ export default function AdminDashboard() {
                 </div>
               )}
 
-              {/* 3. アイテム追加フォーム */}
               {activeTab === 'items' && (
                 <form onSubmit={handleAddItem} className="space-y-5 bg-gray-50 p-6 rounded-2xl border border-gray-100">
                   <div className="flex justify-between items-center">
@@ -1664,7 +1576,6 @@ export default function AdminDashboard() {
                     <textarea value={itemDesc} onChange={e => setItemDesc(e.target.value)} className="w-full border p-3 rounded-lg focus:ring-2 focus:ring-yellow-500" rows={2} required />
                   </div>
 
-                  {/* 🌟 有料/無料の区分け */}
                   <div>
                     <label className="block text-sm font-bold mb-1">価格区分</label>
                     <div className="flex gap-2 p-1 bg-gray-200 rounded-xl">
@@ -1691,9 +1602,8 @@ export default function AdminDashboard() {
                     </div>
                   </div>
 
-                  {/* 🌟 出現確率ウェイト */}
                   <div>
-                    <label className="block text-sm font-bold mb-1 text-purple-700">出現確率ウェイト 🌟</label>
+                    <label className="block text-sm font-bold mb-1 text-purple-700">出現確率ウェイト</label>
                     <input type="number" value={itemDropWeight} onChange={e => setItemDropWeight(e.target.value)} className="w-full border p-3 rounded-lg focus:ring-2 focus:ring-purple-500 bg-purple-50" required />
                     <p className="text-xs text-gray-500 mt-1">※ショップの抽選演出やおまけ演出などで、他のアイテムとの相対的な出現しやすさを決める数値です。数値が大きいほど出やすくなります。</p>
                   </div>
@@ -1709,7 +1619,6 @@ export default function AdminDashboard() {
                 </form>
               )}
 
-              {/* 3.5. 🎫 クーポン追加フォーム */}
               {activeTab === 'coupons' && (
                 <form onSubmit={handleAddCoupon} className="space-y-5 bg-teal-50 p-6 rounded-2xl border border-teal-100">
                   <h2 className="text-xl font-bold text-teal-900">🎫 新規クーポン追加</h2>
@@ -1738,7 +1647,6 @@ export default function AdminDashboard() {
                 </form>
               )}
 
-              {/* 🌟 4. 施設別ドロップ報酬設定フォーム */}
               {activeTab === 'drops' && (
                 <form onSubmit={handleAddFacilityDrop} className="space-y-5 bg-pink-50 p-6 rounded-2xl border border-pink-100">
                   <h2 className="text-xl font-bold text-pink-900">🎁 施設ドロップ報酬の設定</h2>
@@ -1756,7 +1664,6 @@ export default function AdminDashboard() {
                       </select>
                     </div>
 
-                    {/* 🌟 タスク8対応：特別スポット選択時に個別スポット選択UI */}
                     {dropFacilityType === 'special' && (
                       <div>
                         <label className="block text-sm font-bold mb-1 text-pink-900">対象の特別スポット (個別選択)</label>
@@ -1829,7 +1736,6 @@ export default function AdminDashboard() {
                 </form>
               )}
 
-              {/* 5. お知らせ追加フォーム */}
               {activeTab === 'news' && (
                 <form onSubmit={handleAddNews} className="space-y-5 bg-blue-50 p-6 rounded-2xl border border-blue-100">
                   <h2 className="text-xl font-bold text-blue-900">新規お知らせ配信</h2>
@@ -1847,7 +1753,6 @@ export default function AdminDashboard() {
                 </form>
               )}
 
-              {/* 6. ユーザー・初期持ち物設定 */}
               {activeTab === 'users' && (
                 <div className="space-y-6">
                   <div className="bg-indigo-50 p-6 rounded-2xl border border-indigo-100 space-y-5">
@@ -1867,7 +1772,6 @@ export default function AdminDashboard() {
                     </div>
                   </div>
 
-                  {/* 🌟 初期持ち物設定フォーム */}
                   <form onSubmit={handleAddInitialItem} className="bg-emerald-50 p-6 rounded-2xl border border-emerald-100 space-y-4">
                     <h2 className="text-xl font-bold text-emerald-900">🎁 新規ユーザーの初期持ち物設定</h2>
                     <p className="text-xs text-emerald-700">新しく登録したユーザーに最初から付与するアイテムを設定します。</p>
@@ -1892,10 +1796,8 @@ export default function AdminDashboard() {
               )}
             </div>
 
-            {/* --- 右カラム: 登録済みデータ一覧 --- */}
             <div className="bg-gray-50 border rounded-2xl p-6 h-[800px] overflow-y-auto shadow-inner">
               
-              {/* 1. ペット一覧 (卵タイプごとにグルーピング表示) */}
               {activeTab === 'pets' && (
                 <>
                   <h2 className="text-xl font-bold mb-6 border-b-2 border-gray-300 pb-2 flex items-center justify-between">
@@ -1924,7 +1826,6 @@ export default function AdminDashboard() {
                           🥚 卵タイプ: {type}
                         </h3>
 
-                        {/* 💡 個別確率の可視化 */}
                         {totalWeight > 0 ? (
                           <div className="mb-4 bg-orange-50 p-3 rounded-xl border border-orange-200">
                             <div className="flex items-center gap-2 mb-2">
@@ -2005,10 +1906,8 @@ export default function AdminDashboard() {
                 </>
               )}
 
-              {/* 2. ランドマーク一覧 (マスター & 実体) */}
               {activeTab === 'landmarks' && (
                 <div className="space-y-8">
-                  {/* スポットマスター一覧 */}
                   <div>
                     <h2 className="text-xl font-bold mb-4 border-b pb-2">📂 登録済みスポットリスト (マスター)</h2>
                     <div className="space-y-4">
@@ -2041,7 +1940,6 @@ export default function AdminDashboard() {
                             </div>
                           </div>
 
-                          {/* 大量発生インラインフォーム */}
                           {activeMassGenMaster?.id === master.id && (
                             <form onSubmit={handleExecuteMassGen} className="mt-2 p-4 bg-yellow-50 border border-yellow-200 rounded-xl">
                               <h4 className="font-bold mb-3 text-sm text-yellow-900">🚀 スケジュール・大量発生設定</h4>
@@ -2066,7 +1964,6 @@ export default function AdminDashboard() {
                             </form>
                           )}
 
-                          {/* 🌟 手動配置インラインフォーム */}
                           {activeManualPlaceMaster?.id === master.id && (
                             <form onSubmit={handleManualPlaceFromMaster} className="mt-2 p-4 bg-blue-50 border border-blue-200 rounded-xl">
                               <h4 className="font-bold mb-3 text-sm text-blue-900">📍 手動個別配置</h4>
@@ -2105,7 +2002,6 @@ export default function AdminDashboard() {
                     </div>
                   </div>
 
-                  {/* 実際の配置スポット一覧 */}
                   <div>
                     <h2 className="text-xl font-bold mb-4 border-b pb-2 mt-8">📍 マップに配置済みスポット (実体)</h2>
                     <div className="flex flex-wrap gap-2 mb-4">
@@ -2176,7 +2072,6 @@ export default function AdminDashboard() {
                 </div>
               )}
 
-              {/* 3. アイテム一覧 */}
               {activeTab === 'items' && (
                 <>
                   <h2 className="text-xl font-bold mb-2 border-b pb-2 flex items-center justify-between">
@@ -2222,7 +2117,6 @@ export default function AdminDashboard() {
                             </div>
                           </div>
                           <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                            {/* 🌟 タスク14対応：編集ボタン */}
                             <button
                               onClick={() => {
                                 setEditingItemId(item.id);
@@ -2253,7 +2147,6 @@ export default function AdminDashboard() {
                 </>
               )}
 
-              {/* 3.5 🎫 クーポン一覧 */}
               {activeTab === 'coupons' && (
                 <>
                   <h2 className="text-xl font-bold mb-4 border-b pb-2">🎫 登録済みクーポン一覧</h2>
@@ -2288,7 +2181,6 @@ export default function AdminDashboard() {
                 </>
               )}
 
-              {/* 🌟 4. 施設別ドロップ報酬一覧 */}
               {activeTab === 'drops' && (
                 <>
                   <h2 className="text-xl font-bold mb-4 border-b pb-2 text-pink-900">🎁 登録済みのドロップルール</h2>
@@ -2300,7 +2192,6 @@ export default function AdminDashboard() {
                             <span className="text-lg font-bold text-gray-800">
                               {drop.facility_type === 'special' ? '🌟 特別スポット' : drop.facility_type === 'restaurant' ? '🍽️ ご飯屋さん' : drop.facility_type === 'hospital' ? '🏥 病院' : drop.facility_type === 'hotel' ? '🏨 ホテル' : '📍 通常スポット'}
                             </span>
-                            {/* 🌟 タスク8対応：特別スポット選択時は対象スポット名を表示 */}
                             {drop.facility_type === 'special' && drop.landmark_masters && (
                               <span className="text-sm bg-pink-100 text-pink-800 px-2 py-1 rounded border border-pink-300 font-bold">
                                 📍 {drop.landmark_masters.name}
@@ -2332,7 +2223,6 @@ export default function AdminDashboard() {
                 </>
               )}
 
-              {/* 5. お知らせ一覧 */}
               {activeTab === 'news' && (
                 <>
                   <h2 className="text-xl font-bold mb-4 border-b pb-2">📢 配信済みお知らせ一覧</h2>
@@ -2359,10 +2249,8 @@ export default function AdminDashboard() {
                 </>
               )}
 
-              {/* 🌟 6. ユーザー・状態管理 (ユーザー＋ペット表示) & 初期持ち物一覧 */}
               {activeTab === 'users' && (
                 <div className="space-y-8">
-                  {/* 初期持ち物一覧 */}
                   <div>
                     <h2 className="text-xl font-bold mb-4 border-b pb-2">🎁 設定済みの初期持ち物</h2>
                     <div className="space-y-3">
@@ -2387,7 +2275,6 @@ export default function AdminDashboard() {
                     </div>
                   </div>
 
-                  {/* ユーザー一覧 */}
                   <div>
                     <h2 className="text-xl font-bold mb-4 border-b pb-2">👥 登録ユーザーとペットの状態</h2>
                     <div className="space-y-4">
@@ -2459,13 +2346,11 @@ export default function AdminDashboard() {
           </>
         )}
 
-        {/* --- 設定タブ: 卵 / レアリティ / 属性 管理（設定タブ選択時のみ表示） --- */}
         {activeTab === 'settings' && (
           <div className="col-span-1 lg:col-span-2 bg-white p-6 rounded-2xl border border-gray-100">
             <h2 className="text-xl font-bold mb-4">⚙️ 卵 / レアリティ / 属性 管理</h2>
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
               
-              {/* 🌟 卵管理エリア */}
               <div className="bg-orange-50 p-4 rounded-xl border border-orange-100">
                 <h3 className="font-bold mb-3 text-orange-900">卵を追加</h3>
                 <form onSubmit={handleAddEgg} className="space-y-3 bg-white p-4 rounded-lg border shadow-sm">
@@ -2535,7 +2420,6 @@ export default function AdminDashboard() {
                 </div>
               </div>
 
-              {/* レアリティ管理エリア */}
               <div className="bg-gray-50 p-4 rounded-xl border">
                 <h3 className="font-bold mb-3">レアリティを追加</h3>
                 <form onSubmit={handleAddRarity} className="space-y-3 bg-white p-4 rounded-lg border shadow-sm">
@@ -2573,7 +2457,6 @@ export default function AdminDashboard() {
                   <div className="space-y-3 mt-3">
                     {raritiesList.length === 0 && <div className="text-sm text-gray-500 text-center py-4 bg-white rounded border">まだ登録されていません</div>}
                     
-                    {/* ウェイトが大きい（出やすい）順に並び替えて表示 */}
                     {[...raritiesList].sort((a, b) => (b.drop_weight || 0) - (a.drop_weight || 0)).map(r => {
                       const dropPercentage = totalRarityWeight > 0 ? (((r.drop_weight || 0) / totalRarityWeight) * 100).toFixed(1) : '0.0';
 
@@ -2613,7 +2496,6 @@ export default function AdminDashboard() {
                 </div>
               </div>
 
-              {/* 🌟 属性と相性管理エリア（登録済み属性はプルダウンで選択する方式に変更） */}
               <div className="bg-gray-50 p-4 rounded-xl border">
                 <h3 className="font-bold mb-3">属性を追加</h3>
                 <form onSubmit={handleAddAttribute} className="space-y-3 bg-white p-4 rounded-lg border shadow-sm">
@@ -2637,7 +2519,6 @@ export default function AdminDashboard() {
                     <div className="text-sm text-gray-500 text-center py-4 bg-white rounded border mt-3">まだ登録されていません</div>
                   ) : (
                     <>
-                      {/* 🌟 編集対象の属性をプルダウンで選択 */}
                       <div className="mt-3 mb-4">
                         <label className="text-xs font-bold text-gray-600 block mb-1">編集する属性を選択してください</label>
                         <select
@@ -2687,13 +2568,11 @@ export default function AdminDashboard() {
                               </button>
                             </div>
 
-                            {/* 🌟 弱点・強化設定セクション */}
                             <div className="pt-3 border-t text-sm bg-gray-50 -mx-3 -mb-3 p-3 rounded-b-lg">
                               <div className="font-bold text-gray-700 mb-2 text-xs">弱点・強化設定</div>
 
                               <div className="grid grid-cols-1 gap-4">
 
-                                {/* ⚔️ 弱点属性（複数選択可） */}
                                 <div>
                                   <div className="text-xs font-bold text-purple-700 mb-1">⚔️ 弱点属性 (被ダメージUP・複数選択可)</div>
                                   <div className="flex flex-wrap gap-1 mb-2 min-h-[24px]">
@@ -2730,7 +2609,6 @@ export default function AdminDashboard() {
                                   </div>
                                 </div>
 
-                                {/* ✨ 強化アイテム（複数選択可） */}
                                 <div>
                                   <div className="text-xs font-bold text-blue-700 mb-1">✨ 強化アイテム (効果UP・複数選択可)</div>
                                   <div className="flex flex-wrap gap-1 mb-2 min-h-[24px]">
@@ -2764,7 +2642,6 @@ export default function AdminDashboard() {
                                   </div>
                                 </div>
 
-                                {/* 💀 弱点アイテム（複数選択可） */}
                                 <div>
                                   <div className="text-xs font-bold text-red-700 mb-1">💀 弱点アイテム (ダメージ・効果ダウン・複数選択可)</div>
                                   <div className="flex flex-wrap gap-1 mb-2 min-h-[24px]">
@@ -2811,7 +2688,6 @@ export default function AdminDashboard() {
           </div>
         )}
 
-        {/* --- レポートタブ --- */}
         {activeTab === 'reports' && (
           <div className="col-span-1 lg:col-span-2 bg-white p-6 rounded-2xl border border-gray-100 space-y-8">
             <div className="flex justify-between items-center border-b pb-4">
