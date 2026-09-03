@@ -3386,20 +3386,17 @@ setLandmarks(combinedLandmarks);
                     <div className='w-5 h-5 bg-red-500 rounded-full border-2 border-white shadow-md animate-pulse'></div>
                   </div>
                   <div className='absolute inset-0 z-20 pointer-events-none'>
-                    {allMapSpots.map((spot, idx) => {
-                      const master = spot.landmark_masters;
-                      const facilityType = spot.isCustom ? 'custom' : (master?.facility_type && master.facility_type !== 'normal' ? master.facility_type : getFacilityType(spot.name));
-                      const typeIcon = facilityType === 'hospital' ? '🏥' : facilityType === 'restaurant' ? '🍽️' : facilityType === 'hotel' ? '🏨' : facilityType === 'custom' ? '🌟' : '📍';
-                      const zoomFactors: Record<number, number> = { 1: 0.01, 2: 0.007, 3: 0.005, 4: 0.003, 5: 0.001 };
-                      const factor = zoomFactors[mapZoomLevel] || 0.005;
-                      const topPercent = 50 - ((spot.latitude - location.lat) / (factor * 2)) * 100;
-                      const leftPercent = 50 + ((spot.longitude - location.lng) / (factor * 2)) * 100;
-                      return (
-                        <div key={`radar-${spot.id || idx}`} className='absolute w-12 h-12 -ml-6 -mt-6 text-2xl flex items-center justify-center filter drop-shadow bg-white/90 rounded-full border-2 border-gray-300 shadow-md' style={{ top: `${topPercent}%`, left: `${leftPercent}%` }} title={spot.name}>
-                          {typeIcon}
-                        </div>
-                      );
-                    })}
+{allMapSpots.map((spot, idx) => {
+  const master = spot.landmark_masters;
+  const facilityType = spot.isCustom ? 'custom' : (master?.facility_type && master.facility_type !== 'normal' ? master.facility_type : getFacilityType(spot.name));
+  const typeIcon = facilityType === 'hospital' ? '🏥' : facilityType === 'restaurant' ? '🍽️' : facilityType === 'hotel' ? '🏨' : facilityType === 'custom' ? '🌟' : '📍';
+  ...
+  return (
+    <div key={`radar-${spot.id || idx}`} className='absolute w-12 h-12 -ml-6 -mt-6 text-2xl flex items-center justify-center filter drop-shadow bg-white/90 rounded-full border-2 border-gray-300 shadow-md' style={{ top: `${topPercent}%`, left: `${leftPercent}%` }} title={spot.name}>
+      {typeIcon}
+    </div>
+  );
+})}
                   </div>
                 </div>
 
