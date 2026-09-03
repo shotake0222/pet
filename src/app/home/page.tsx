@@ -2665,6 +2665,23 @@ setLandmarks(combinedLandmarks);
               </button>
               
               <button 
+  onClick={() => {
+    if (!location) return alert('GPSが取得されていません。');
+    const distances = allMapSpots
+      .map(spot => ({
+        name: spot.name,
+        dist: Math.round(getDistance(location.lat, location.lng, spot.latitude, spot.longitude))
+      }))
+      .sort((a, b) => a.dist - b.dist);
+    console.log('[スポットまでの距離一覧]', distances);
+    alert(distances.map(d => `${d.name}: ${d.dist}m`).join('\n'));
+  }}
+  className='w-full bg-cyan-600 text-white font-bold py-2 rounded-lg shadow text-sm'
+>
+  📏 各スポットまでの距離を確認
+</button>
+
+              <button 
                 onClick={() => {
                   console.log("📍 現在地:", location);
                   console.log("🗺️ 読み込まれた全スポット:", allMapSpots);
