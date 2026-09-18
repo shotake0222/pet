@@ -736,7 +736,7 @@ function HomeAR() {
         el.style.margin = '0';
       });
       const canvases = viewport.querySelectorAll('canvas');
-      canvases.forEach(canvas => {
+      canverses.forEach(canvas => {
         const el = canvas as HTMLCanvasElement;
         el.style.position = 'absolute';
         el.style.inset = '0';
@@ -897,12 +897,6 @@ function HomeAR() {
     if (isAuthChecking || !isDataLoaded) return;
     setCameraReady(viewMode === 'report');
   }, [viewMode, isAuthChecking, isDataLoaded]);
-
-  useEffect(() => {
-    if (!isSwitchingMode) return;
-    const timer = window.setTimeout(() => setIsSwitchingMode(false), 2000);
-    return () => window.clearTimeout(timer);
-  }, [isSwitchingMode]);
 
   useEffect(() => {
     if (viewMode === 'report') {
@@ -3069,7 +3063,7 @@ function HomeAR() {
           <div className='relative text-center px-8'>
             <div className='text-7xl mb-4 opacity-90 animate-pulse'>💔</div>
             <div className='text-2xl font-black text-gray-200 tracking-widest mb-2 drop-shadow-lg'>
-              {displayName || 'ペット'}は　動かなくなってしまった...
+              {displayName || 'ペット'}は 動かなくなってしまった...
             </div>
 
             {petDeathOverlay.phase === 'dying' && (
@@ -4716,20 +4710,7 @@ function HomeAR() {
                 ))}
               </a-assets>
               
-              <a-camera gps-camera rotation-reader>
-                {/* GPSモードではカメラの前に常にペットを表示（卵が未登録・卵の状態・睡眠中を除く） */}
-                {!isEggUnregistered && !isSleeping && !isEgg && (
-                  <a-entity position='0 -1.5 -3' rotation='0 0 0'>
-                    <a-entity pet-anim-controller={`clip: ${(!isEgg && debugAnimEnabled) ? currentAnim : ''}`}>
-                      <a-gltf-model
-                        src='#pet-asset-gps'
-                        scale={`${debugScaleX} ${debugScaleY} ${debugScaleZ}`}
-                        rotation={`${debugRotX} ${debugRotY} ${debugRotZ}`}
-                      ></a-gltf-model>
-                    </a-entity>
-                  </a-entity>
-                )}
-              </a-camera>
+              <a-camera gps-camera rotation-reader></a-camera>
 
               {/* 🌟 スポットのAR表示 */}
               {arSpots.map(spot => {
@@ -4774,9 +4755,9 @@ function HomeAR() {
   );
 }
 
-export default function HomeARPage() {
+export default function App() {
   return (
-    <Suspense fallback={<div className='bg-black w-full h-full text-white flex items-center justify-center'>エンジンを起動中...</div>}>
+    <Suspense fallback={<div className="bg-black w-full h-full text-white flex items-center justify-center">Loading...</div>}>
       <HomeAR />
     </Suspense>
   );
