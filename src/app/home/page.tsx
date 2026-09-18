@@ -4703,7 +4703,6 @@ function HomeAR() {
               renderer='alpha: true; antialias: true; logarithmicDepthBuffer: true;'
             >
               <a-assets>
-                <a-asset-item id='pet-asset-gps' src={activeModelUrl}></a-asset-item>
                 {/* 🌟 スポットごとの3Dモデルを事前登録（同一URLは1つにまとめる） */}
                 {arSpotModels.map(model => (
                   <a-asset-item key={model.assetId} id={model.assetId} src={model.url}></a-asset-item>
