@@ -259,20 +259,22 @@ function HomeAR() {
     }, 1600);
   }, []);
 
-  const triggerItemActionEffect = useCallback((kind: ItemActionEffect['kind']) => {
+  const triggerItemActionEffect = useCallback((kind: ItemActionEffect['kind'], isSuperRare: boolean = false) => {
     if (!isEffectEnabledRef.current) return;
     const configMap: Record<ItemActionEffect['kind'], Omit<ItemActionEffect, 'kind'>> = {
       food: {
         emoji: '🍙',
         reactionMood: 'happy',
-        petAnim: [
-          { clip: 'Happy', delay: 540 },
+        petAnim: isSuperRare ? [
+          { clip: 'Happy', delay: 4200 },
+        ] : [
+          { clip: 'Excited', delay: 540 },
           { clip: 'Jump', delay: 680 },
-          { clip: 'Happy', delay: 640 },
+          { clip: 'Excited', delay: 640 },
           { clip: 'Fly', delay: 720 },
-          { clip: 'Happy', delay: 700 },
+          { clip: 'Excited', delay: 700 },
           { clip: 'Jump', delay: 680 },
-          { clip: 'Happy', delay: 700 },
+          { clip: 'Excited', delay: 700 },
         ],
         duration: 4200,
         startX: 10,
@@ -1585,7 +1587,7 @@ function HomeAR() {
     if (petCondition === 'sick') return { text: '🤒 具合がわるい', color: 'bg-purple-600', clip: 'Sad' };
     if (hungerPercent <= 30) return { text: '💢 はらぺこ', color: 'bg-red-600', clip: 'Angry' };
     if (motivationPercent <= 30) return { text: '💧 しょんぼり', color: 'bg-blue-400', clip: 'Sad' };
-    if (motivationPercent >= 80) return { text: '✨ 絶好調！', color: 'bg-pink-500', clip: 'Happy' };
+    if (motivationPercent >= 80) return { text: '✨ 絶好調！', color: 'bg-pink-500', clip: 'Excited' };
     return { text: '😐 おだやか', color: 'bg-green-500', clip: 'Idle' };
   };
   const currentMood = getCurrentMood();
@@ -1844,7 +1846,7 @@ function HomeAR() {
       });
       setEventCount(prev => prev + 1);
       supabase.from('activity_logs').insert({ pet_id: petId, action_type: 'event', points_earned: 5 }).then();
-      const tapActions = ['Jump', 'Fly', 'Happy'];
+      const tapActions = ['Jump', 'Fly', 'Excited'];
       const randomAction = tapActions[Math.floor(Math.random() * tapActions.length)];
       setActionAnim(randomAction);
       setTimeout(() => setActionAnim(null), 1500);
@@ -1890,6 +1892,8 @@ function HomeAR() {
         update: function (oldData: any) {
           if (this.data.clip !== oldData.clip) {
             this.el.removeAttribute('animation');
+            this.el.removeAttribute('animation__pos');
+            this.el.removeAttribute('animation__rot');
             this.el.setAttribute('position', '0 0 0');
             this.el.setAttribute('rotation', '0 0 0');
             this.el.setAttribute('scale', '1 1 1');
@@ -1901,6 +1905,8 @@ function HomeAR() {
               this.el.setAttribute('animation', 'property: position; to: 0 0.5 0; dir: alternate; dur: 1000; loop: true; easing: easeInOutSine');
             } else if (clip === 'Happy') {
               this.el.setAttribute('animation', 'property: rotation; to: 0 1080 0; dur: 1000; loop: true; easing: linear');
+            } else if (clip === 'Excited') {
+              this.el.setAttribute('animation__pos', 'property: position; to: 0 1.5 0; dir: alternate; dur: 250; loop: true; easing: easeOutQuad');
             } else if (clip === 'Jump') {
               this.el.setAttribute('animation', 'property: position; to: 0 2.5 0; dir: alternate; dur: 200; loop: true; easing: easeOutQuad');
             } else if (clip === 'Fly') {
@@ -2219,9 +2225,14 @@ function HomeAR() {
       setFeedCount(prev => prev + 1);
       await supabase.from('pets').update({ affection_level: newAffection, last_fed_at: now }).eq('id', petId);
       await supabase.from('activity_logs').insert({ pet_id: petId, action_type: 'feed', points_earned: finalEffect || 20 });
-      triggerItemActionEffect('food');
+      const isSuperRare = multiplier > 1.0 && Math.random() < 0.05; // 属性が良く、かつ5%の確率で発動
+      triggerItemActionEffect('food', isSuperRare);
       addExperience(50);
-      alert(`✨ ${item.name} をあげました！${affinityMessage}`);
+      if (isSuperRare) {
+        alert(`✨ ${item.name} をあげました！${affinityMessage}\nなんと！相性が良すぎて大興奮しているみたい！`);
+      } else {
+        alert(`✨ ${item.name} をあげました！${affinityMessage}`);
+      }
       if (petCondition === 'starving') {
         setPetCondition('healthy');
         setShowConditionSOS(false);
