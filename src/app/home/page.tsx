@@ -950,7 +950,7 @@ function HomeAR() {
           data: { session },
         } = await supabase.auth.getSession();
         if (!session) {
-          const queryString = tagIdParam ? `?tag_id=${tagIdParam}` : '';
+          const queryString = tagIdParam ? `?next=${encodeURIComponent(`/home?tag_id=${tagIdParam}`)}` : '';
           router.push(`/login${queryString}`);
           return;
         }

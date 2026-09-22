@@ -37,15 +37,19 @@ export async function hatchPet(tagCode: string) {
 
   // 4. ペットを確定させてDB登録
   const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error("ログインが必要です");
+
   const { data: newPet, error } = await supabase
     .from('pets')
     .insert({
-      owner_id: user?.id,
+      owner_id: user.id,
       nfc_tag_id: tag.id,
-      species_id: winner.id,
+      // アプリ全体では種族を pet_master_id で参照しているため、そちらに保存する
+      pet_master_id: winner.id,
+      is_egg: false,
       status: 'active'
     })
-    .select('*, pet_masters(name, model_url, rarity, model_url_v2, model_url_v3, marker_url)')
+    .select('*, pet_masters!pet_master_id(name, model_url, rarity, model_url_v2, model_url_v3, marker_url)')
     .single();
 
   if (error) throw error;

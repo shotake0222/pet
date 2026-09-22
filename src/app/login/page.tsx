@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/utils/supabase/client';
+import { safeNextPath } from '@/utils/safeRedirect';
 
 export default function Login() {
   const [email, setEmail] = useState('');
@@ -14,10 +15,16 @@ export default function Login() {
   const [mode, setMode] = useState<'login' | 'signup'>('login'); //
   const isSignupMode = mode === 'signup';
   const router = useRouter();
-  const supabase = createClient();
+  const [supabase] = useState(() => createClient());
+  // ?next=... で指定された遷移先（NFCタグ経由のログインなど）。安全な相対パスのみ許可
+  const getNextPath = () => {
+    if (typeof window === 'undefined') return null;
+    const next = new URLSearchParams(window.location.search).get('next');
+    return next ? safeNextPath(next) : null;
+  };
   const getAuthCallbackUrl = () => {
     const origin = typeof window !== 'undefined' ? window.location.origin : '';
-    return `${origin}/auth/callback?next=/home`;
+    return `${origin}/auth/callback?next=${encodeURIComponent(getNextPath() ?? '/home')}`;
   };
 
   const ensureUserProfile = async (userId: string) => {
@@ -53,13 +60,17 @@ export default function Login() {
       .eq('id', userId)
       .maybeSingle();
 
+    const nextPath = getNextPath();
+
     if (error) {
       console.error('admin check failed', error);
-      router.push('/home');
+      router.push(nextPath ?? '/home');
       return;
     }
 
-    if (profile?.is_admin) {
+    if (nextPath) {
+      router.push(nextPath);
+    } else if (profile?.is_admin) {
       router.push('/admin');
     } else {
       router.push('/home');
@@ -244,7 +255,7 @@ export default function Login() {
           <div className="flex justify-center mb-2">
             <span className="text-5xl" role="img" aria-label="paw">🐾</span>
           </div>
-          <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">Straid AR</h1>
+          <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">ぺたる</h1>
           <p className="text-slate-500 font-medium text-sm">ログインしてペットに会いに行こう</p>
         </div>
 
