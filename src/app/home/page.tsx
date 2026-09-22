@@ -3844,7 +3844,7 @@ function HomeAR() {
       )}
 
       {loginBonusState.showModal && (
-        <div className='absolute inset-0 z-[110] bg-black/80 backdrop-blur-md flex items-center justify-center p-4 pointer-events-auto'>
+        <div className='absolute inset-0 z-[400] bg-black/80 backdrop-blur-md flex items-center justify-center p-4 pointer-events-auto'>
           <div className='bg-white rounded-3xl p-6 w-full max-w-sm shadow-2xl flex flex-col items-center text-black'>
             <h2 className='text-xl font-bold text-center mb-2 text-slate-800'>🎁 ログインボーナス</h2>
             <p className='text-sm text-gray-600 mb-6 text-center'>毎日ログインしてアイテムをゲットしよう！</p>
