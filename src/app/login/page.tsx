@@ -171,11 +171,38 @@ export default function Login() {
     }
   };
 
+  // Supabase の公開設定から Google ログインが有効か確認（確認できない場合は null）
+  const isGoogleProviderEnabled = async (): Promise<boolean | null> => {
+    try {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/auth/v1/settings`, {
+        headers: { apikey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY! },
+      });
+      if (!res.ok) return null;
+      const settings = await res.json();
+      return Boolean(settings?.external?.google);
+    } catch {
+      return null;
+    }
+  };
+
   const handleGoogleLogin = async () => {
     setLoading(true);
     setMessage({ text: 'Googleアカウント選択画面へ移動します…', type: 'success' });
 
     try {
+      // ✅ Supabase 側で Google プロバイダーが無効だと、Supabase の JSON エラー画面
+      //    ("Unsupported provider: provider is not enabled") に飛ばされてしまうため、
+      //    遷移前に有効かどうかを確認し、無効ならこの画面でメッセージを出す
+      const googleEnabled = await isGoogleProviderEnabled();
+      if (googleEnabled === false) {
+        setMessage({
+          text: '現在Googleログインはご利用いただけません。メールアドレスとパスワードでログインしてください。',
+          type: 'error',
+        });
+        setLoading(false);
+        return;
+      }
+
       // ✅ Googleログイン前にコールバックURLをログして確認
       const callbackUrl = getAuthCallbackUrl();
       console.log('🔍 Google OAuth Callback URL:', callbackUrl);
